@@ -57,6 +57,7 @@ The API currently exposes these HTTP endpoints:
 | `POST` | `/payroll/import` | Imports a CSV or XLSX payroll file and persists employers, periods, and items into PostgreSQL. |
 | `GET` | `/payroll/summary` | Lists payroll period totals from `mv_payroll_summary`, including taxable income, gross income, discounts, and net pay. |
 | `GET` | `/payroll/{period_id}` | Returns a payroll period with employer data, itemized concepts, selected plans, and summary totals. |
+| `POST` | `/payroll/{period_id}/assign-plans` | Assigns pension and health plan snapshot ids to a payroll period, validating that both plans are active for the period payment date. |
 | `POST` | `/payroll/{period_id}/compute-contributions` | Computes pension and health contributions for an imported payroll period and persists the resulting discount items. If `uf_value_clp` is omitted, the API uses the stored UF rate for the payment date. |
 | `POST` | `/payroll/{period_id}/compute-tax` | Computes Chilean monthly income tax withholding for an imported payroll period and persists it as `INCOME_TAX`. If `utm_value_clp` is omitted, the API uses the stored UTM rate for the payment date. |
 | `POST` | `/payroll/{period_id}/deflate` | Converts payroll summary totals from nominal CLP into real CLP using stored economic indices such as `IPC_CL`, taking the payroll period month as the source period. |
@@ -142,6 +143,13 @@ The detail endpoint returns:
 Contribution computation example:
 
 ```bash
+curl -X POST http://127.0.0.1:8000/payroll/1/assign-plans \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pension_plan_id": 1,
+    "health_plan_id": 1
+  }'
+
 curl -X POST http://127.0.0.1:8000/payroll/1/compute-contributions \
   -H "Content-Type: application/json" \
   -d '{
@@ -150,14 +158,21 @@ curl -X POST http://127.0.0.1:8000/payroll/1/compute-contributions \
   }'
 ```
 
-The endpoint:
+The assignment endpoint:
+
+- validates that the payroll period exists
+- validates that the selected pension and health plans exist
+- enforces that both plans are valid for the original payment date of the period
+- stores `pension_plan_id` and `health_plan_id` on the payroll period as the historical snapshot
+
+The contribution endpoint:
 
 - reads the imported taxable income from the payroll period
 - applies the seeded `pension_health` contribution cap using the stored UF rate for the payment date, or the provided `uf_value_clp` override
 - computes pension mandatory and additional amounts from the selected AFP plan
 - computes health mandatory and additional amounts from the selected health plan
 - persists the resulting discount items as `PENSION_BASE`, `PENSION_ADDITIONAL`, `HEALTH_BASE`, and `HEALTH_ADDITIONAL_UF`
-- stores `pension_plan_id` and `health_plan_id` on the payroll period as the period snapshot
+- refreshes `pension_plan_id` and `health_plan_id` on the payroll period as the period snapshot
 
 Income tax computation example:
 

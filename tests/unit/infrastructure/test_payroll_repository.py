@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from payroll.application.use_cases.import_payroll import ImportPayroll
+from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.domain.contributions import HealthContribution, HealthInstitutionKind, PensionContribution
 from payroll.domain.taxes import IncomeTaxBracket
 from payroll.infrastructure.db.models import EmployerModel, PayrollItemModel, PayrollPeriodModel, PayrollSummaryModel
@@ -287,6 +288,70 @@ async def test_sqlalchemy_payroll_repository_builds_contribution_context() -> No
 
 
 @pytest.mark.asyncio
+async def test_sqlalchemy_payroll_repository_assigns_plans_to_period() -> None:
+    period = PayrollPeriodModel(
+        id=5,
+        employer_id=1,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        status=PayrollStatus.ACTUAL,
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=period),
+            FakeResult(
+                first_row=(
+                    PensionPlanModel(
+                        id=11,
+                        institution_id=1,
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        additional_rate=Decimal("0.0127"),
+                    ),
+                    PensionInstitutionModel(
+                        id=1,
+                        code="AFP_UNO",
+                        name="AFP Uno",
+                        mandatory_rate=Decimal("0.10"),
+                        is_active=True,
+                    ),
+                )
+            ),
+            FakeResult(
+                first_row=(
+                    HealthPlanModel(
+                        id=22,
+                        institution_id=2,
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        plan_name="Base",
+                        contracted_uf=Decimal("0"),
+                    ),
+                    HealthInstitutionModel(
+                        id=2,
+                        code="FONASA",
+                        name="Fonasa",
+                        kind=HealthInstitutionKind.FONASA,
+                        mandatory_rate=Decimal("0.07"),
+                        is_active=True,
+                    ),
+                )
+            ),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.assign_plans(SimpleNamespace(period_id=5, pension_plan_id=11, health_plan_id=22))
+
+    assert result.period_id == 5
+    assert result.payment_date == date(2026, 1, 31)
+    assert period.pension_plan_id == 11
+    assert period.health_plan_id == 22
+    assert session.commit_count == 1
+
+
+@pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_rejects_missing_period_for_contribution_context() -> None:
     repository = SqlAlchemyPayrollRepository(FakeSession([FakeResult(scalar_one=None)]))  # type: ignore[arg-type]
 
@@ -404,6 +469,92 @@ async def test_sqlalchemy_payroll_repository_rejects_missing_period_for_contribu
             ],
             "No contribution cap was found for 2026-01-31.",
         ),
+        (
+            [
+                FakeResult(
+                    scalar_one=PayrollPeriodModel(
+                        id=1,
+                        employer_id=1,
+                        period_year=2026,
+                        period_month=1,
+                        payment_date=date(2026, 1, 31),
+                        status=PayrollStatus.PROJECTED,
+                    )
+                ),
+                FakeResult(
+                    first_row=(
+                        PensionPlanModel(
+                            id=1,
+                            institution_id=1,
+                            valid_from=date(2026, 2, 1),
+                            valid_to=None,
+                            additional_rate=Decimal("0"),
+                        ),
+                        PensionInstitutionModel(
+                            id=1,
+                            code="AFP_UNO",
+                            name="AFP Uno",
+                            mandatory_rate=Decimal("0.10"),
+                            is_active=True,
+                        ),
+                    )
+                ),
+            ],
+            "Pension plan 1 is not valid for 2026-01-31.",
+        ),
+        (
+            [
+                FakeResult(
+                    scalar_one=PayrollPeriodModel(
+                        id=1,
+                        employer_id=1,
+                        period_year=2026,
+                        period_month=1,
+                        payment_date=date(2026, 1, 31),
+                        status=PayrollStatus.PROJECTED,
+                    )
+                ),
+                FakeResult(
+                    first_row=(
+                        PensionPlanModel(
+                            id=1,
+                            institution_id=1,
+                            valid_from=date(2026, 1, 1),
+                            valid_to=None,
+                            additional_rate=Decimal("0"),
+                        ),
+                        PensionInstitutionModel(
+                            id=1,
+                            code="AFP_UNO",
+                            name="AFP Uno",
+                            mandatory_rate=Decimal("0.10"),
+                            is_active=True,
+                        ),
+                    )
+                ),
+                FakeResult(
+                    first_row=(
+                        HealthPlanModel(
+                            id=2,
+                            institution_id=2,
+                            valid_from=date(2025, 1, 1),
+                            valid_to=date(2025, 12, 31),
+                            plan_name="Base",
+                            contracted_uf=Decimal("0"),
+                        ),
+                        HealthInstitutionModel(
+                            id=2,
+                            code="FONASA",
+                            name="Fonasa",
+                            kind=HealthInstitutionKind.FONASA,
+                            mandatory_rate=Decimal("0.07"),
+                            is_active=True,
+                        ),
+                    )
+                ),
+            ],
+            "Health plan 2 is not valid for 2026-01-31.",
+        ),
     ],
 )
 async def test_sqlalchemy_payroll_repository_rejects_missing_contribution_inputs(
@@ -416,6 +567,73 @@ async def test_sqlalchemy_payroll_repository_rejects_missing_contribution_inputs
         await repository.get_contribution_context(
             SimpleNamespace(period_id=1, pension_plan_id=1, health_plan_id=2)
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("results", "message"),
+    [
+        ([FakeResult(scalar_one=None)], "Payroll period 9 was not found."),
+        (
+            [
+                FakeResult(
+                    scalar_one=PayrollPeriodModel(
+                        id=9,
+                        employer_id=1,
+                        period_year=2026,
+                        period_month=1,
+                        payment_date=date(2026, 1, 31),
+                        status=PayrollStatus.PROJECTED,
+                    )
+                ),
+                FakeResult(first_row=None),
+            ],
+            "Pension plan 1 was not found.",
+        ),
+        (
+            [
+                FakeResult(
+                    scalar_one=PayrollPeriodModel(
+                        id=9,
+                        employer_id=1,
+                        period_year=2026,
+                        period_month=1,
+                        payment_date=date(2026, 1, 31),
+                        status=PayrollStatus.PROJECTED,
+                    )
+                ),
+                FakeResult(
+                    first_row=(
+                        PensionPlanModel(
+                            id=1,
+                            institution_id=1,
+                            valid_from=date(2026, 1, 1),
+                            valid_to=None,
+                            additional_rate=Decimal("0"),
+                        ),
+                        PensionInstitutionModel(
+                            id=1,
+                            code="AFP_UNO",
+                            name="AFP Uno",
+                            mandatory_rate=Decimal("0.10"),
+                            is_active=True,
+                        ),
+                    )
+                ),
+                FakeResult(first_row=None),
+            ],
+            "Health plan 2 was not found.",
+        ),
+    ],
+)
+async def test_sqlalchemy_payroll_repository_rejects_invalid_assign_plans_inputs(
+    results: list[FakeResult],
+    message: str,
+) -> None:
+    repository = SqlAlchemyPayrollRepository(FakeSession(results))  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match=message):
+        await repository.assign_plans(SimpleNamespace(period_id=9, pension_plan_id=1, health_plan_id=2))
 
 
 @pytest.mark.asyncio
@@ -758,11 +976,13 @@ async def test_api_dependencies_build_payroll_repository_and_use_case(monkeypatc
     repository = dependencies.get_payroll_repository(fake_session)  # type: ignore[arg-type]
     use_case = dependencies.get_import_payroll_use_case(repository)
     queries = dependencies.get_payroll_queries(repository)
+    assign_use_case = dependencies.get_assign_plans_use_case(repository)
     compute_use_case = dependencies.get_compute_contributions_use_case(repository)
     compute_tax_use_case = dependencies.get_compute_income_tax_use_case(repository, repository)  # type: ignore[arg-type]
 
     assert isinstance(repository, SqlAlchemyPayrollRepository)
     assert isinstance(use_case, ImportPayroll)
+    assert isinstance(assign_use_case, AssignPlans)
     assert queries.__class__.__name__ == "PayrollQueries"
     assert compute_use_case.__class__.__name__ == "ComputeContributions"
     assert compute_tax_use_case.__class__.__name__ == "ComputeIncomeTax"

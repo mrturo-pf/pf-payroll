@@ -8,18 +8,21 @@ from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile
 from pydantic import BaseModel
 
 from payroll.application.dto import (
+    AssignPlansCommandDTO,
     ComputeContributionsCommandDTO,
     DeflateAmountsCommandDTO,
     DeflatedAmountDTO,
     ComputeIncomeTaxCommandDTO,
     PayrollSummaryDTO,
 )
+from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.interfaces.api.dependencies import (
+    get_assign_plans_use_case,
     get_compute_contributions_use_case,
     get_deflate_amounts_use_case,
     get_compute_income_tax_use_case,
@@ -50,6 +53,18 @@ class ComputeContributionsRequest(BaseModel):
     pension_plan_id: int
     health_plan_id: int
     uf_value_clp: Decimal | None = None
+
+
+class AssignPlansRequest(BaseModel):
+    pension_plan_id: int
+    health_plan_id: int
+
+
+class AssignPlansResponse(BaseModel):
+    period_id: int
+    payment_date: date
+    pension_plan_id: int
+    health_plan_id: int
 
 
 class PensionContributionRead(BaseModel):
@@ -248,6 +263,31 @@ async def get_payroll_period(
             for item in detail.items
         ],
         summary=to_payroll_summary_read(detail.summary) if detail.summary is not None else None,
+    )
+
+
+@router.post("/{period_id}/assign-plans", response_model=AssignPlansResponse)
+async def assign_plans(
+    payload: AssignPlansRequest,
+    period_id: int = Path(..., gt=0),
+    use_case: AssignPlans = Depends(get_assign_plans_use_case),
+) -> AssignPlansResponse:
+    try:
+        result = await use_case.execute(
+            AssignPlansCommandDTO(
+                period_id=period_id,
+                pension_plan_id=payload.pension_plan_id,
+                health_plan_id=payload.health_plan_id,
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return AssignPlansResponse(
+        period_id=result.period_id,
+        payment_date=result.payment_date,
+        pension_plan_id=result.pension_plan_id,
+        health_plan_id=result.health_plan_id,
     )
 
 

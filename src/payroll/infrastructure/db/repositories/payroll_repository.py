@@ -8,6 +8,8 @@ from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from payroll.application.dto import (
+    AssignPlansCommandDTO,
+    AssignPlansResultDTO,
     ComputeContributionsCommandDTO,
     ComputeContributionsResultDTO,
     ComputeIncomeTaxCommandDTO,
@@ -47,6 +49,59 @@ from payroll.infrastructure.db.models.payroll import PayrollItemModel, PayrollPe
 class SqlAlchemyPayrollRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def _get_period(self, period_id: int) -> PayrollPeriodModel:
+        period_result = await self._session.execute(
+            select(PayrollPeriodModel).where(PayrollPeriodModel.id == period_id)
+        )
+        period = period_result.scalar_one_or_none()
+        if period is None:
+            raise ValueError(f"Payroll period {period_id} was not found.")
+        return period
+
+    async def _get_pension_plan(
+        self,
+        plan_id: int,
+        payment_date: date,
+    ) -> tuple[PensionPlanModel, PensionInstitutionModel]:
+        pension_result = await self._session.execute(
+            select(PensionPlanModel, PensionInstitutionModel)
+            .join(PensionInstitutionModel, PensionPlanModel.institution_id == PensionInstitutionModel.id)
+            .where(PensionPlanModel.id == plan_id)
+        )
+        pension_row = pension_result.first()
+        if pension_row is None:
+            raise ValueError(f"Pension plan {plan_id} was not found.")
+
+        pension_plan_model, pension_institution_model = pension_row
+        if pension_plan_model.valid_from > payment_date or (
+            pension_plan_model.valid_to is not None and pension_plan_model.valid_to < payment_date
+        ):
+            raise ValueError(f"Pension plan {plan_id} is not valid for {payment_date.isoformat()}.")
+
+        return pension_plan_model, pension_institution_model
+
+    async def _get_health_plan(
+        self,
+        plan_id: int,
+        payment_date: date,
+    ) -> tuple[HealthPlanModel, HealthInstitutionModel]:
+        health_result = await self._session.execute(
+            select(HealthPlanModel, HealthInstitutionModel)
+            .join(HealthInstitutionModel, HealthPlanModel.institution_id == HealthInstitutionModel.id)
+            .where(HealthPlanModel.id == plan_id)
+        )
+        health_row = health_result.first()
+        if health_row is None:
+            raise ValueError(f"Health plan {plan_id} was not found.")
+
+        health_plan_model, health_institution_model = health_row
+        if health_plan_model.valid_from > payment_date or (
+            health_plan_model.valid_to is not None and health_plan_model.valid_to < payment_date
+        ):
+            raise ValueError(f"Health plan {plan_id} is not valid for {payment_date.isoformat()}.")
+
+        return health_plan_model, health_institution_model
 
     async def import_rows(self, rows: list[ImportPayrollRowDTO]) -> ImportPayrollResultDTO:
         if not rows:
@@ -135,36 +190,36 @@ class SqlAlchemyPayrollRepository:
             periods=imported_periods,
         )
 
+    async def assign_plans(self, command: AssignPlansCommandDTO) -> AssignPlansResultDTO:
+        period = await self._get_period(command.period_id)
+        await self._get_pension_plan(command.pension_plan_id, period.payment_date)
+        await self._get_health_plan(command.health_plan_id, period.payment_date)
+
+        period.pension_plan_id = command.pension_plan_id
+        period.health_plan_id = command.health_plan_id
+
+        await self._session.commit()
+
+        return AssignPlansResultDTO(
+            period_id=period.id,
+            payment_date=period.payment_date,
+            pension_plan_id=period.pension_plan_id,
+            health_plan_id=period.health_plan_id,
+        )
+
     async def get_contribution_context(
         self,
         command: ComputeContributionsCommandDTO,
     ) -> ContributionComputationContextDTO:
-        period_result = await self._session.execute(
-            select(PayrollPeriodModel).where(PayrollPeriodModel.id == command.period_id)
+        period = await self._get_period(command.period_id)
+        pension_plan_model, pension_institution_model = await self._get_pension_plan(
+            command.pension_plan_id,
+            period.payment_date,
         )
-        period = period_result.scalar_one_or_none()
-        if period is None:
-            raise ValueError(f"Payroll period {command.period_id} was not found.")
-
-        pension_result = await self._session.execute(
-            select(PensionPlanModel, PensionInstitutionModel)
-            .join(PensionInstitutionModel, PensionPlanModel.institution_id == PensionInstitutionModel.id)
-            .where(PensionPlanModel.id == command.pension_plan_id)
+        health_plan_model, health_institution_model = await self._get_health_plan(
+            command.health_plan_id,
+            period.payment_date,
         )
-        pension_row = pension_result.first()
-        if pension_row is None:
-            raise ValueError(f"Pension plan {command.pension_plan_id} was not found.")
-        pension_plan_model, pension_institution_model = pension_row
-
-        health_result = await self._session.execute(
-            select(HealthPlanModel, HealthInstitutionModel)
-            .join(HealthInstitutionModel, HealthPlanModel.institution_id == HealthInstitutionModel.id)
-            .where(HealthPlanModel.id == command.health_plan_id)
-        )
-        health_row = health_result.first()
-        if health_row is None:
-            raise ValueError(f"Health plan {command.health_plan_id} was not found.")
-        health_plan_model, health_institution_model = health_row
 
         cap_result = await self._session.execute(
             select(ContributionCapModel)
@@ -231,12 +286,7 @@ class SqlAlchemyPayrollRepository:
         self,
         result: ComputeContributionsResultDTO,
     ) -> ComputeContributionsResultDTO:
-        period_result = await self._session.execute(
-            select(PayrollPeriodModel).where(PayrollPeriodModel.id == result.period_id)
-        )
-        period = period_result.scalar_one_or_none()
-        if period is None:
-            raise ValueError(f"Payroll period {result.period_id} was not found.")
+        period = await self._get_period(result.period_id)
 
         concept_codes = {
             "PENSION_BASE",

@@ -146,6 +146,21 @@ class ComputeContributionsCommandDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class AssignPlansCommandDTO:
+    period_id: int
+    pension_plan_id: int
+    health_plan_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class AssignPlansResultDTO:
+    period_id: int
+    payment_date: date
+    pension_plan_id: int
+    health_plan_id: int
+
+
+@dataclass(frozen=True, slots=True)
 class ContributionComputationContextDTO:
     period_id: int
     payment_date: date

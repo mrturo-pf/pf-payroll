@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from starlette.datastructures import UploadFile
 
 from payroll.application.dto import (
+    AssignPlansResultDTO,
     ComputeContributionsResultDTO,
     DeflateAmountsResultDTO,
     DeflatedAmountDTO,
@@ -18,13 +19,20 @@ from payroll.application.dto import (
 from payroll.domain.contributions import HealthContribution, HealthInstitutionKind, PensionContribution
 from payroll.domain.taxes import IncomeTaxComputation
 from payroll.interfaces.api.dependencies import (
+    get_assign_plans_use_case,
     get_compute_contributions_use_case,
     get_deflate_amounts_use_case,
     get_compute_income_tax_use_case,
     get_import_payroll_use_case,
 )
 from payroll.interfaces.api.main import app
-from payroll.interfaces.api.routes.payroll import compute_contributions, compute_income_tax, deflate_amounts, import_payroll
+from payroll.interfaces.api.routes.payroll import (
+    assign_plans,
+    compute_contributions,
+    compute_income_tax,
+    deflate_amounts,
+    import_payroll,
+)
 
 
 class FakeImportPayroll:
@@ -76,6 +84,17 @@ class FakeComputeContributions:
                 contracted_clp=Decimal("0"),
                 additional_amount_clp=Decimal("13500"),
             ),
+        )
+
+
+class FakeAssignPlans:
+    async def execute(self, command: object) -> AssignPlansResultDTO:
+        assert getattr(command, "period_id") == 5
+        return AssignPlansResultDTO(
+            period_id=5,
+            payment_date=date(2026, 1, 31),
+            pension_plan_id=1,
+            health_plan_id=2,
         )
 
 
@@ -215,6 +234,41 @@ def test_compute_contributions_endpoint() -> None:
     }
 
 
+def test_assign_plans_endpoint() -> None:
+    app.dependency_overrides[get_assign_plans_use_case] = lambda: FakeAssignPlans()
+    client = TestClient(app)
+
+    try:
+        response = client.post("/payroll/5/assign-plans", json={"pension_plan_id": 1, "health_plan_id": 2})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "period_id": 5,
+        "payment_date": "2026-01-31",
+        "pension_plan_id": 1,
+        "health_plan_id": 2,
+    }
+
+
+def test_assign_plans_endpoint_surfaces_domain_errors() -> None:
+    class ErrorAssignPlans:
+        async def execute(self, command: object) -> AssignPlansResultDTO:
+            raise ValueError("invalid plan for period")
+
+    app.dependency_overrides[get_assign_plans_use_case] = lambda: ErrorAssignPlans()
+    client = TestClient(app)
+
+    try:
+        response = client.post("/payroll/5/assign-plans", json={"pension_plan_id": 1, "health_plan_id": 2})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "invalid plan for period"}
+
+
 def test_compute_contributions_endpoint_surfaces_domain_errors() -> None:
     class ErrorComputeContributions:
         async def execute(self, command: object) -> ComputeContributionsResultDTO:
@@ -346,6 +400,20 @@ async def test_deflate_amounts_endpoint_maps_value_errors_in_handler() -> None:
             payload=type("Payload", (), {"target_year": 2026, "target_month": 3, "index_code": "IPC_CL"})(),
             period_id=1,
             use_case=ErrorDeflateAmounts(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_assign_plans_endpoint_maps_value_errors_in_handler() -> None:
+    class ErrorAssignPlans:
+        async def execute(self, command: object) -> AssignPlansResultDTO:
+            raise ValueError("bad plan assignment")
+
+    with pytest.raises(HTTPException, match="bad plan assignment"):
+        await assign_plans(
+            payload=type("Payload", (), {"pension_plan_id": 1, "health_plan_id": 2})(),
+            period_id=1,
+            use_case=ErrorAssignPlans(),
         )
 
 

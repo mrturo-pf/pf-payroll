@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from payroll.application.ports.repositories import MarketDataRepository, PayrollRepository, ReferenceDataRepository
 from payroll.application.use_cases.market_data import MarketDataQueries
+from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
@@ -71,6 +72,12 @@ def get_payroll_queries(
     repository: PayrollRepository = Depends(get_payroll_repository),
 ) -> PayrollQueries:
     return PayrollQueries(repository)
+
+
+def get_assign_plans_use_case(
+    repository: PayrollRepository = Depends(get_payroll_repository),
+) -> AssignPlans:
+    return AssignPlans(repository)
 
 
 def get_compute_contributions_use_case(

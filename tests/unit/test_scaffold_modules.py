@@ -12,6 +12,7 @@ import typer
 from typer.testing import CliRunner
 
 from payroll.application.dto import MoneyDTO
+from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
@@ -115,6 +116,9 @@ def test_use_case_placeholders_are_instantiable() -> None:
         async def import_rows(self, rows: list[object]) -> object:
             return rows
 
+        async def assign_plans(self, command: object) -> object:
+            return command
+
         async def get_contribution_context(self, command: object) -> object:
             return command
 
@@ -153,6 +157,7 @@ def test_use_case_placeholders_are_instantiable() -> None:
 
     assert isinstance(ImportPayroll(StubRepository()), ImportPayroll)
     assert isinstance(PayrollQueries(StubRepository()), PayrollQueries)
+    assert isinstance(AssignPlans(StubRepository()), AssignPlans)
     assert isinstance(ReferenceDataQueries(object()), ReferenceDataQueries)
     assert isinstance(MarketDataQueries(StubRepository()), MarketDataQueries)
     assert isinstance(ComputeContributions(StubRepository(), StubRepository()), ComputeContributions)

@@ -1,0 +1,181 @@
+from __future__ import annotations
+
+import importlib
+import runpy
+import sys
+from datetime import date
+from decimal import Decimal
+
+import pandas as pd
+import pytest
+import typer
+from typer.testing import CliRunner
+
+from payroll.application.dto import MoneyDTO
+from payroll.application.use_cases.compute_contributions import ComputeContributions
+from payroll.application.use_cases.import_payroll import ImportPayroll
+from payroll.application.use_cases.refresh_rates import RefreshRates
+from payroll.config import Settings
+from payroll.domain.contribution_calculator import ContributionCalculator, quantize_clp
+from payroll.domain.contributions import ContributionCap, HealthInstitutionKind
+from payroll.domain.entities import PayrollPeriod
+from payroll.domain.value_objects import Money
+from payroll.infrastructure.importers.xlsx_importer import to_long_format
+from payroll.infrastructure.logging.logger import logger
+from payroll.infrastructure.rate_providers.chained_provider import ChainedFxProvider
+from payroll.interfaces.cli.main import app as cli_app
+from payroll.interfaces.dashboard.app import main as dashboard_main
+from payroll.shared.constants import DEFAULT_CURRENCY
+
+
+def test_settings_defaults_and_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    defaults = Settings()
+    assert defaults.env == "development"
+    assert defaults.log_level == "INFO"
+
+    monkeypatch.setenv("PAYROLL_ENV", "test")
+    monkeypatch.setenv("PAYROLL_DATABASE_URL", "postgresql+asyncpg://example/db")
+    overridden = Settings()
+
+    assert overridden.env == "test"
+    assert overridden.database_url == "postgresql+asyncpg://example/db"
+
+
+def test_domain_dataclasses_and_constants() -> None:
+    payroll_period = PayrollPeriod(
+        employer_id=7,
+        period_year=2026,
+        period_month=5,
+        payment_date=date(2026, 5, 31),
+    )
+    cap = ContributionCap("pension_health", date(2026, 1, 1), None, Decimal("90.5000"))
+    money = Money(amount=Decimal("123.45"))
+    dto = MoneyDTO(amount=Decimal("99.99"))
+
+    assert payroll_period.worked_days == 30
+    assert cap.value_uf == Decimal("90.5000")
+    assert HealthInstitutionKind.FONASA == "fonasa"
+    assert money.currency == "CLP"
+    assert dto.currency == DEFAULT_CURRENCY
+
+
+def test_contribution_calculator_quantizes_and_honors_lower_taxable_amount() -> None:
+    calculator = ContributionCalculator()
+    cap = ContributionCap("pension_health", date(2026, 1, 1), None, Decimal("90.0600"))
+
+    assert quantize_clp(Decimal("10.6")) == Decimal("11")
+    assert calculator.pension_base(Decimal("1000"), cap, Decimal("10000")) == Decimal("1000")
+
+
+def test_use_case_placeholders_are_instantiable() -> None:
+    assert isinstance(ImportPayroll(), ImportPayroll)
+    assert isinstance(ComputeContributions(), ComputeContributions)
+    assert isinstance(RefreshRates(), RefreshRates)
+
+
+def test_dashboard_placeholder_prints_message(capsys: pytest.CaptureFixture[str]) -> None:
+    dashboard_main()
+
+    assert capsys.readouterr().out.strip() == "Dashboard placeholder"
+
+
+def test_xlsx_importer_returns_copy() -> None:
+    source = pd.DataFrame([{"salary_base": 1000}])
+
+    result = to_long_format(source)
+
+    assert result.equals(source)
+    assert result is not source
+
+
+@pytest.mark.asyncio
+async def test_chained_provider_returns_first_available_rate() -> None:
+    class Provider:
+        def __init__(self, value: Decimal | None) -> None:
+            self.value = value
+
+        async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
+            assert currency_code == "USD"
+            assert on == date(2026, 5, 1)
+            return self.value
+
+    provider = ChainedFxProvider([Provider(None), Provider(Decimal("950.12")), Provider(Decimal("999.99"))])
+
+    result = await provider.fetch_rate("USD", date(2026, 5, 1))
+
+    assert result == Decimal("950.12")
+
+
+@pytest.mark.asyncio
+async def test_chained_provider_returns_none_when_all_providers_miss() -> None:
+    class Provider:
+        async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
+            assert currency_code == "EUR"
+            assert on == date(2026, 5, 2)
+            return None
+
+    provider = ChainedFxProvider([Provider(), Provider()])
+
+    result = await provider.fetch_rate("EUR", date(2026, 5, 2))
+
+    assert result is None
+
+
+def test_logger_is_available() -> None:
+    assert logger is not None
+
+
+def test_cli_health_command() -> None:
+    result = CliRunner().invoke(cli_app, ["health"])
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "ok"
+
+
+def test_importing_db_modules_exposes_expected_types() -> None:
+    base_module = importlib.import_module("payroll.infrastructure.db.base")
+    session_module = importlib.import_module("payroll.infrastructure.db.session")
+
+    assert base_module.Base.__name__ == "Base"
+    assert session_module.engine is not None
+    assert session_module.SessionLocal is not None
+
+
+def test_package_modules_import() -> None:
+    modules = [
+        "payroll",
+        "payroll.application",
+        "payroll.application.ports",
+        "payroll.application.ports.rate_provider",
+        "payroll.application.ports.repositories",
+        "payroll.application.use_cases",
+        "payroll.domain",
+        "payroll.infrastructure",
+        "payroll.infrastructure.db",
+        "payroll.infrastructure.importers",
+        "payroll.infrastructure.logging",
+        "payroll.infrastructure.rate_providers",
+        "payroll.interfaces",
+        "payroll.interfaces.api",
+        "payroll.interfaces.api.routes",
+        "payroll.interfaces.cli",
+        "payroll.interfaces.dashboard",
+        "payroll.shared",
+    ]
+
+    for module_name in modules:
+        assert importlib.import_module(module_name) is not None
+
+
+def test_cli_module_runs_as_main(monkeypatch: pytest.MonkeyPatch) -> None:
+    called: list[bool] = []
+
+    def fake_call(self: typer.Typer, *args: object, **kwargs: object) -> None:
+        called.append(True)
+
+    monkeypatch.setattr(typer.Typer, "__call__", fake_call)
+    sys.modules.pop("payroll.interfaces.cli.main", None)
+
+    runpy.run_module("payroll.interfaces.cli.main", run_name="__main__")
+
+    assert called == [True]

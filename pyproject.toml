@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pf-payroll"
+version = "0.1.0"
+description = "Chilean payroll modular monolith"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "alembic>=1.14",
+  "asyncpg>=0.30",
+  "fastapi>=0.116",
+  "openpyxl>=3.1",
+  "pandas>=2.2",
+  "pydantic>=2.11",
+  "pydantic-settings>=2.10",
+  "sqlalchemy>=2.0",
+  "structlog>=25.4",
+  "typer>=0.16",
+  "uvicorn[standard]>=0.35",
+  "weasyprint>=66.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.28",
+  "mypy>=1.18",
+  "pytest>=8.4",
+  "pytest-asyncio>=1.1",
+  "pytest-cov>=6.2",
+  "ruff>=0.12",
+  "testcontainers[postgres]>=4.12",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,1 @@
+"""Payroll application package."""

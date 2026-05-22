@@ -7,6 +7,8 @@ from payroll.application.dto import (
     CurrencyDTO,
     HealthInstitutionDTO,
     HealthPlanDTO,
+    ImportPayrollResultDTO,
+    ImportPayrollRowDTO,
     PayrollConceptDTO,
     PensionInstitutionDTO,
     PensionPlanDTO,
@@ -32,4 +34,6 @@ class ReferenceDataRepository(Protocol):
 
 
 class PayrollRepository(Protocol):
-    """Placeholder port for payroll persistence."""
+    """Persistence port for payroll operations."""
+
+    async def import_rows(self, rows: list[ImportPayrollRowDTO]) -> ImportPayrollResultDTO: ...

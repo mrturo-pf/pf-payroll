@@ -51,6 +51,7 @@ The API currently exposes these HTTP endpoints:
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/health` | Basic healthcheck. Returns `{"status": "ok"}`. |
+| `POST` | `/payroll/import` | Imports a CSV or XLSX payroll file and persists employers, periods, and items into PostgreSQL. |
 | `GET` | `/reference-data/currencies` | Lists seeded currencies and index units (`CLP`, `USD`, `EUR`, `UF`, `UTM`). |
 | `GET` | `/reference-data/pension-institutions` | Lists seeded AFP institutions. |
 | `GET` | `/reference-data/health-institutions` | Lists seeded health institutions (`Fonasa` and Isapres). |
@@ -79,6 +80,45 @@ curl http://127.0.0.1:8000/reference-data/health-plans
 curl http://127.0.0.1:8000/reference-data/contribution-caps
 curl http://127.0.0.1:8000/reference-data/payroll-concepts
 ```
+
+Payroll import example:
+
+```bash
+curl -X POST http://127.0.0.1:8000/payroll/import \
+  -F "file=@tests/fixtures/sample_payroll.csv"
+```
+
+Example minimal CSV:
+
+```csv
+period,employer,payment_date,salary_base
+Jan/2026,ACME,2026-01-31,1000000
+```
+
+Example full CSV:
+
+```csv
+period,employer,payment_date,salary_base,monthly_legal_gratuity,teleworking_refund,pension_base,pension_additional,health_base,health_additional_uf,net_pay
+Jan/2026,ACME,2026-01-31,1000000,250000,50000,100000,25000,70000,2.5,1105000
+Feb/2026,ACME,2026-02-28,1000000,250000,50000,100000,25000,70000,2.5,1105000
+```
+
+Supported payroll amount columns:
+
+- `salary_base`
+- `monthly_legal_gratuity`
+- `teleworking_refund`
+- `pension_base`
+- `pension_additional`
+- `health_base`
+- `health_additional_uf`
+
+Notes:
+
+- `period` must use `Mon/YYYY`, for example `Jan/2026`
+- `payment_date` is required
+- `employer` is required
+- `net_pay` is optional; if present, the imported period is marked as `actual`, otherwise it is marked as `projected`
 
 Open the interactive docs:
 

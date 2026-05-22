@@ -8,6 +8,7 @@ from typing import Literal
 from payroll.domain.contributions import HealthInstitutionKind
 
 PayrollConceptKind = Literal["income", "discount"]
+PayrollStatusKind = Literal["projected", "actual", "reviewed"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,3 +78,32 @@ class PayrollConceptDTO:
     name: str
     kind: PayrollConceptKind
     is_taxable: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ImportPayrollRowDTO:
+    employer: str
+    period_year: int
+    period_month: int
+    payment_date: date
+    status: PayrollStatusKind
+    concept_code: str
+    amount_clp: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class ImportedPayrollPeriodDTO:
+    id: int
+    employer: str
+    period_year: int
+    period_month: int
+    payment_date: date
+    status: PayrollStatusKind
+    item_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class ImportPayrollResultDTO:
+    imported_periods: int
+    imported_items: int
+    periods: list[ImportedPayrollPeriodDTO]

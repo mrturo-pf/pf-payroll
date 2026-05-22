@@ -14,13 +14,14 @@ from typer.testing import CliRunner
 from payroll.application.dto import MoneyDTO
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.import_payroll import ImportPayroll
+from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.application.use_cases.refresh_rates import RefreshRates
 from payroll.config import Settings
 from payroll.domain.contribution_calculator import ContributionCalculator, quantize_clp
 from payroll.domain.contributions import ContributionCap, HealthInstitutionKind
 from payroll.domain.entities import PayrollPeriod
 from payroll.domain.value_objects import Money
-from payroll.infrastructure.importers.xlsx_importer import to_long_format
+from payroll.infrastructure.importers.xlsx_importer import read_payroll_dataframe, to_long_format
 from payroll.infrastructure.logging.logger import logger
 from payroll.infrastructure.rate_providers.chained_provider import ChainedFxProvider
 from payroll.interfaces.cli.main import app as cli_app
@@ -68,7 +69,12 @@ def test_contribution_calculator_quantizes_and_honors_lower_taxable_amount() -> 
 
 
 def test_use_case_placeholders_are_instantiable() -> None:
-    assert isinstance(ImportPayroll(), ImportPayroll)
+    class StubRepository:
+        async def import_rows(self, rows: list[object]) -> object:
+            return rows
+
+    assert isinstance(ImportPayroll(StubRepository()), ImportPayroll)
+    assert isinstance(ReferenceDataQueries(object()), ReferenceDataQueries)
     assert isinstance(ComputeContributions(), ComputeContributions)
     assert isinstance(RefreshRates(), RefreshRates)
 
@@ -79,13 +85,19 @@ def test_dashboard_placeholder_prints_message(capsys: pytest.CaptureFixture[str]
     assert capsys.readouterr().out.strip() == "Dashboard placeholder"
 
 
-def test_xlsx_importer_returns_copy() -> None:
-    source = pd.DataFrame([{"salary_base": 1000}])
+def test_xlsx_importer_transforms_and_reads_files() -> None:
+    source = pd.DataFrame(
+        [{"period": "Jan/2026", "employer": "ACME", "payment_date": "2026-01-31", "salary_base": 1000}]
+    )
 
     result = to_long_format(source)
+    dataframe = read_payroll_dataframe(
+        "sample.csv",
+        __import__("io").BytesIO(b"period,employer,payment_date,salary_base\nJan/2026,ACME,2026-01-31,1000\n"),
+    )
 
-    assert result.equals(source)
-    assert result is not source
+    assert result.to_dict(orient="records")[0]["concept_code"] == "SALARY_BASE"
+    assert dataframe.iloc[0]["employer"] == "ACME"
 
 
 @pytest.mark.asyncio

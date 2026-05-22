@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from payroll.application.ports.repositories import MarketDataRepository, PayrollRepository, ReferenceDataRepository
 from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.compute_contributions import ComputeContributions
+from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
@@ -84,3 +85,10 @@ def get_compute_income_tax_use_case(
     market_data_repository: MarketDataRepository = Depends(get_market_data_repository),
 ) -> ComputeIncomeTax:
     return ComputeIncomeTax(repository, market_data_repository)
+
+
+def get_deflate_amounts_use_case(
+    repository: PayrollRepository = Depends(get_payroll_repository),
+    market_data_repository: MarketDataRepository = Depends(get_market_data_repository),
+) -> DeflateAmounts:
+    return DeflateAmounts(repository, market_data_repository)

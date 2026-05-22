@@ -69,6 +69,16 @@ class SqlAlchemyMarketDataRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_economic_index_value(self, code: str, period_year: int, period_month: int) -> Decimal | None:
+        result = await self._session.execute(
+            select(EconomicIndexModel.index_value).where(
+                EconomicIndexModel.code == code,
+                EconomicIndexModel.period_year == period_year,
+                EconomicIndexModel.period_month == period_month,
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def refresh_rates(self, command: RefreshRatesCommandDTO) -> RefreshRatesResultDTO:
         if command.exchange_rates:
             currency_result = await self._session.execute(

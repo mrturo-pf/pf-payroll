@@ -59,6 +59,7 @@ The API currently exposes these HTTP endpoints:
 | `GET` | `/payroll/{period_id}` | Returns a payroll period with employer data, itemized concepts, selected plans, and summary totals. |
 | `POST` | `/payroll/{period_id}/compute-contributions` | Computes pension and health contributions for an imported payroll period and persists the resulting discount items. If `uf_value_clp` is omitted, the API uses the stored UF rate for the payment date. |
 | `POST` | `/payroll/{period_id}/compute-tax` | Computes Chilean monthly income tax withholding for an imported payroll period and persists it as `INCOME_TAX`. If `utm_value_clp` is omitted, the API uses the stored UTM rate for the payment date. |
+| `POST` | `/payroll/{period_id}/deflate` | Converts payroll summary totals from nominal CLP into real CLP using stored economic indices such as `IPC_CL`, taking the payroll period month as the source period. |
 | `GET` | `/reference-data/currencies` | Lists seeded currencies and index units (`CLP`, `USD`, `EUR`, `UF`, `UTM`). |
 | `GET` | `/reference-data/pension-institutions` | Lists seeded AFP institutions. |
 | `GET` | `/reference-data/health-institutions` | Lists seeded health institutions (`Fonasa` and Isapres). |
@@ -173,6 +174,25 @@ The tax endpoint:
 - uses the stored UTM rate for the payment date, or the provided `utm_value_clp` override
 - resolves the matching UTM tax bracket from the seeded monthly table
 - persists the withholding as the `INCOME_TAX` payroll concept
+
+Payroll deflation example:
+
+```bash
+curl -X POST http://127.0.0.1:8000/payroll/1/deflate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "target_year": 2026,
+    "target_month": 3,
+    "index_code": "IPC_CL"
+  }'
+```
+
+The deflation endpoint:
+
+- reads the nominal totals from `mv_payroll_summary`
+- resolves the source IPC from the payroll period month
+- resolves the target IPC from the requested year and month
+- returns real CLP amounts using `nominal * IPC_dest / IPC_orig`
 
 Example minimal CSV:
 

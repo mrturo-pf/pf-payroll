@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from payroll.application.use_cases.market_data import MarketDataQueries
+from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.refresh_rates import RefreshRates
 from payroll.infrastructure.db.models import CurrencyModel, EconomicIndexModel, ExchangeRateModel
 from payroll.infrastructure.db.repositories.market_data_repository import SqlAlchemyMarketDataRepository
@@ -72,6 +73,7 @@ async def test_sqlalchemy_market_data_repository_lists_rates_and_indices() -> No
                 ]
             ),
             FakeResult(scalar_one=Decimal("38000")),
+            FakeResult(scalar_one=Decimal("38000")),
         ]
     )
     repository = SqlAlchemyMarketDataRepository(session)  # type: ignore[arg-type]
@@ -79,11 +81,13 @@ async def test_sqlalchemy_market_data_repository_lists_rates_and_indices() -> No
     exchange_rates = await repository.list_exchange_rates("UF")
     economic_indices = await repository.list_economic_indices("IPC_CL")
     uf_value = await repository.get_exchange_rate_value("UF", date(2026, 1, 31))
+    ipc_value = await repository.get_economic_index_value("IPC_CL", 2026, 1)
 
     assert [item.currency_code for item in exchange_rates] == ["UF"]
     assert [item.code for item in economic_indices] == ["IPC_CL"]
     assert uf_value == Decimal("38000")
-    assert len(session.statements) == 3
+    assert ipc_value == Decimal("38000")
+    assert len(session.statements) == 4
 
 
 @pytest.mark.asyncio
@@ -160,10 +164,12 @@ async def test_api_dependencies_build_market_data_repository_queries_use_case_an
     repository = dependencies.get_market_data_repository(fake_session)  # type: ignore[arg-type]
     queries = dependencies.get_market_data_queries(repository)
     use_case = dependencies.get_refresh_rates_use_case(repository)
+    deflate_use_case = dependencies.get_deflate_amounts_use_case(object(), repository)  # type: ignore[arg-type]
 
     assert isinstance(repository, SqlAlchemyMarketDataRepository)
     assert isinstance(queries, MarketDataQueries)
     assert isinstance(use_case, RefreshRates)
+    assert isinstance(deflate_use_case, DeflateAmounts)
 
 
 def test_market_data_models_are_declared() -> None:

@@ -9,6 +9,8 @@ from starlette.datastructures import UploadFile
 
 from payroll.application.dto import (
     ComputeContributionsResultDTO,
+    DeflateAmountsResultDTO,
+    DeflatedAmountDTO,
     ComputeIncomeTaxResultDTO,
     ImportPayrollResultDTO,
     ImportedPayrollPeriodDTO,
@@ -17,11 +19,12 @@ from payroll.domain.contributions import HealthContribution, HealthInstitutionKi
 from payroll.domain.taxes import IncomeTaxComputation
 from payroll.interfaces.api.dependencies import (
     get_compute_contributions_use_case,
+    get_deflate_amounts_use_case,
     get_compute_income_tax_use_case,
     get_import_payroll_use_case,
 )
 from payroll.interfaces.api.main import app
-from payroll.interfaces.api.routes.payroll import compute_contributions, compute_income_tax, import_payroll
+from payroll.interfaces.api.routes.payroll import compute_contributions, compute_income_tax, deflate_amounts, import_payroll
 
 
 class FakeImportPayroll:
@@ -94,6 +97,25 @@ class FakeComputeIncomeTax:
                 tax_utm=Decimal("0"),
                 tax_clp=Decimal("0"),
             ),
+        )
+
+
+class FakeDeflateAmounts:
+    async def execute(self, command: object) -> DeflateAmountsResultDTO:
+        assert getattr(command, "period_id") == 5
+        return DeflateAmountsResultDTO(
+            period_id=5,
+            index_code="IPC_CL",
+            source_year=2026,
+            source_month=1,
+            target_year=2026,
+            target_month=3,
+            source_index_value=Decimal("100.000000"),
+            target_index_value=Decimal("112.340000"),
+            taxable_income=DeflatedAmountDTO(nominal_clp=Decimal("1000000"), real_clp=Decimal("1123400")),
+            gross_income=DeflatedAmountDTO(nominal_clp=Decimal("1000000"), real_clp=Decimal("1123400")),
+            total_discounts=DeflatedAmountDTO(nominal_clp=Decimal("170000"), real_clp=Decimal("190978")),
+            net_pay=DeflatedAmountDTO(nominal_clp=Decimal("830000"), real_clp=Decimal("932422")),
         )
 
 
@@ -256,6 +278,49 @@ def test_compute_income_tax_endpoint_surfaces_domain_errors() -> None:
     assert response.json() == {"detail": "tax data not found"}
 
 
+def test_deflate_amounts_endpoint() -> None:
+    app.dependency_overrides[get_deflate_amounts_use_case] = lambda: FakeDeflateAmounts()
+    client = TestClient(app)
+
+    try:
+        response = client.post("/payroll/5/deflate", json={"target_year": 2026, "target_month": 3})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "period_id": 5,
+        "index_code": "IPC_CL",
+        "source_year": 2026,
+        "source_month": 1,
+        "target_year": 2026,
+        "target_month": 3,
+        "source_index_value": "100.000000",
+        "target_index_value": "112.340000",
+        "taxable_income": {"nominal_clp": "1000000", "real_clp": "1123400"},
+        "gross_income": {"nominal_clp": "1000000", "real_clp": "1123400"},
+        "total_discounts": {"nominal_clp": "170000", "real_clp": "190978"},
+        "net_pay": {"nominal_clp": "830000", "real_clp": "932422"},
+    }
+
+
+def test_deflate_amounts_endpoint_surfaces_domain_errors() -> None:
+    class ErrorDeflateAmounts:
+        async def execute(self, command: object) -> DeflateAmountsResultDTO:
+            raise ValueError("missing IPC data")
+
+    app.dependency_overrides[get_deflate_amounts_use_case] = lambda: ErrorDeflateAmounts()
+    client = TestClient(app)
+
+    try:
+        response = client.post("/payroll/5/deflate", json={"target_year": 2026, "target_month": 3})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "missing IPC data"}
+
+
 @pytest.mark.asyncio
 async def test_compute_income_tax_endpoint_maps_value_errors_in_handler() -> None:
     class ErrorComputeIncomeTax:
@@ -267,6 +332,20 @@ async def test_compute_income_tax_endpoint_maps_value_errors_in_handler() -> Non
             payload=type("Payload", (), {"utm_value_clp": Decimal("1")})(),
             period_id=1,
             use_case=ErrorComputeIncomeTax(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_deflate_amounts_endpoint_maps_value_errors_in_handler() -> None:
+    class ErrorDeflateAmounts:
+        async def execute(self, command: object) -> DeflateAmountsResultDTO:
+            raise ValueError("bad deflation payload")
+
+    with pytest.raises(HTTPException, match="bad deflation payload"):
+        await deflate_amounts(
+            payload=type("Payload", (), {"target_year": 2026, "target_month": 3, "index_code": "IPC_CL"})(),
+            period_id=1,
+            use_case=ErrorDeflateAmounts(),
         )
 
 

@@ -9,15 +9,19 @@ from pydantic import BaseModel
 
 from payroll.application.dto import (
     ComputeContributionsCommandDTO,
+    DeflateAmountsCommandDTO,
+    DeflatedAmountDTO,
     ComputeIncomeTaxCommandDTO,
     PayrollSummaryDTO,
 )
 from payroll.application.use_cases.compute_contributions import ComputeContributions
+from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.interfaces.api.dependencies import (
     get_compute_contributions_use_case,
+    get_deflate_amounts_use_case,
     get_compute_income_tax_use_case,
     get_import_payroll_use_case,
     get_payroll_queries,
@@ -98,6 +102,32 @@ class ComputeIncomeTaxResponse(BaseModel):
     tax_clp: str
 
 
+class DeflateAmountsRequest(BaseModel):
+    target_year: int
+    target_month: int
+    index_code: str = "IPC_CL"
+
+
+class DeflatedAmountRead(BaseModel):
+    nominal_clp: str
+    real_clp: str
+
+
+class DeflateAmountsResponse(BaseModel):
+    period_id: int
+    index_code: str
+    source_year: int
+    source_month: int
+    target_year: int
+    target_month: int
+    source_index_value: str
+    target_index_value: str
+    taxable_income: DeflatedAmountRead
+    gross_income: DeflatedAmountRead
+    total_discounts: DeflatedAmountRead
+    net_pay: DeflatedAmountRead
+
+
 class PayrollItemDetailRead(BaseModel):
     concept_code: str
     concept_name: str
@@ -150,6 +180,10 @@ def to_payroll_summary_read(summary: PayrollSummaryDTO) -> PayrollSummaryRead:
         total_discounts_clp=str(summary.total_discounts_clp),
         net_pay_clp=str(summary.net_pay_clp),
     )
+
+
+def to_deflated_amount_read(amount: DeflatedAmountDTO) -> DeflatedAmountRead:
+    return DeflatedAmountRead(nominal_clp=str(amount.nominal_clp), real_clp=str(amount.real_clp))
 
 
 @router.post("/import", response_model=ImportPayrollResponse)
@@ -248,6 +282,40 @@ async def compute_income_tax(
         rebate_utm=str(result.tax.rebate_utm),
         tax_utm=str(result.tax.tax_utm),
         tax_clp=str(result.tax.tax_clp),
+    )
+
+
+@router.post("/{period_id}/deflate", response_model=DeflateAmountsResponse)
+async def deflate_amounts(
+    payload: DeflateAmountsRequest,
+    period_id: int = Path(..., gt=0),
+    use_case: DeflateAmounts = Depends(get_deflate_amounts_use_case),
+) -> DeflateAmountsResponse:
+    try:
+        result = await use_case.execute(
+            DeflateAmountsCommandDTO(
+                period_id=period_id,
+                target_year=payload.target_year,
+                target_month=payload.target_month,
+                index_code=payload.index_code,
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return DeflateAmountsResponse(
+        period_id=result.period_id,
+        index_code=result.index_code,
+        source_year=result.source_year,
+        source_month=result.source_month,
+        target_year=result.target_year,
+        target_month=result.target_month,
+        source_index_value=str(result.source_index_value),
+        target_index_value=str(result.target_index_value),
+        taxable_income=to_deflated_amount_read(result.taxable_income),
+        gross_income=to_deflated_amount_read(result.gross_income),
+        total_discounts=to_deflated_amount_read(result.total_discounts),
+        net_pay=to_deflated_amount_read(result.net_pay),
     )
 
 

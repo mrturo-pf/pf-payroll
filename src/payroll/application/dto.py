@@ -268,3 +268,33 @@ class IncomeTaxBracketDTO:
     upper_bound_utm: Decimal | None
     marginal_rate: Decimal
     rebate_utm: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class DeflateAmountsCommandDTO:
+    period_id: int
+    target_year: int
+    target_month: int
+    index_code: str = "IPC_CL"
+
+
+@dataclass(frozen=True, slots=True)
+class DeflatedAmountDTO:
+    nominal_clp: Decimal
+    real_clp: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class DeflateAmountsResultDTO:
+    period_id: int
+    index_code: str
+    source_year: int
+    source_month: int
+    target_year: int
+    target_month: int
+    source_index_value: Decimal
+    target_index_value: Decimal
+    taxable_income: DeflatedAmountDTO
+    gross_income: DeflatedAmountDTO
+    total_discounts: DeflatedAmountDTO
+    net_pay: DeflatedAmountDTO

@@ -14,6 +14,7 @@ from typer.testing import CliRunner
 from payroll.application.dto import MoneyDTO
 from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.compute_contributions import ComputeContributions
+from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
@@ -29,6 +30,7 @@ from payroll.domain.contributions import (
     PensionInstitution,
     PensionPlan,
 )
+from payroll.domain.deflation import DeflationCalculator
 from payroll.domain.tax_calculator import ChileanTaxCalculator
 from payroll.domain.taxes import IncomeTaxBracket
 from payroll.domain.entities import PayrollPeriod
@@ -105,6 +107,7 @@ def test_contribution_calculator_quantizes_and_honors_lower_taxable_amount() -> 
     assert quantize_clp(Decimal("10.6")) == Decimal("11")
     assert calculator.pension_base(Decimal("1000"), cap, Decimal("10000")) == Decimal("1000")
     assert ChileanTaxCalculator() is not None
+    assert DeflationCalculator().deflate_amount(Decimal("100"), Decimal("100"), Decimal("110")) == Decimal("110")
 
 
 def test_use_case_placeholders_are_instantiable() -> None:
@@ -126,6 +129,9 @@ def test_use_case_placeholders_are_instantiable() -> None:
 
         async def get_exchange_rate_value(self, currency_code: str, rate_date: date) -> Decimal | None:
             return Decimal("1")
+
+        async def get_economic_index_value(self, code: str, period_year: int, period_month: int) -> Decimal | None:
+            return Decimal("100")
 
         async def refresh_rates(self, command: object) -> object:
             return command
@@ -150,6 +156,7 @@ def test_use_case_placeholders_are_instantiable() -> None:
     assert isinstance(ReferenceDataQueries(object()), ReferenceDataQueries)
     assert isinstance(MarketDataQueries(StubRepository()), MarketDataQueries)
     assert isinstance(ComputeContributions(StubRepository(), StubRepository()), ComputeContributions)
+    assert isinstance(DeflateAmounts(StubRepository(), StubRepository()), DeflateAmounts)
     assert isinstance(ComputeIncomeTax(StubRepository(), StubRepository()), ComputeIncomeTax)
     assert isinstance(RefreshRates(StubRepository()), RefreshRates)
 

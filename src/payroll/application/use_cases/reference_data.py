@@ -7,6 +7,7 @@ from payroll.application.dto import (
     CurrencyDTO,
     HealthInstitutionDTO,
     HealthPlanDTO,
+    IncomeTaxBracketDTO,
     PayrollConceptDTO,
     PensionInstitutionDTO,
     PensionPlanDTO,
@@ -38,3 +39,6 @@ class ReferenceDataQueries:
 
     async def list_payroll_concepts(self) -> list[PayrollConceptDTO]:
         return await self.repository.list_payroll_concepts()
+
+    async def list_income_tax_brackets(self) -> list[IncomeTaxBracketDTO]:
+        return await self.repository.list_income_tax_brackets()

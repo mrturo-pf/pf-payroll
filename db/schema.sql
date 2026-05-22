@@ -33,6 +33,18 @@ CREATE TABLE IF NOT EXISTS economic_indices (
     CONSTRAINT uq_economic_indices UNIQUE (code, period_year, period_month)
 );
 
+CREATE TABLE IF NOT EXISTS income_tax_brackets (
+    id                BIGSERIAL PRIMARY KEY,
+    valid_from        DATE          NOT NULL,
+    valid_to          DATE,
+    lower_bound_utm   NUMERIC(10,4) NOT NULL CHECK (lower_bound_utm >= 0),
+    upper_bound_utm   NUMERIC(10,4),
+    marginal_rate     NUMERIC(8,6)  NOT NULL CHECK (marginal_rate >= 0 AND marginal_rate <= 1),
+    rebate_utm        NUMERIC(10,4) NOT NULL DEFAULT 0 CHECK (rebate_utm >= 0),
+    CONSTRAINT chk_income_tax_bracket_bounds CHECK (upper_bound_utm IS NULL OR upper_bound_utm > lower_bound_utm),
+    UNIQUE (valid_from, lower_bound_utm)
+);
+
 -- ============================================================
 -- 2. Instituciones y Planes Previsionales/Salud
 -- ============================================================

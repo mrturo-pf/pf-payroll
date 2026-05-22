@@ -60,6 +60,18 @@ class EconomicIndexModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class IncomeTaxBracketModel(Base):
+    __tablename__ = "income_tax_brackets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    valid_from: Mapped[date] = mapped_column(Date)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    lower_bound_utm: Mapped[Decimal] = mapped_column(Numeric(10, 4))
+    upper_bound_utm: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    marginal_rate: Mapped[Decimal] = mapped_column(Numeric(8, 6))
+    rebate_utm: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0"))
+
+
 class PensionInstitutionModel(Base):
     __tablename__ = "pension_institutions"
 

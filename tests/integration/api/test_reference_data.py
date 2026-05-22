@@ -8,6 +8,7 @@ from payroll.application.dto import (
     CurrencyDTO,
     HealthInstitutionDTO,
     HealthPlanDTO,
+    IncomeTaxBracketDTO,
     PayrollConceptDTO,
     PensionInstitutionDTO,
     PensionPlanDTO,
@@ -88,6 +89,18 @@ class FakeReferenceDataQueries:
             )
         ]
 
+    async def list_income_tax_brackets(self) -> list[IncomeTaxBracketDTO]:
+        return [
+            IncomeTaxBracketDTO(
+                valid_from=date(2026, 1, 1),
+                valid_to=None,
+                lower_bound_utm=Decimal("0"),
+                upper_bound_utm=Decimal("13.5"),
+                marginal_rate=Decimal("0"),
+                rebate_utm=Decimal("0"),
+            )
+        ]
+
 
 def test_reference_data_endpoints() -> None:
     app.dependency_overrides[get_reference_data_queries] = lambda: FakeReferenceDataQueries()
@@ -150,6 +163,16 @@ def test_reference_data_endpoints() -> None:
                 "name": "Base Salary",
                 "kind": "income",
                 "is_taxable": True,
+            }
+        ]
+        assert client.get("/reference-data/income-tax-brackets").json() == [
+            {
+                "valid_from": "2026-01-01",
+                "valid_to": None,
+                "lower_bound_utm": "0",
+                "upper_bound_utm": "13.5",
+                "marginal_rate": "0",
+                "rebate_utm": "0",
             }
         ]
     finally:

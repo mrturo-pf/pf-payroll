@@ -14,7 +14,9 @@ from typer.testing import CliRunner
 from payroll.application.dto import MoneyDTO
 from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.compute_contributions import ComputeContributions
+from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
+from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.application.use_cases.refresh_rates import RefreshRates
 from payroll.config import Settings
@@ -27,6 +29,8 @@ from payroll.domain.contributions import (
     PensionInstitution,
     PensionPlan,
 )
+from payroll.domain.tax_calculator import ChileanTaxCalculator
+from payroll.domain.taxes import IncomeTaxBracket
 from payroll.domain.entities import PayrollPeriod
 from payroll.domain.value_objects import Money
 from payroll.infrastructure.importers.xlsx_importer import read_payroll_dataframe, to_long_format
@@ -73,6 +77,14 @@ def test_domain_dataclasses_and_constants() -> None:
         plan_name="Base",
         contracted_uf=Decimal("0"),
     )
+    tax_bracket = IncomeTaxBracket(
+        valid_from=date(2026, 1, 1),
+        valid_to=None,
+        lower_bound_utm=Decimal("0"),
+        upper_bound_utm=Decimal("13.5"),
+        marginal_rate=Decimal("0"),
+        rebate_utm=Decimal("0"),
+    )
     money = Money(amount=Decimal("123.45"))
     dto = MoneyDTO(amount=Decimal("99.99"))
 
@@ -81,6 +93,7 @@ def test_domain_dataclasses_and_constants() -> None:
     assert HealthInstitutionKind.FONASA == "fonasa"
     assert pension_plan.additional_rate == Decimal("0.0127")
     assert health_plan.institution.kind is HealthInstitutionKind.FONASA
+    assert tax_bracket.upper_bound_utm == Decimal("13.5")
     assert money.currency == "CLP"
     assert dto.currency == DEFAULT_CURRENCY
 
@@ -91,6 +104,7 @@ def test_contribution_calculator_quantizes_and_honors_lower_taxable_amount() -> 
 
     assert quantize_clp(Decimal("10.6")) == Decimal("11")
     assert calculator.pension_base(Decimal("1000"), cap, Decimal("10000")) == Decimal("1000")
+    assert ChileanTaxCalculator() is not None
 
 
 def test_use_case_placeholders_are_instantiable() -> None:
@@ -116,10 +130,27 @@ def test_use_case_placeholders_are_instantiable() -> None:
         async def refresh_rates(self, command: object) -> object:
             return command
 
+        async def get_period_detail(self, period_id: int) -> object:
+            return period_id
+
+        async def list_period_summaries(self) -> list[object]:
+            return []
+
+        async def get_income_tax_context(self, command: object) -> object:
+            return command
+
+        async def get_income_tax_bracket(self, payment_date: date, taxable_base_utm: Decimal) -> object:
+            return object()
+
+        async def save_computed_income_tax(self, result: object) -> object:
+            return result
+
     assert isinstance(ImportPayroll(StubRepository()), ImportPayroll)
+    assert isinstance(PayrollQueries(StubRepository()), PayrollQueries)
     assert isinstance(ReferenceDataQueries(object()), ReferenceDataQueries)
     assert isinstance(MarketDataQueries(StubRepository()), MarketDataQueries)
     assert isinstance(ComputeContributions(StubRepository(), StubRepository()), ComputeContributions)
+    assert isinstance(ComputeIncomeTax(StubRepository(), StubRepository()), ComputeIncomeTax)
     assert isinstance(RefreshRates(StubRepository()), RefreshRates)
 
 

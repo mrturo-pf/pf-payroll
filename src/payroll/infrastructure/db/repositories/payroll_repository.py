@@ -1,6 +1,7 @@
 """SQLAlchemy repository for payroll persistence."""
 
 from collections import defaultdict
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import delete, func, or_, select, text
@@ -9,10 +10,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from payroll.application.dto import (
     ComputeContributionsCommandDTO,
     ComputeContributionsResultDTO,
+    ComputeIncomeTaxCommandDTO,
+    ComputeIncomeTaxResultDTO,
     ContributionComputationContextDTO,
+    IncomeTaxContextDTO,
     ImportPayrollResultDTO,
     ImportPayrollRowDTO,
     ImportedPayrollPeriodDTO,
+    PayrollItemDetailDTO,
+    PayrollPeriodDetailDTO,
+    PayrollSummaryDTO,
 )
 from payroll.domain.contributions import (
     ContributionCap,
@@ -21,14 +28,17 @@ from payroll.domain.contributions import (
     PensionInstitution,
     PensionPlan,
 )
+from payroll.domain.taxes import IncomeTaxBracket
 from payroll.infrastructure.db.models import (
     ContributionCapModel,
     EmployerModel,
     HealthInstitutionModel,
     HealthPlanModel,
+    IncomeTaxBracketModel,
     PayrollConceptModel,
     PensionInstitutionModel,
     PensionPlanModel,
+    PayrollSummaryModel,
 )
 from payroll.infrastructure.db.models.reference_data import ContributionCapType, PayrollConceptKind
 from payroll.infrastructure.db.models.payroll import PayrollItemModel, PayrollPeriodModel, PayrollStatus
@@ -274,6 +284,194 @@ class SqlAlchemyPayrollRepository:
                     amount_clp=result.health.additional_amount_clp,
                 ),
             ]
+        )
+
+        await self._session.commit()
+        await self._session.execute(text("REFRESH MATERIALIZED VIEW mv_payroll_summary"))
+        await self._session.commit()
+        return result
+
+    async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO | None:
+        period_result = await self._session.execute(
+            select(PayrollPeriodModel, EmployerModel)
+            .join(EmployerModel, PayrollPeriodModel.employer_id == EmployerModel.id)
+            .where(PayrollPeriodModel.id == period_id)
+        )
+        period_row = period_result.first()
+        if period_row is None:
+            return None
+        period, employer = period_row
+
+        items_result = await self._session.execute(
+            select(PayrollItemModel, PayrollConceptModel)
+            .join(PayrollConceptModel, PayrollItemModel.concept_id == PayrollConceptModel.id)
+            .where(PayrollItemModel.period_id == period.id)
+            .order_by(PayrollConceptModel.kind, PayrollConceptModel.code)
+        )
+        items = [
+            PayrollItemDetailDTO(
+                concept_code=concept.code,
+                concept_name=concept.name,
+                kind=concept.kind.value,
+                is_taxable=concept.is_taxable,
+                amount_clp=item.amount_clp,
+                notes=item.notes,
+            )
+            for item, concept in items_result.all()
+        ]
+
+        summary_result = await self._session.execute(
+            select(PayrollSummaryModel, EmployerModel)
+            .join(EmployerModel, PayrollSummaryModel.employer_id == EmployerModel.id)
+            .where(PayrollSummaryModel.period_id == period.id)
+        )
+        summary_row = summary_result.first()
+        summary = None
+        if summary_row is not None:
+            summary_model, summary_employer = summary_row
+            summary = PayrollSummaryDTO(
+                period_id=summary_model.period_id,
+                employer_id=summary_model.employer_id,
+                employer_name=summary_employer.name,
+                period_year=summary_model.period_year,
+                period_month=summary_model.period_month,
+                payment_date=summary_model.payment_date,
+                taxable_income_clp=summary_model.taxable_income_clp,
+                gross_income_clp=summary_model.gross_income_clp,
+                total_discounts_clp=summary_model.total_discounts_clp,
+                net_pay_clp=summary_model.net_pay_clp,
+            )
+
+        return PayrollPeriodDetailDTO(
+            id=period.id,
+            employer_id=employer.id,
+            employer_name=employer.name,
+            employer_tax_id=employer.tax_id,
+            employer_country_code=employer.country_code,
+            period_year=period.period_year,
+            period_month=period.period_month,
+            payment_date=period.payment_date,
+            worked_days=period.worked_days,
+            status=period.status.value,
+            pension_plan_id=period.pension_plan_id,
+            health_plan_id=period.health_plan_id,
+            items=items,
+            summary=summary,
+        )
+
+    async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
+        result = await self._session.execute(
+            select(PayrollSummaryModel, EmployerModel)
+            .join(EmployerModel, PayrollSummaryModel.employer_id == EmployerModel.id)
+            .order_by(PayrollSummaryModel.period_year.desc(), PayrollSummaryModel.period_month.desc(), EmployerModel.name)
+        )
+        return [
+            PayrollSummaryDTO(
+                period_id=summary.period_id,
+                employer_id=summary.employer_id,
+                employer_name=employer.name,
+                period_year=summary.period_year,
+                period_month=summary.period_month,
+                payment_date=summary.payment_date,
+                taxable_income_clp=summary.taxable_income_clp,
+                gross_income_clp=summary.gross_income_clp,
+                total_discounts_clp=summary.total_discounts_clp,
+                net_pay_clp=summary.net_pay_clp,
+            )
+            for summary, employer in result.all()
+        ]
+
+    async def get_income_tax_context(self, command: ComputeIncomeTaxCommandDTO) -> IncomeTaxContextDTO:
+        period_result = await self._session.execute(
+            select(PayrollPeriodModel).where(PayrollPeriodModel.id == command.period_id)
+        )
+        period = period_result.scalar_one_or_none()
+        if period is None:
+            raise ValueError(f"Payroll period {command.period_id} was not found.")
+
+        taxable_income_result = await self._session.execute(
+            select(func.coalesce(func.sum(PayrollItemModel.amount_clp), 0))
+            .join(PayrollConceptModel, PayrollItemModel.concept_id == PayrollConceptModel.id)
+            .where(PayrollItemModel.period_id == period.id)
+            .where(PayrollConceptModel.kind == PayrollConceptKind.INCOME)
+            .where(PayrollConceptModel.is_taxable.is_(True))
+        )
+        deductible_result = await self._session.execute(
+            select(func.coalesce(func.sum(PayrollItemModel.amount_clp), 0))
+            .join(PayrollConceptModel, PayrollItemModel.concept_id == PayrollConceptModel.id)
+            .where(PayrollItemModel.period_id == period.id)
+            .where(PayrollConceptModel.code.in_(["PENSION_BASE", "PENSION_ADDITIONAL", "HEALTH_BASE", "HEALTH_ADDITIONAL_UF"]))
+        )
+
+        return IncomeTaxContextDTO(
+            period_id=period.id,
+            payment_date=period.payment_date,
+            taxable_income_clp=Decimal(taxable_income_result.scalar_one()),
+            deductible_amount_clp=Decimal(deductible_result.scalar_one()),
+        )
+
+    async def get_income_tax_bracket(self, payment_date: date, taxable_base_utm: Decimal) -> IncomeTaxBracket | None:
+        result = await self._session.execute(
+            select(IncomeTaxBracketModel)
+            .where(IncomeTaxBracketModel.valid_from <= payment_date)
+            .where(
+                or_(
+                    IncomeTaxBracketModel.valid_to.is_(None),
+                    IncomeTaxBracketModel.valid_to >= payment_date,
+                )
+            )
+            .where(IncomeTaxBracketModel.lower_bound_utm <= taxable_base_utm)
+            .where(
+                or_(
+                    IncomeTaxBracketModel.upper_bound_utm.is_(None),
+                    IncomeTaxBracketModel.upper_bound_utm > taxable_base_utm,
+                )
+            )
+            .order_by(IncomeTaxBracketModel.valid_from.desc(), IncomeTaxBracketModel.lower_bound_utm.desc())
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
+
+        return IncomeTaxBracket(
+            valid_from=row.valid_from,
+            valid_to=row.valid_to,
+            lower_bound_utm=row.lower_bound_utm,
+            upper_bound_utm=row.upper_bound_utm,
+            marginal_rate=row.marginal_rate,
+            rebate_utm=row.rebate_utm,
+        )
+
+    async def save_computed_income_tax(
+        self,
+        result: ComputeIncomeTaxResultDTO,
+    ) -> ComputeIncomeTaxResultDTO:
+        period_result = await self._session.execute(
+            select(PayrollPeriodModel).where(PayrollPeriodModel.id == result.period_id)
+        )
+        period = period_result.scalar_one_or_none()
+        if period is None:
+            raise ValueError(f"Payroll period {result.period_id} was not found.")
+
+        concept_result = await self._session.execute(
+            select(PayrollConceptModel).where(PayrollConceptModel.code == "INCOME_TAX")
+        )
+        concept = concept_result.scalar_one_or_none()
+        if concept is None:
+            raise ValueError("Missing payroll concept for computed income tax: INCOME_TAX")
+
+        await self._session.execute(
+            delete(PayrollItemModel).where(
+                PayrollItemModel.period_id == result.period_id,
+                PayrollItemModel.concept_id == concept.id,
+            )
+        )
+        self._session.add(
+            PayrollItemModel(
+                period_id=result.period_id,
+                concept_id=concept.id,
+                amount_clp=result.tax.tax_clp,
+            )
         )
 
         await self._session.commit()

@@ -60,3 +60,17 @@ class PayrollItemModel(Base):
 
     period: Mapped[PayrollPeriodModel] = relationship(back_populates="items")
     concept: Mapped[PayrollConceptModel] = relationship()
+
+
+class PayrollSummaryModel(Base):
+    __tablename__ = "mv_payroll_summary"
+
+    period_id: Mapped[int] = mapped_column(primary_key=True)
+    employer_id: Mapped[int]
+    period_year: Mapped[int]
+    period_month: Mapped[int]
+    payment_date: Mapped[date] = mapped_column(Date)
+    taxable_income_clp: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    gross_income_clp: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    total_discounts_clp: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    net_pay_clp: Mapped[Decimal] = mapped_column(Numeric(18, 2))

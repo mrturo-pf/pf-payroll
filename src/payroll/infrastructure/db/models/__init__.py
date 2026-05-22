@@ -1,6 +1,6 @@
 """Database models."""
 
-from payroll.infrastructure.db.models.payroll import EmployerModel, PayrollItemModel, PayrollPeriodModel
+from payroll.infrastructure.db.models.payroll import EmployerModel, PayrollItemModel, PayrollPeriodModel, PayrollSummaryModel
 from payroll.infrastructure.db.models.reference_data import (
     ContributionCapModel,
     CurrencyModel,
@@ -8,6 +8,7 @@ from payroll.infrastructure.db.models.reference_data import (
     ExchangeRateModel,
     HealthInstitutionModel,
     HealthPlanModel,
+    IncomeTaxBracketModel,
     PayrollConceptModel,
     PensionInstitutionModel,
     PensionPlanModel,
@@ -21,9 +22,11 @@ __all__ = [
     "ExchangeRateModel",
     "HealthInstitutionModel",
     "HealthPlanModel",
+    "IncomeTaxBracketModel",
     "PayrollItemModel",
     "PayrollConceptModel",
     "PayrollPeriodModel",
+    "PayrollSummaryModel",
     "PensionInstitutionModel",
     "PensionPlanModel",
 ]

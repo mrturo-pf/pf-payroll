@@ -8,6 +8,7 @@ from payroll.application.dto import (
     CurrencyDTO,
     HealthInstitutionDTO,
     HealthPlanDTO,
+    IncomeTaxBracketDTO,
     PayrollConceptDTO,
     PensionInstitutionDTO,
     PensionPlanDTO,
@@ -17,6 +18,7 @@ from payroll.infrastructure.db.models.reference_data import (
     CurrencyModel,
     HealthInstitutionModel,
     HealthPlanModel,
+    IncomeTaxBracketModel,
     PayrollConceptModel,
     PensionInstitutionModel,
     PensionPlanModel,
@@ -128,6 +130,25 @@ class SqlAlchemyReferenceDataRepository:
                 name=row.name,
                 kind=row.kind.value,
                 is_taxable=row.is_taxable,
+            )
+            for row in result.scalars().all()
+        ]
+
+    async def list_income_tax_brackets(self) -> list[IncomeTaxBracketDTO]:
+        result = await self._session.execute(
+            select(IncomeTaxBracketModel).order_by(
+                IncomeTaxBracketModel.valid_from.desc(),
+                IncomeTaxBracketModel.lower_bound_utm,
+            )
+        )
+        return [
+            IncomeTaxBracketDTO(
+                valid_from=row.valid_from,
+                valid_to=row.valid_to,
+                lower_bound_utm=row.lower_bound_utm,
+                upper_bound_utm=row.upper_bound_utm,
+                marginal_rate=row.marginal_rate,
+                rebate_utm=row.rebate_utm,
             )
             for row in result.scalars().all()
         ]

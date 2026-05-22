@@ -7,6 +7,8 @@ from typing import Protocol
 from payroll.application.dto import (
     ComputeContributionsCommandDTO,
     ComputeContributionsResultDTO,
+    ComputeIncomeTaxResultDTO,
+    ComputeIncomeTaxCommandDTO,
     ContributionComputationContextDTO,
     ContributionCapDTO,
     CurrencyDTO,
@@ -14,14 +16,19 @@ from payroll.application.dto import (
     ExchangeRateDTO,
     HealthInstitutionDTO,
     HealthPlanDTO,
+    IncomeTaxBracketDTO,
+    IncomeTaxContextDTO,
     ImportPayrollResultDTO,
     ImportPayrollRowDTO,
+    PayrollPeriodDetailDTO,
     PayrollConceptDTO,
+    PayrollSummaryDTO,
     PensionInstitutionDTO,
     PensionPlanDTO,
     RefreshRatesCommandDTO,
     RefreshRatesResultDTO,
 )
+from payroll.domain.taxes import IncomeTaxBracket
 
 
 class ReferenceDataRepository(Protocol):
@@ -41,6 +48,8 @@ class ReferenceDataRepository(Protocol):
 
     async def list_payroll_concepts(self) -> list[PayrollConceptDTO]: ...
 
+    async def list_income_tax_brackets(self) -> list[IncomeTaxBracketDTO]: ...
+
 
 class PayrollRepository(Protocol):
     """Persistence port for payroll operations."""
@@ -56,6 +65,16 @@ class PayrollRepository(Protocol):
         self,
         result: ComputeContributionsResultDTO,
     ) -> ComputeContributionsResultDTO: ...
+
+    async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO | None: ...
+
+    async def list_period_summaries(self) -> list[PayrollSummaryDTO]: ...
+
+    async def get_income_tax_context(self, command: ComputeIncomeTaxCommandDTO) -> IncomeTaxContextDTO: ...
+
+    async def get_income_tax_bracket(self, payment_date: date, taxable_base_utm: Decimal) -> IncomeTaxBracket | None: ...
+
+    async def save_computed_income_tax(self, result: ComputeIncomeTaxResultDTO) -> ComputeIncomeTaxResultDTO: ...
 
 
 class MarketDataRepository(Protocol):

@@ -68,6 +68,15 @@ class PayrollConceptRead(BaseModel):
     is_taxable: bool
 
 
+class IncomeTaxBracketRead(BaseModel):
+    valid_from: date
+    valid_to: date | None
+    lower_bound_utm: str
+    upper_bound_utm: str | None
+    marginal_rate: str
+    rebate_utm: str
+
+
 @router.get("/currencies", response_model=list[CurrencyRead])
 async def list_currencies(
     queries: ReferenceDataQueries = Depends(get_reference_data_queries),
@@ -162,3 +171,20 @@ async def list_payroll_concepts(
     queries: ReferenceDataQueries = Depends(get_reference_data_queries),
 ) -> list[PayrollConceptRead]:
     return [PayrollConceptRead(**asdict(item)) for item in await queries.list_payroll_concepts()]
+
+
+@router.get("/income-tax-brackets", response_model=list[IncomeTaxBracketRead])
+async def list_income_tax_brackets(
+    queries: ReferenceDataQueries = Depends(get_reference_data_queries),
+) -> list[IncomeTaxBracketRead]:
+    return [
+        IncomeTaxBracketRead(
+            valid_from=item.valid_from,
+            valid_to=item.valid_to,
+            lower_bound_utm=str(item.lower_bound_utm),
+            upper_bound_utm=str(item.upper_bound_utm) if item.upper_bound_utm is not None else None,
+            marginal_rate=str(item.marginal_rate),
+            rebate_utm=str(item.rebate_utm),
+        )
+        for item in await queries.list_income_tax_brackets()
+    ]

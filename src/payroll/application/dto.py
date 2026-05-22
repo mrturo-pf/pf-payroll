@@ -13,6 +13,7 @@ from payroll.domain.contributions import (
     PensionContribution,
     PensionPlan,
 )
+from payroll.domain.taxes import IncomeTaxComputation
 
 PayrollConceptKind = Literal["income", "discount"]
 PayrollStatusKind = Literal["projected", "actual", "reviewed"]
@@ -195,3 +196,75 @@ class RefreshRatesCommandDTO:
 class RefreshRatesResultDTO:
     upserted_exchange_rates: int
     upserted_economic_indices: int
+
+
+@dataclass(frozen=True, slots=True)
+class PayrollItemDetailDTO:
+    concept_code: str
+    concept_name: str
+    kind: PayrollConceptKind
+    is_taxable: bool
+    amount_clp: Decimal
+    notes: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class PayrollSummaryDTO:
+    period_id: int
+    employer_id: int
+    employer_name: str
+    period_year: int
+    period_month: int
+    payment_date: date
+    taxable_income_clp: Decimal
+    gross_income_clp: Decimal
+    total_discounts_clp: Decimal
+    net_pay_clp: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class PayrollPeriodDetailDTO:
+    id: int
+    employer_id: int
+    employer_name: str
+    employer_tax_id: str | None
+    employer_country_code: str
+    period_year: int
+    period_month: int
+    payment_date: date
+    worked_days: int
+    status: PayrollStatusKind
+    pension_plan_id: int | None
+    health_plan_id: int | None
+    items: list[PayrollItemDetailDTO]
+    summary: PayrollSummaryDTO | None
+
+
+@dataclass(frozen=True, slots=True)
+class ComputeIncomeTaxCommandDTO:
+    period_id: int
+    utm_value_clp: Decimal | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class IncomeTaxContextDTO:
+    period_id: int
+    payment_date: date
+    taxable_income_clp: Decimal
+    deductible_amount_clp: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class ComputeIncomeTaxResultDTO:
+    period_id: int
+    tax: IncomeTaxComputation
+
+
+@dataclass(frozen=True, slots=True)
+class IncomeTaxBracketDTO:
+    valid_from: date
+    valid_to: date | None
+    lower_bound_utm: Decimal
+    upper_bound_utm: Decimal | None
+    marginal_rate: Decimal
+    rebate_utm: Decimal

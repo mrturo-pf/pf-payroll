@@ -12,6 +12,7 @@ from payroll.infrastructure.db.models import (
     CurrencyModel,
     HealthInstitutionModel,
     HealthPlanModel,
+    IncomeTaxBracketModel,
     PayrollConceptModel,
     PensionInstitutionModel,
     PensionPlanModel,
@@ -118,6 +119,18 @@ async def test_sqlalchemy_reference_data_repository_maps_all_catalogs() -> None:
                     SimpleNamespace(code="SALARY_BASE", name="Base Salary", kind=SimpleNamespace(value="income"), is_taxable=True)
                 ]
             ),
+            FakeResult(
+                scalar_rows=[
+                    SimpleNamespace(
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        lower_bound_utm=Decimal("0"),
+                        upper_bound_utm=Decimal("13.5"),
+                        marginal_rate=Decimal("0"),
+                        rebate_utm=Decimal("0"),
+                    )
+                ]
+            ),
         ]
     )
     repository = SqlAlchemyReferenceDataRepository(session)
@@ -129,7 +142,8 @@ async def test_sqlalchemy_reference_data_repository_maps_all_catalogs() -> None:
     assert [item.id for item in await repository.list_health_plans()] == [2]
     assert [item.cap_type for item in await repository.list_contribution_caps()] == ["pension_health"]
     assert [item.code for item in await repository.list_payroll_concepts()] == ["SALARY_BASE"]
-    assert len(session.statements) == 7
+    assert [item.lower_bound_utm for item in await repository.list_income_tax_brackets()] == [Decimal("0")]
+    assert len(session.statements) == 8
 
 
 @pytest.mark.asyncio
@@ -168,6 +182,7 @@ def test_reference_data_models_and_enums_are_declared() -> None:
     assert PensionPlanModel.__tablename__ == "pension_plans"
     assert HealthPlanModel.__tablename__ == "health_plans"
     assert ContributionCapModel.__tablename__ == "contribution_caps"
+    assert IncomeTaxBracketModel.__tablename__ == "income_tax_brackets"
     assert PayrollConceptModel.__tablename__ == "payroll_concepts"
     assert ContributionCapType.PENSION_HEALTH.value == "pension_health"
     assert PayrollConceptKind.INCOME.value == "income"

@@ -7,12 +7,20 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile
 from pydantic import BaseModel
 
-from payroll.application.dto import ComputeContributionsCommandDTO
+from payroll.application.dto import (
+    ComputeContributionsCommandDTO,
+    ComputeIncomeTaxCommandDTO,
+    PayrollSummaryDTO,
+)
 from payroll.application.use_cases.compute_contributions import ComputeContributions
+from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
+from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.interfaces.api.dependencies import (
     get_compute_contributions_use_case,
+    get_compute_income_tax_use_case,
     get_import_payroll_use_case,
+    get_payroll_queries,
 )
 
 router = APIRouter(prefix="/payroll", tags=["payroll"])
@@ -71,6 +79,79 @@ class ComputeContributionsResponse(BaseModel):
     health: HealthContributionRead
 
 
+class ComputeIncomeTaxRequest(BaseModel):
+    utm_value_clp: Decimal | None = None
+
+
+class ComputeIncomeTaxResponse(BaseModel):
+    period_id: int
+    taxable_income_clp: str
+    deductible_amount_clp: str
+    taxable_base_clp: str
+    utm_value_clp: str
+    taxable_base_utm: str
+    bracket_lower_bound_utm: str
+    bracket_upper_bound_utm: str | None
+    marginal_rate: str
+    rebate_utm: str
+    tax_utm: str
+    tax_clp: str
+
+
+class PayrollItemDetailRead(BaseModel):
+    concept_code: str
+    concept_name: str
+    kind: str
+    is_taxable: bool
+    amount_clp: str
+    notes: str | None
+
+
+class PayrollSummaryRead(BaseModel):
+    period_id: int
+    employer_id: int
+    employer_name: str
+    period_year: int
+    period_month: int
+    payment_date: date
+    taxable_income_clp: str
+    gross_income_clp: str
+    total_discounts_clp: str
+    net_pay_clp: str
+
+
+class PayrollPeriodDetailRead(BaseModel):
+    id: int
+    employer_id: int
+    employer_name: str
+    employer_tax_id: str | None
+    employer_country_code: str
+    period_year: int
+    period_month: int
+    payment_date: date
+    worked_days: int
+    status: str
+    pension_plan_id: int | None
+    health_plan_id: int | None
+    items: list[PayrollItemDetailRead]
+    summary: PayrollSummaryRead | None
+
+
+def to_payroll_summary_read(summary: PayrollSummaryDTO) -> PayrollSummaryRead:
+    return PayrollSummaryRead(
+        period_id=summary.period_id,
+        employer_id=summary.employer_id,
+        employer_name=summary.employer_name,
+        period_year=summary.period_year,
+        period_month=summary.period_month,
+        payment_date=summary.payment_date,
+        taxable_income_clp=str(summary.taxable_income_clp),
+        gross_income_clp=str(summary.gross_income_clp),
+        total_discounts_clp=str(summary.total_discounts_clp),
+        net_pay_clp=str(summary.net_pay_clp),
+    )
+
+
 @router.post("/import", response_model=ImportPayrollResponse)
 async def import_payroll(
     file: UploadFile = File(...),
@@ -88,6 +169,85 @@ async def import_payroll(
         imported_periods=result.imported_periods,
         imported_items=result.imported_items,
         periods=[ImportedPayrollPeriodRead(**asdict(period)) for period in result.periods],
+    )
+
+
+@router.get("/summary", response_model=list[PayrollSummaryRead])
+async def list_payroll_summaries(
+    queries: PayrollQueries = Depends(get_payroll_queries),
+) -> list[PayrollSummaryRead]:
+    return [to_payroll_summary_read(item) for item in await queries.list_period_summaries()]
+
+
+@router.get("/{period_id}", response_model=PayrollPeriodDetailRead)
+async def get_payroll_period(
+    period_id: int = Path(..., gt=0),
+    queries: PayrollQueries = Depends(get_payroll_queries),
+) -> PayrollPeriodDetailRead:
+    try:
+        detail = await queries.get_period_detail(period_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return PayrollPeriodDetailRead(
+        id=detail.id,
+        employer_id=detail.employer_id,
+        employer_name=detail.employer_name,
+        employer_tax_id=detail.employer_tax_id,
+        employer_country_code=detail.employer_country_code,
+        period_year=detail.period_year,
+        period_month=detail.period_month,
+        payment_date=detail.payment_date,
+        worked_days=detail.worked_days,
+        status=detail.status,
+        pension_plan_id=detail.pension_plan_id,
+        health_plan_id=detail.health_plan_id,
+        items=[
+            PayrollItemDetailRead(
+                concept_code=item.concept_code,
+                concept_name=item.concept_name,
+                kind=item.kind,
+                is_taxable=item.is_taxable,
+                amount_clp=str(item.amount_clp),
+                notes=item.notes,
+            )
+            for item in detail.items
+        ],
+        summary=to_payroll_summary_read(detail.summary) if detail.summary is not None else None,
+    )
+
+
+@router.post("/{period_id}/compute-tax", response_model=ComputeIncomeTaxResponse)
+async def compute_income_tax(
+    payload: ComputeIncomeTaxRequest,
+    period_id: int = Path(..., gt=0),
+    use_case: ComputeIncomeTax = Depends(get_compute_income_tax_use_case),
+) -> ComputeIncomeTaxResponse:
+    try:
+        result = await use_case.execute(
+            ComputeIncomeTaxCommandDTO(
+                period_id=period_id,
+                utm_value_clp=payload.utm_value_clp,
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return ComputeIncomeTaxResponse(
+        period_id=result.period_id,
+        taxable_income_clp=str(result.tax.taxable_income_clp),
+        deductible_amount_clp=str(result.tax.deductible_amount_clp),
+        taxable_base_clp=str(result.tax.taxable_base_clp),
+        utm_value_clp=str(result.tax.utm_value_clp),
+        taxable_base_utm=str(result.tax.taxable_base_utm),
+        bracket_lower_bound_utm=str(result.tax.bracket_lower_bound_utm),
+        bracket_upper_bound_utm=(
+            str(result.tax.bracket_upper_bound_utm) if result.tax.bracket_upper_bound_utm is not None else None
+        ),
+        marginal_rate=str(result.tax.marginal_rate),
+        rebate_utm=str(result.tax.rebate_utm),
+        tax_utm=str(result.tax.tax_utm),
+        tax_clp=str(result.tax.tax_clp),
     )
 
 

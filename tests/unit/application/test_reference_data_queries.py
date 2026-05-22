@@ -8,6 +8,7 @@ from payroll.application.dto import (
     CurrencyDTO,
     HealthInstitutionDTO,
     HealthPlanDTO,
+    IncomeTaxBracketDTO,
     PayrollConceptDTO,
     PensionInstitutionDTO,
     PensionPlanDTO,
@@ -73,6 +74,18 @@ class StubReferenceDataRepository:
     async def list_payroll_concepts(self) -> list[PayrollConceptDTO]:
         return [PayrollConceptDTO(code="SALARY_BASE", name="Base Salary", kind="income", is_taxable=True)]
 
+    async def list_income_tax_brackets(self) -> list[IncomeTaxBracketDTO]:
+        return [
+            IncomeTaxBracketDTO(
+                valid_from=date(2026, 1, 1),
+                valid_to=None,
+                lower_bound_utm=Decimal("0"),
+                upper_bound_utm=Decimal("13.5"),
+                marginal_rate=Decimal("0"),
+                rebate_utm=Decimal("0"),
+            )
+        ]
+
 
 @pytest.mark.asyncio
 async def test_reference_data_queries_delegate_to_repository() -> None:
@@ -85,3 +98,4 @@ async def test_reference_data_queries_delegate_to_repository() -> None:
     assert [item.id for item in await queries.list_health_plans()] == [2]
     assert [item.cap_type for item in await queries.list_contribution_caps()] == ["pension_health"]
     assert [item.code for item in await queries.list_payroll_concepts()] == ["SALARY_BASE"]
+    assert [item.lower_bound_utm for item in await queries.list_income_tax_brackets()] == [Decimal("0")]

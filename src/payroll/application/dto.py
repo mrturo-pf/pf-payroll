@@ -80,6 +80,26 @@ class ContributionCapDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class ExchangeRateDTO:
+    currency_code: str
+    rate_date: date
+    value_clp: Decimal
+    source: str
+
+
+@dataclass(frozen=True, slots=True)
+class EconomicIndexDTO:
+    code: str
+    period_year: int
+    period_month: int
+    index_value: Decimal
+    monthly_change: Decimal | None
+    yearly_change: Decimal | None
+    base_period: str
+    source: str
+
+
+@dataclass(frozen=True, slots=True)
 class PayrollConceptDTO:
     code: str
     name: str
@@ -121,7 +141,7 @@ class ComputeContributionsCommandDTO:
     period_id: int
     pension_plan_id: int
     health_plan_id: int
-    uf_value_clp: Decimal
+    uf_value_clp: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,3 +163,35 @@ class ComputeContributionsResultDTO:
     pension: PensionContribution
     health: HealthContribution
     total_discount_clp: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class ExchangeRateWriteDTO:
+    currency_code: str
+    rate_date: date
+    value_clp: Decimal
+    source: str = "manual"
+
+
+@dataclass(frozen=True, slots=True)
+class EconomicIndexWriteDTO:
+    code: str
+    period_year: int
+    period_month: int
+    index_value: Decimal
+    monthly_change: Decimal | None = None
+    yearly_change: Decimal | None = None
+    base_period: str = "DIC-2018"
+    source: str = "manual"
+
+
+@dataclass(frozen=True, slots=True)
+class RefreshRatesCommandDTO:
+    exchange_rates: list[ExchangeRateWriteDTO]
+    economic_indices: list[EconomicIndexWriteDTO]
+
+
+@dataclass(frozen=True, slots=True)
+class RefreshRatesResultDTO:
+    upserted_exchange_rates: int
+    upserted_economic_indices: int

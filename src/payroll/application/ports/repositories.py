@@ -1,5 +1,7 @@
 """Port definitions for repositories."""
 
+from datetime import date
+from decimal import Decimal
 from typing import Protocol
 
 from payroll.application.dto import (
@@ -8,6 +10,8 @@ from payroll.application.dto import (
     ContributionComputationContextDTO,
     ContributionCapDTO,
     CurrencyDTO,
+    EconomicIndexDTO,
+    ExchangeRateDTO,
     HealthInstitutionDTO,
     HealthPlanDTO,
     ImportPayrollResultDTO,
@@ -15,6 +19,8 @@ from payroll.application.dto import (
     PayrollConceptDTO,
     PensionInstitutionDTO,
     PensionPlanDTO,
+    RefreshRatesCommandDTO,
+    RefreshRatesResultDTO,
 )
 
 
@@ -50,3 +56,15 @@ class PayrollRepository(Protocol):
         self,
         result: ComputeContributionsResultDTO,
     ) -> ComputeContributionsResultDTO: ...
+
+
+class MarketDataRepository(Protocol):
+    """Persistence port for historical rates and indices."""
+
+    async def list_exchange_rates(self, currency_code: str | None = None) -> list[ExchangeRateDTO]: ...
+
+    async def list_economic_indices(self, code: str | None = None) -> list[EconomicIndexDTO]: ...
+
+    async def get_exchange_rate_value(self, currency_code: str, rate_date: date) -> Decimal | None: ...
+
+    async def refresh_rates(self, command: RefreshRatesCommandDTO) -> RefreshRatesResultDTO: ...

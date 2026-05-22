@@ -12,6 +12,7 @@ import typer
 from typer.testing import CliRunner
 
 from payroll.application.dto import MoneyDTO
+from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
@@ -103,10 +104,23 @@ def test_use_case_placeholders_are_instantiable() -> None:
         async def save_computed_contributions(self, result: object) -> object:
             return result
 
+        async def list_exchange_rates(self, currency_code: str | None = None) -> list[object]:
+            return []
+
+        async def list_economic_indices(self, code: str | None = None) -> list[object]:
+            return []
+
+        async def get_exchange_rate_value(self, currency_code: str, rate_date: date) -> Decimal | None:
+            return Decimal("1")
+
+        async def refresh_rates(self, command: object) -> object:
+            return command
+
     assert isinstance(ImportPayroll(StubRepository()), ImportPayroll)
     assert isinstance(ReferenceDataQueries(object()), ReferenceDataQueries)
-    assert isinstance(ComputeContributions(StubRepository()), ComputeContributions)
-    assert isinstance(RefreshRates(), RefreshRates)
+    assert isinstance(MarketDataQueries(StubRepository()), MarketDataQueries)
+    assert isinstance(ComputeContributions(StubRepository(), StubRepository()), ComputeContributions)
+    assert isinstance(RefreshRates(StubRepository()), RefreshRates)
 
 
 def test_dashboard_placeholder_prints_message(capsys: pytest.CaptureFixture[str]) -> None:

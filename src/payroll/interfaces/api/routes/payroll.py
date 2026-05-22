@@ -37,7 +37,7 @@ class ImportPayrollResponse(BaseModel):
 class ComputeContributionsRequest(BaseModel):
     pension_plan_id: int
     health_plan_id: int
-    uf_value_clp: Decimal
+    uf_value_clp: Decimal | None = None
 
 
 class PensionContributionRead(BaseModel):

@@ -1,10 +1,10 @@
 """Reference-data SQLAlchemy models."""
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 
-from sqlalchemy import Boolean, Date, Enum as SAEnum, ForeignKey, Numeric, String
+from sqlalchemy import Boolean, Date, DateTime, Enum as SAEnum, ForeignKey, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from payroll.domain.contributions import HealthInstitutionKind
@@ -32,6 +32,32 @@ class CurrencyModel(Base):
     name: Mapped[str] = mapped_column(String(60))
     is_fiat: Mapped[bool] = mapped_column(Boolean, default=True)
     unit_kind: Mapped[str] = mapped_column(String(20), default="currency")
+
+
+class ExchangeRateModel(Base):
+    __tablename__ = "exchange_rates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    currency_code: Mapped[str] = mapped_column(ForeignKey("currencies.code"))
+    rate_date: Mapped[date] = mapped_column(Date)
+    value_clp: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    source: Mapped[str] = mapped_column(String(40), default="manual")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class EconomicIndexModel(Base):
+    __tablename__ = "economic_indices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(20))
+    period_year: Mapped[int] = mapped_column()
+    period_month: Mapped[int] = mapped_column()
+    index_value: Mapped[Decimal] = mapped_column(Numeric(12, 6))
+    monthly_change: Mapped[Decimal | None] = mapped_column(Numeric(7, 4), nullable=True)
+    yearly_change: Mapped[Decimal | None] = mapped_column(Numeric(7, 4), nullable=True)
+    base_period: Mapped[str] = mapped_column(String(10), default="DIC-2018")
+    source: Mapped[str] = mapped_column(String(40), default="manual")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class PensionInstitutionModel(Base):

@@ -5,10 +5,13 @@ from collections.abc import AsyncIterator
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from payroll.application.ports.repositories import PayrollRepository, ReferenceDataRepository
+from payroll.application.ports.repositories import MarketDataRepository, PayrollRepository, ReferenceDataRepository
+from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
+from payroll.application.use_cases.refresh_rates import RefreshRates
+from payroll.infrastructure.db.repositories.market_data_repository import SqlAlchemyMarketDataRepository
 from payroll.infrastructure.db.repositories.payroll_repository import SqlAlchemyPayrollRepository
 from payroll.infrastructure.db.repositories.reference_data_repository import SqlAlchemyReferenceDataRepository
 from payroll.infrastructure.db.session import SessionLocal
@@ -37,6 +40,24 @@ def get_payroll_repository(
     return SqlAlchemyPayrollRepository(session)
 
 
+def get_market_data_repository(
+    session: AsyncSession = Depends(get_session),
+) -> MarketDataRepository:
+    return SqlAlchemyMarketDataRepository(session)
+
+
+def get_market_data_queries(
+    repository: MarketDataRepository = Depends(get_market_data_repository),
+) -> MarketDataQueries:
+    return MarketDataQueries(repository)
+
+
+def get_refresh_rates_use_case(
+    repository: MarketDataRepository = Depends(get_market_data_repository),
+) -> RefreshRates:
+    return RefreshRates(repository)
+
+
 def get_import_payroll_use_case(
     repository: PayrollRepository = Depends(get_payroll_repository),
 ) -> ImportPayroll:
@@ -45,5 +66,6 @@ def get_import_payroll_use_case(
 
 def get_compute_contributions_use_case(
     repository: PayrollRepository = Depends(get_payroll_repository),
+    market_data_repository: MarketDataRepository = Depends(get_market_data_repository),
 ) -> ComputeContributions:
-    return ComputeContributions(repository)
+    return ComputeContributions(repository, market_data_repository)

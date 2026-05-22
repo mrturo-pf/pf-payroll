@@ -31,7 +31,7 @@ class SqlAlchemyReferenceDataRepository:
         result = await self._session.execute(select(CurrencyModel).order_by(CurrencyModel.code))
         return [
             CurrencyDTO(
-                code=row.code,
+                code=row.code.strip(),
                 name=row.name,
                 is_fiat=row.is_fiat,
                 unit_kind=row.unit_kind,

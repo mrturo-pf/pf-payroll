@@ -51,8 +51,11 @@ The API currently exposes these HTTP endpoints:
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/health` | Basic healthcheck. Returns `{"status": "ok"}`. |
+| `POST` | `/market-data/refresh` | Upserts historical exchange rates and economic indices such as UF, UTM, FX, and IPC. |
+| `GET` | `/market-data/exchange-rates` | Lists stored exchange rates, optionally filtered by `currency_code`. |
+| `GET` | `/market-data/economic-indices` | Lists stored economic indices, optionally filtered by `code`. |
 | `POST` | `/payroll/import` | Imports a CSV or XLSX payroll file and persists employers, periods, and items into PostgreSQL. |
-| `POST` | `/payroll/{period_id}/compute-contributions` | Computes pension and health contributions for an imported payroll period and persists the resulting discount items. |
+| `POST` | `/payroll/{period_id}/compute-contributions` | Computes pension and health contributions for an imported payroll period and persists the resulting discount items. If `uf_value_clp` is omitted, the API uses the stored UF rate for the payment date. |
 | `GET` | `/reference-data/currencies` | Lists seeded currencies and index units (`CLP`, `USD`, `EUR`, `UF`, `UTM`). |
 | `GET` | `/reference-data/pension-institutions` | Lists seeded AFP institutions. |
 | `GET` | `/reference-data/health-institutions` | Lists seeded health institutions (`Fonasa` and Isapres). |
@@ -68,6 +71,33 @@ Quick health check:
 
 ```bash
 curl http://127.0.0.1:8000/health
+```
+
+Market data examples:
+
+```bash
+curl -X POST http://127.0.0.1:8000/market-data/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exchange_rates": [
+      {"currency_code": "UF", "rate_date": "2026-01-31", "value_clp": 38000},
+      {"currency_code": "UTM", "rate_date": "2026-01-31", "value_clp": 67000},
+      {"currency_code": "USD", "rate_date": "2026-01-31", "value_clp": 980.5}
+    ],
+    "economic_indices": [
+      {
+        "code": "IPC_CL",
+        "period_year": 2026,
+        "period_month": 1,
+        "index_value": 112.340000,
+        "monthly_change": 0.7000,
+        "yearly_change": 4.1000
+      }
+    ]
+  }'
+
+curl http://127.0.0.1:8000/market-data/exchange-rates?currency_code=UF
+curl http://127.0.0.1:8000/market-data/economic-indices?code=IPC_CL
 ```
 
 Reference data examples:
@@ -96,15 +126,14 @@ curl -X POST http://127.0.0.1:8000/payroll/1/compute-contributions \
   -H "Content-Type: application/json" \
   -d '{
     "pension_plan_id": 1,
-    "health_plan_id": 1,
-    "uf_value_clp": 38000
+    "health_plan_id": 1
   }'
 ```
 
 The endpoint:
 
 - reads the imported taxable income from the payroll period
-- applies the seeded `pension_health` contribution cap using the provided UF value
+- applies the seeded `pension_health` contribution cap using the stored UF rate for the payment date, or the provided `uf_value_clp` override
 - computes pension mandatory and additional amounts from the selected AFP plan
 - computes health mandatory and additional amounts from the selected health plan
 - persists the resulting discount items as `PENSION_BASE`, `PENSION_ADDITIONAL`, `HEALTH_BASE`, and `HEALTH_ADDITIONAL_UF`

@@ -20,7 +20,7 @@ log() {
 
 venv_ready() {
   [[ -x "$VENV/bin/python" ]] && [[ -x "$VENV/bin/uvicorn" ]] && \
-    "$VENV/bin/python" -c "import fastapi, pydantic_settings, sqlalchemy, uvicorn" >/dev/null 2>&1
+    "$VENV/bin/python" -c "import fastapi, greenlet, pydantic_settings, sqlalchemy, uvicorn" >/dev/null 2>&1
 }
 
 log "Starting or reusing PostgreSQL"

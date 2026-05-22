@@ -3,6 +3,9 @@
 from typing import Protocol
 
 from payroll.application.dto import (
+    ComputeContributionsCommandDTO,
+    ComputeContributionsResultDTO,
+    ContributionComputationContextDTO,
     ContributionCapDTO,
     CurrencyDTO,
     HealthInstitutionDTO,
@@ -37,3 +40,13 @@ class PayrollRepository(Protocol):
     """Persistence port for payroll operations."""
 
     async def import_rows(self, rows: list[ImportPayrollRowDTO]) -> ImportPayrollResultDTO: ...
+
+    async def get_contribution_context(
+        self,
+        command: ComputeContributionsCommandDTO,
+    ) -> ContributionComputationContextDTO: ...
+
+    async def save_computed_contributions(
+        self,
+        result: ComputeContributionsResultDTO,
+    ) -> ComputeContributionsResultDTO: ...

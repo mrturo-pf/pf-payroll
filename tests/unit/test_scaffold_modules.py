@@ -18,7 +18,14 @@ from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.application.use_cases.refresh_rates import RefreshRates
 from payroll.config import Settings
 from payroll.domain.contribution_calculator import ContributionCalculator, quantize_clp
-from payroll.domain.contributions import ContributionCap, HealthInstitutionKind
+from payroll.domain.contributions import (
+    ContributionCap,
+    HealthInstitution,
+    HealthInstitutionKind,
+    HealthPlan,
+    PensionInstitution,
+    PensionPlan,
+)
 from payroll.domain.entities import PayrollPeriod
 from payroll.domain.value_objects import Money
 from payroll.infrastructure.importers.xlsx_importer import read_payroll_dataframe, to_long_format
@@ -50,12 +57,29 @@ def test_domain_dataclasses_and_constants() -> None:
         payment_date=date(2026, 5, 31),
     )
     cap = ContributionCap("pension_health", date(2026, 1, 1), None, Decimal("90.5000"))
+    pension_plan = PensionPlan(
+        id=1,
+        institution=PensionInstitution("AFP_UNO", "AFP Uno", Decimal("0.10")),
+        valid_from=date(2026, 1, 1),
+        valid_to=None,
+        additional_rate=Decimal("0.0127"),
+    )
+    health_plan = HealthPlan(
+        id=2,
+        institution=HealthInstitution("FONASA", "Fonasa", HealthInstitutionKind.FONASA, Decimal("0.07")),
+        valid_from=date(2026, 1, 1),
+        valid_to=None,
+        plan_name="Base",
+        contracted_uf=Decimal("0"),
+    )
     money = Money(amount=Decimal("123.45"))
     dto = MoneyDTO(amount=Decimal("99.99"))
 
     assert payroll_period.worked_days == 30
     assert cap.value_uf == Decimal("90.5000")
     assert HealthInstitutionKind.FONASA == "fonasa"
+    assert pension_plan.additional_rate == Decimal("0.0127")
+    assert health_plan.institution.kind is HealthInstitutionKind.FONASA
     assert money.currency == "CLP"
     assert dto.currency == DEFAULT_CURRENCY
 
@@ -73,9 +97,15 @@ def test_use_case_placeholders_are_instantiable() -> None:
         async def import_rows(self, rows: list[object]) -> object:
             return rows
 
+        async def get_contribution_context(self, command: object) -> object:
+            return command
+
+        async def save_computed_contributions(self, result: object) -> object:
+            return result
+
     assert isinstance(ImportPayroll(StubRepository()), ImportPayroll)
     assert isinstance(ReferenceDataQueries(object()), ReferenceDataQueries)
-    assert isinstance(ComputeContributions(), ComputeContributions)
+    assert isinstance(ComputeContributions(StubRepository()), ComputeContributions)
     assert isinstance(RefreshRates(), RefreshRates)
 
 

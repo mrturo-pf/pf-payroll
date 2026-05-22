@@ -6,6 +6,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from payroll.application.ports.repositories import PayrollRepository, ReferenceDataRepository
+from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.infrastructure.db.repositories.payroll_repository import SqlAlchemyPayrollRepository
@@ -40,3 +41,9 @@ def get_import_payroll_use_case(
     repository: PayrollRepository = Depends(get_payroll_repository),
 ) -> ImportPayroll:
     return ImportPayroll(repository)
+
+
+def get_compute_contributions_use_case(
+    repository: PayrollRepository = Depends(get_payroll_repository),
+) -> ComputeContributions:
+    return ComputeContributions(repository)

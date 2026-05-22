@@ -52,6 +52,7 @@ The API currently exposes these HTTP endpoints:
 | --- | --- | --- |
 | `GET` | `/health` | Basic healthcheck. Returns `{"status": "ok"}`. |
 | `POST` | `/payroll/import` | Imports a CSV or XLSX payroll file and persists employers, periods, and items into PostgreSQL. |
+| `POST` | `/payroll/{period_id}/compute-contributions` | Computes pension and health contributions for an imported payroll period and persists the resulting discount items. |
 | `GET` | `/reference-data/currencies` | Lists seeded currencies and index units (`CLP`, `USD`, `EUR`, `UF`, `UTM`). |
 | `GET` | `/reference-data/pension-institutions` | Lists seeded AFP institutions. |
 | `GET` | `/reference-data/health-institutions` | Lists seeded health institutions (`Fonasa` and Isapres). |
@@ -87,6 +88,27 @@ Payroll import example:
 curl -X POST http://127.0.0.1:8000/payroll/import \
   -F "file=@tests/fixtures/sample_payroll.csv"
 ```
+
+Contribution computation example:
+
+```bash
+curl -X POST http://127.0.0.1:8000/payroll/1/compute-contributions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pension_plan_id": 1,
+    "health_plan_id": 1,
+    "uf_value_clp": 38000
+  }'
+```
+
+The endpoint:
+
+- reads the imported taxable income from the payroll period
+- applies the seeded `pension_health` contribution cap using the provided UF value
+- computes pension mandatory and additional amounts from the selected AFP plan
+- computes health mandatory and additional amounts from the selected health plan
+- persists the resulting discount items as `PENSION_BASE`, `PENSION_ADDITIONAL`, `HEALTH_BASE`, and `HEALTH_ADDITIONAL_UF`
+- stores `pension_plan_id` and `health_plan_id` on the payroll period as the period snapshot
 
 Example minimal CSV:
 

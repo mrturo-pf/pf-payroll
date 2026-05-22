@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from io import BytesIO
 
 import pytest
@@ -6,10 +7,18 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.datastructures import UploadFile
 
-from payroll.application.dto import ImportPayrollResultDTO, ImportedPayrollPeriodDTO
-from payroll.interfaces.api.dependencies import get_import_payroll_use_case
+from payroll.application.dto import (
+    ComputeContributionsResultDTO,
+    ImportPayrollResultDTO,
+    ImportedPayrollPeriodDTO,
+)
+from payroll.domain.contributions import HealthContribution, HealthInstitutionKind, PensionContribution
+from payroll.interfaces.api.dependencies import (
+    get_compute_contributions_use_case,
+    get_import_payroll_use_case,
+)
 from payroll.interfaces.api.main import app
-from payroll.interfaces.api.routes.payroll import import_payroll
+from payroll.interfaces.api.routes.payroll import compute_contributions, import_payroll
 
 
 class FakeImportPayroll:
@@ -30,6 +39,37 @@ class FakeImportPayroll:
                     item_count=1,
                 )
             ],
+        )
+
+
+class FakeComputeContributions:
+    async def execute(self, command: object) -> ComputeContributionsResultDTO:
+        assert getattr(command, "period_id") == 5
+        return ComputeContributionsResultDTO(
+            period_id=5,
+            pension_plan_id=1,
+            health_plan_id=2,
+            taxable_income_clp=Decimal("1000000"),
+            total_discount_clp=Decimal("196200"),
+            pension=PensionContribution(
+                institution_code="AFP_UNO",
+                taxable_clp=Decimal("1000000"),
+                cap_clp=Decimal("3152100"),
+                capped_base_clp=Decimal("1000000"),
+                base_amount_clp=Decimal("100000"),
+                additional_amount_clp=Decimal("12700"),
+            ),
+            health=HealthContribution(
+                institution_code="FONASA",
+                institution_kind=HealthInstitutionKind.FONASA,
+                taxable_clp=Decimal("1000000"),
+                cap_clp=Decimal("3152100"),
+                capped_base_clp=Decimal("1000000"),
+                base_amount_clp=Decimal("70000"),
+                contracted_uf=Decimal("0"),
+                contracted_clp=Decimal("0"),
+                additional_amount_clp=Decimal("13500"),
+            ),
         )
 
 
@@ -86,3 +126,78 @@ def test_payroll_import_endpoint_requires_filename_and_surfaces_value_errors() -
 async def test_payroll_import_endpoint_rejects_empty_filename_in_handler() -> None:
     with pytest.raises(HTTPException, match="A payroll file name is required."):
         await import_payroll(UploadFile(file=BytesIO(b"noop"), filename=""), FakeImportPayroll())
+
+
+def test_compute_contributions_endpoint() -> None:
+    app.dependency_overrides[get_compute_contributions_use_case] = lambda: FakeComputeContributions()
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+            "/payroll/5/compute-contributions",
+            json={"pension_plan_id": 1, "health_plan_id": 2, "uf_value_clp": "35000"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "period_id": 5,
+        "pension_plan_id": 1,
+        "health_plan_id": 2,
+        "taxable_income_clp": "1000000",
+        "total_discount_clp": "196200",
+        "pension": {
+            "institution_code": "AFP_UNO",
+            "taxable_clp": "1000000",
+            "cap_clp": "3152100",
+            "capped_base_clp": "1000000",
+            "base_amount_clp": "100000",
+            "additional_amount_clp": "12700",
+        },
+        "health": {
+            "institution_code": "FONASA",
+            "institution_kind": "fonasa",
+            "taxable_clp": "1000000",
+            "cap_clp": "3152100",
+            "capped_base_clp": "1000000",
+            "base_amount_clp": "70000",
+            "contracted_uf": "0",
+            "contracted_clp": "0",
+            "additional_amount_clp": "13500",
+        },
+    }
+
+
+def test_compute_contributions_endpoint_surfaces_domain_errors() -> None:
+    class ErrorComputeContributions:
+        async def execute(self, command: object) -> ComputeContributionsResultDTO:
+            raise ValueError("period not found")
+
+    app.dependency_overrides[get_compute_contributions_use_case] = lambda: ErrorComputeContributions()
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+            "/payroll/5/compute-contributions",
+            json={"pension_plan_id": 1, "health_plan_id": 2, "uf_value_clp": "35000"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "period not found"}
+
+
+@pytest.mark.asyncio
+async def test_compute_contributions_endpoint_maps_value_errors_in_handler() -> None:
+    class ErrorComputeContributions:
+        async def execute(self, command: object) -> ComputeContributionsResultDTO:
+            raise ValueError("bad payload")
+
+    with pytest.raises(HTTPException, match="bad payload"):
+        await compute_contributions(
+            payload=type("Payload", (), {"pension_plan_id": 1, "health_plan_id": 2, "uf_value_clp": Decimal("1")})(),
+            period_id=1,
+            use_case=ErrorComputeContributions(),
+        )

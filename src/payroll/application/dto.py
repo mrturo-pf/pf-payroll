@@ -5,7 +5,14 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-from payroll.domain.contributions import HealthInstitutionKind
+from payroll.domain.contributions import (
+    ContributionCap,
+    HealthContribution,
+    HealthInstitutionKind,
+    HealthPlan,
+    PensionContribution,
+    PensionPlan,
+)
 
 PayrollConceptKind = Literal["income", "discount"]
 PayrollStatusKind = Literal["projected", "actual", "reviewed"]
@@ -107,3 +114,32 @@ class ImportPayrollResultDTO:
     imported_periods: int
     imported_items: int
     periods: list[ImportedPayrollPeriodDTO]
+
+
+@dataclass(frozen=True, slots=True)
+class ComputeContributionsCommandDTO:
+    period_id: int
+    pension_plan_id: int
+    health_plan_id: int
+    uf_value_clp: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class ContributionComputationContextDTO:
+    period_id: int
+    payment_date: date
+    taxable_income_clp: Decimal
+    pension_plan: PensionPlan
+    health_plan: HealthPlan
+    cap: ContributionCap
+
+
+@dataclass(frozen=True, slots=True)
+class ComputeContributionsResultDTO:
+    period_id: int
+    pension_plan_id: int
+    health_plan_id: int
+    taxable_income_clp: Decimal
+    pension: PensionContribution
+    health: HealthContribution
+    total_discount_clp: Decimal

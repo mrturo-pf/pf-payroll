@@ -2,463 +2,95 @@
 
 Personal financial suite for Chilean payroll simulation, tax calculation, and historical analytics with focus on architectural integrity and precision.
 
-## Requirements
+## Overview
 
-- Python 3.12+
-- `pip`
+This repository implements a modular monolith for Chilean payroll operations with:
 
-## Installation
+- payroll import from CSV/XLSX
+- AFP, health, unemployment insurance, and income tax computation
+- payroll period review and PDF generation
+- FastAPI API, Typer CLI, and an operational HTML dashboard
+- PostgreSQL persistence with local Rancher Desktop workflows
 
-Create a virtual environment and install the project with development dependencies:
+## Supported business flow
 
-```bash
-make install
-```
-
-If you prefer the explicit commands:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -U pip
-python -m pip install -e ".[dev]"
-```
-
-## Running the project
-
-Activate the virtual environment first:
-
-```bash
-source .venv/bin/activate
-```
-
-Start the API locally:
-
-```bash
-make run
-```
-
-The API will be available at:
+The core payroll flow currently supported is:
 
 ```text
-http://127.0.0.1:8000
+import -> assign plans -> compute contributions -> compute tax -> review -> report PDF
 ```
 
-## Available API endpoints
+## Quick start
 
-The API currently exposes these HTTP endpoints:
+1. Install dependencies:
 
-| Method | Path | Description |
+   ```bash
+   make install
+   ```
+
+2. Start the local PostgreSQL database:
+
+   ```bash
+   make db-up
+   ```
+
+3. Run the API:
+
+   ```bash
+   make run
+   ```
+
+4. Open the API docs:
+
+   ```text
+   http://127.0.0.1:8000/docs
+   ```
+
+## Documentation map
+
+| Document | Purpose |
+| --- | --- |
+| [`docs/getting-started.md`](docs/getting-started.md) | Installation, first run, and basic validation. |
+| [`docs/interfaces.md`](docs/interfaces.md) | Complete API endpoint inventory, CLI commands, and dashboard usage. |
+| [`docs/payroll-workflow.md`](docs/payroll-workflow.md) | End-to-end payroll flow, import format, and examples. |
+| [`docs/local-development.md`](docs/local-development.md) | Rancher Desktop database workflow, Adminer, testing, linting, and cleanup. |
+| [`architectural-report.md`](architectural-report.md) | Architecture report and target design. |
+
+## Interfaces
+
+| Interface | Entry point | Notes |
 | --- | --- | --- |
-| `GET` | `/health` | Basic healthcheck. Returns `{"status": "ok"}`. |
-| `POST` | `/market-data/refresh` | Upserts historical exchange rates and economic indices such as UF, UTM, FX, and IPC. Supports both manual payloads and provider-backed fetch requests. |
-| `GET` | `/market-data/exchange-rates` | Lists stored exchange rates, optionally filtered by `currency_code`. |
-| `GET` | `/market-data/economic-indices` | Lists stored economic indices, optionally filtered by `code`. |
-| `POST` | `/payroll/import` | Imports a CSV or XLSX payroll file and persists employers, periods, and items into PostgreSQL. |
-| `GET` | `/payroll/summary` | Lists payroll period totals from `mv_payroll_summary`, including taxable income, gross income, discounts, and net pay. |
-| `GET` | `/payroll/{period_id}` | Returns a payroll period with employer data, itemized concepts, selected plans, and summary totals. |
-| `GET` | `/payroll/{period_id}/report.pdf` | Generates a PDF payroll report for a `reviewed` payroll period. |
-| `POST` | `/payroll/{period_id}/assign-plans` | Assigns pension and health plan snapshot ids to a payroll period, validating that both plans are active for the period payment date. |
-| `POST` | `/payroll/{period_id}/review` | Marks a payroll period as `reviewed` once plans are assigned and all mandatory computed items exist. |
-| `POST` | `/payroll/{period_id}/compute-contributions` | Computes pension and health contributions for an imported payroll period and persists the resulting discount items. If `uf_value_clp` is omitted, the API uses the stored UF rate for the payment date. |
-| `POST` | `/payroll/{period_id}/compute-tax` | Computes Chilean monthly income tax withholding for an imported payroll period and persists it as `INCOME_TAX`. If `utm_value_clp` is omitted, the API uses the stored UTM rate for the payment date. |
-| `POST` | `/payroll/{period_id}/deflate` | Converts payroll summary totals from nominal CLP into real CLP using stored economic indices such as `IPC_CL`, taking the payroll period month as the source period. |
-| `GET` | `/reference-data/currencies` | Lists seeded currencies and index units (`CLP`, `USD`, `EUR`, `UF`, `UTM`). |
-| `GET` | `/reference-data/pension-institutions` | Lists seeded AFP institutions. |
-| `GET` | `/reference-data/health-institutions` | Lists seeded health institutions (`Fonasa` and Isapres). |
-| `GET` | `/reference-data/pension-plans` | Lists seeded pension plans with validity dates and additional rate. |
-| `GET` | `/reference-data/health-plans` | Lists seeded health plans with institution kind and contracted UF. |
-| `GET` | `/reference-data/contribution-caps` | Lists seeded contribution caps such as `pension_health` and `unemployment`. |
-| `GET` | `/reference-data/payroll-concepts` | Lists seeded payroll concepts used by the importer and summary model. |
-| `GET` | `/reference-data/income-tax-brackets` | Lists seeded UTM-based income tax brackets used by the tax calculator. |
-| `POST` | `/reference-data/income-tax-brackets/refresh` | Fetches the official monthly SII tax table for a year, normalizes it into UTM-based brackets, and upserts it into the catalog. |
-| `GET` | `/docs` | Swagger UI generated by FastAPI. |
-| `GET` | `/redoc` | ReDoc documentation UI. |
-| `GET` | `/openapi.json` | Raw OpenAPI schema in JSON format. |
+| API | `make run` | FastAPI app with `/docs`, `/redoc`, and JSON endpoints. |
+| CLI | `python -m payroll.interfaces.cli.main` | Operational commands for payroll import, calculation, review, and PDF export. |
+| Dashboard | `python -m payroll.interfaces.dashboard.app > payroll-dashboard.html` | HTML view showing payroll periods and next business action. |
 
-Quick health check:
+The **complete API endpoint list** is maintained in [`docs/interfaces.md`](docs/interfaces.md).
 
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-Market data examples:
-
-```bash
-curl -X POST http://127.0.0.1:8000/market-data/refresh \
-  -H "Content-Type: application/json" \
-  -d '{
-    "exchange_rates": [
-      {"currency_code": "UF", "rate_date": "2026-01-31", "value_clp": 38000},
-      {"currency_code": "UTM", "rate_date": "2026-01-31", "value_clp": 67000},
-      {"currency_code": "USD", "rate_date": "2026-01-31", "value_clp": 980.5}
-    ],
-    "economic_indices": [
-      {
-        "code": "IPC_CL",
-        "period_year": 2026,
-        "period_month": 1,
-        "index_value": 112.340000,
-        "monthly_change": 0.7000,
-        "yearly_change": 4.1000
-      }
-    ]
-  }'
-
-curl -X POST http://127.0.0.1:8000/market-data/refresh \
-  -H "Content-Type: application/json" \
-  -d '{
-    "fetch_exchange_rates": [
-      {"currency_code": "UF", "rate_date": "2026-01-31"},
-      {"currency_code": "UTM", "rate_date": "2026-01-01"},
-      {"currency_code": "USD", "rate_date": "2026-01-31"}
-    ],
-    "fetch_economic_indices": [
-      {"code": "IPC_CL", "period_year": 2026, "period_month": 4}
-    ]
-  }'
-
-curl http://127.0.0.1:8000/market-data/exchange-rates?currency_code=UF
-curl http://127.0.0.1:8000/market-data/economic-indices?code=IPC_CL
-```
-
-The refresh endpoint can now:
-
-- upsert manual rates and indices exactly as before
-- fetch UF, UTM, USD, and EUR quotes from a configured provider chain
-- fetch `IPC_CL` index points from official/public providers
-- prefer configured official providers first and fall back to public sources when available
-
-Default provider behavior:
-
-- `UTM` and `IPC_CL`: SII-backed lookup without credentials
-- `UF`, `USD`, `EUR`: `mindicador` fallback
-- BCCh support is available through optional environment variables for API credentials and series codes
-
-Reference data examples:
-
-```bash
-curl http://127.0.0.1:8000/reference-data/currencies
-curl http://127.0.0.1:8000/reference-data/pension-institutions
-curl http://127.0.0.1:8000/reference-data/health-institutions
-curl http://127.0.0.1:8000/reference-data/pension-plans
-curl http://127.0.0.1:8000/reference-data/health-plans
-curl http://127.0.0.1:8000/reference-data/contribution-caps
-curl http://127.0.0.1:8000/reference-data/payroll-concepts
-curl http://127.0.0.1:8000/reference-data/income-tax-brackets
-
-curl -X POST http://127.0.0.1:8000/reference-data/income-tax-brackets/refresh \
-  -H "Content-Type: application/json" \
-  -d '{"year": 2026}'
-```
-
-The income-tax refresh endpoint uses the official SII monthly table for `Impuesto Único de Segunda Categoría`, keeps only the `MENSUAL` section, and converts the published CLP bands and rebates into the UTM-based bracket schema used by the tax calculator.
-
-Payroll import example:
-
-```bash
-curl -X POST http://127.0.0.1:8000/payroll/import \
-  -F "file=@tests/fixtures/sample_payroll.csv"
-```
-
-Payroll query examples:
-
-```bash
-curl http://127.0.0.1:8000/payroll/summary
-curl http://127.0.0.1:8000/payroll/1
-```
-
-The detail endpoint returns:
-
-- employer metadata
-- period metadata and selected plan snapshot ids
-- itemized payroll concepts with amounts and taxability
-- the current summary totals from `mv_payroll_summary`
-
-Payroll PDF report example:
-
-```bash
-curl -L http://127.0.0.1:8000/payroll/1/report.pdf --output payroll-period-1.pdf
-```
-
-The PDF report endpoint:
-
-- requires the payroll period to exist
-- requires the period status to already be `reviewed`
-- requires the payroll summary to exist
-- returns a WeasyPrint-generated PDF with period metadata, itemized concepts, and summary totals
-
-Contribution computation example:
-
-```bash
-curl -X POST http://127.0.0.1:8000/payroll/1/assign-plans \
-  -H "Content-Type: application/json" \
-  -d '{
-    "pension_plan_id": 1,
-    "health_plan_id": 1
-  }'
-
-curl -X POST http://127.0.0.1:8000/payroll/1/compute-contributions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "pension_plan_id": 1,
-    "health_plan_id": 1
-  }'
-```
-
-The assignment endpoint:
-
-- validates that the payroll period exists
-- validates that the selected pension and health plans exist
-- enforces that both plans are valid for the original payment date of the period
-- stores `pension_plan_id` and `health_plan_id` on the payroll period as the historical snapshot
-
-Review example:
-
-```bash
-curl -X POST http://127.0.0.1:8000/payroll/1/review
-```
-
-The review endpoint:
-
-- requires the payroll period to exist
-- requires `pension_plan_id` and `health_plan_id` to be assigned on the period
-- requires computed contribution items and `INCOME_TAX` to already exist on the period
-- marks the period status as `reviewed`
-
-The contribution endpoint:
-
-- reads the imported taxable income from the payroll period
-- applies the seeded `pension_health` contribution cap using the stored UF rate for the payment date, or the provided `uf_value_clp` override
-- computes pension mandatory and additional amounts from the selected AFP plan
-- computes health mandatory and additional amounts from the selected health plan
-- computes unemployment insurance from the imported `employment_contract_kind` using the seeded `unemployment` cap
-- persists the resulting employee discount items as `PENSION_BASE`, `PENSION_ADDITIONAL`, `HEALTH_BASE`, `HEALTH_ADDITIONAL_UF`, and `UNEMPLOYMENT_INSURANCE`
-- refreshes `pension_plan_id` and `health_plan_id` on the payroll period as the period snapshot
-
-Income tax computation example:
-
-```bash
-curl -X POST http://127.0.0.1:8000/payroll/1/compute-tax \
-  -H "Content-Type: application/json" \
-  -d '{}'
-```
-
-The tax endpoint:
-
-- reads the taxable payroll income for the period
-- subtracts persisted mandatory social-security discounts already computed on the period
-- uses the stored UTM rate for the payment date, or the provided `utm_value_clp` override
-- resolves the matching UTM tax bracket from the seeded monthly table
-- persists the withholding as the `INCOME_TAX` payroll concept
-
-Payroll deflation example:
-
-```bash
-curl -X POST http://127.0.0.1:8000/payroll/1/deflate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "target_year": 2026,
-    "target_month": 3,
-    "index_code": "IPC_CL"
-  }'
-```
-
-The deflation endpoint:
-
-- reads the nominal totals from `mv_payroll_summary`
-- resolves the source IPC from the payroll period month
-- resolves the target IPC from the requested year and month
-- returns real CLP amounts using `nominal * IPC_dest / IPC_orig`
-
-Example minimal CSV:
-
-```csv
-period,employer,payment_date,employment_contract_kind,salary_base
-Jan/2026,ACME,2026-01-31,indefinite,1000000
-```
-
-Example full CSV:
-
-```csv
-period,employer,payment_date,employment_contract_kind,salary_base,monthly_legal_gratuity,teleworking_refund,pension_base,pension_additional,health_base,health_additional_uf,net_pay
-Jan/2026,ACME,2026-01-31,indefinite,1000000,250000,50000,100000,25000,70000,2.5,1105000
-Feb/2026,ACME,2026-02-28,fixed_term,1000000,250000,50000,100000,25000,70000,2.5,1105000
-```
-
-Supported payroll amount columns:
-
-- `salary_base`
-- `monthly_legal_gratuity`
-- `teleworking_refund`
-- `pension_base`
-- `pension_additional`
-- `health_base`
-- `health_additional_uf`
-
-Notes:
-
-- `period` must use `Mon/YYYY`, for example `Jan/2026`
-- `payment_date` is required
-- `employer` is required
-- `employment_contract_kind` is required and supports `indefinite` / `fixed_term` plus aliases `indefinido` / `plazo_fijo`
-- `net_pay` is optional; if present, the imported period is marked as `actual`, otherwise it is marked as `projected`
-
-Open the interactive docs:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-Run the CLI:
-
-```bash
-source .venv/bin/activate
-python -m payroll.interfaces.cli.main health
-python -m payroll.interfaces.cli.main import-payroll tests/fixtures/sample_payroll.csv
-python -m payroll.interfaces.cli.main summary
-python -m payroll.interfaces.cli.main period-detail 1
-python -m payroll.interfaces.cli.main plan-snapshots
-python -m payroll.interfaces.cli.main assign-plans 1 1 1
-python -m payroll.interfaces.cli.main compute-contributions 1 1 1 --uf-value-clp 39000
-python -m payroll.interfaces.cli.main compute-tax 1 --utm-value-clp 68000
-python -m payroll.interfaces.cli.main review 1
-python -m payroll.interfaces.cli.main report-pdf 1 --output payroll-period-1.pdf
-```
-
-All CLI commands emit JSON except `health`, so they can be chained into scripts for the monthly payroll flow.
-
-Render the operations dashboard as HTML:
-
-```bash
-source .venv/bin/activate
-python -m payroll.interfaces.dashboard.app > payroll-dashboard.html
-open payroll-dashboard.html
-```
-
-The dashboard summarizes payroll periods already loaded in PostgreSQL, highlights the next business action for each period, and lists the available pension/health plan snapshot ids for plan assignment.
-
-## Local PostgreSQL in Rancher Desktop
-
-The repository includes a Rancher Desktop flow that:
-
-- creates a local PostgreSQL container if it does not exist
-- starts the existing container if it is stopped
-- reuses the existing data volume if it already exists
-- applies the SQL schema idempotently to create the tables
-- seeds default reference data idempotently for currencies, pension institutions, health institutions, plans, contribution caps, and payroll concepts
-
-Start or reuse the local database:
-
-```bash
-make db-up
-```
-
-Open a `psql` session inside the running container:
-
-```bash
-make db-psql
-```
-
-Start a web viewer with Adminer. If the preferred port is busy, it will automatically choose a free one and print the exact URL:
-
-```bash
-make adminer-up
-```
-
-Stop Adminer:
-
-```bash
-make adminer-down
-```
-
-Bring the whole local stack up in one command. This will start or reuse PostgreSQL, write `.env`, start Adminer, install dependencies, and run the API:
-
-```bash
-make local-up
-```
-
-Stop the container without deleting its data volume:
-
-```bash
-make db-down
-```
-
-Default local connection string:
-
-```text
-postgresql+asyncpg://payroll:payroll@localhost:5432/payroll
-```
-
-You can override the defaults from `make` if needed:
-
-```bash
-make db-up DB_CONTAINER=my-payroll-db DB_PORT=5433 DB_PASSWORD=secret
-```
-
-The schema lives in `db/schema.sql` and the default catalog data lives in `db/seed.sql`. Both are applied on every `make db-up` run using idempotent SQL.
-
-Adminer connects to the local PostgreSQL instance using Rancher Desktop's host access. By default it tries port `8080`, but if that port is occupied it will pick another free port automatically.
-
-`make local-up` writes `.env` with the local PostgreSQL connection details used by the app and includes the chosen Adminer URL.
-
-## Testing
-
-Run the full test suite:
-
-```bash
-source .venv/bin/activate
-make test
-```
-
-Run tests with coverage enforcement:
-
-```bash
-source .venv/bin/activate
-make test-cov
-```
-
-The project is currently configured to require:
-
-```text
-100% coverage for src/payroll
-```
-
-## Linting and type checking
+## Validation commands
 
 ```bash
 source .venv/bin/activate
 make lint
 make typecheck
+make test
+make test-cov
 ```
 
-## Cleaning generated files
+The project requires **100% coverage** for `src/payroll`.
 
-Remove caches, coverage output, and build artifacts:
+## Repository structure
 
-```bash
-make clean
-```
+- `src/payroll/domain`: entities, value objects, and calculation rules
+- `src/payroll/application`: use cases and ports
+- `src/payroll/infrastructure`: database, importers, rate providers, reporting, logging
+- `src/payroll/interfaces`: FastAPI, Typer CLI, and dashboard entrypoints
+- `tests`: unit and integration coverage
+- `db`: SQL schema and seed data
 
-This cleans:
+## Next reading
 
-- `__pycache__`
-- `.pytest_cache`
-- `.mypy_cache`
-- `.ruff_cache`
-- `.coverage`
-- `htmlcov`
-- `build`
-- `dist`
-- `*.egg-info`
+If you want to operate the system end to end, start here:
 
-## Structure
-
-This repository now includes a base modular-monolith scaffold under `src/payroll` with:
-
-- `domain`: entities, value objects, and calculation rules
-- `application`: use cases and ports
-- `infrastructure`: database, importers, rate providers, logging
-- `interfaces`: FastAPI, Typer CLI, and dashboard entrypoints
-- `tests`: unit and integration skeletons
-- `docker`: local development containers
+1. [`docs/getting-started.md`](docs/getting-started.md)
+2. [`docs/payroll-workflow.md`](docs/payroll-workflow.md)
+3. [`docs/interfaces.md`](docs/interfaces.md)

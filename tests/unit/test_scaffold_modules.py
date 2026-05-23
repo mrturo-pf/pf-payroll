@@ -19,6 +19,7 @@ from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
+from payroll.application.use_cases.refresh_income_tax_brackets import RefreshIncomeTaxBrackets
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.application.use_cases.refresh_rates import RefreshRates
 from payroll.config import Settings
@@ -140,6 +141,9 @@ def test_use_case_placeholders_are_instantiable() -> None:
         async def refresh_rates(self, command: object) -> object:
             return command
 
+        async def upsert_income_tax_brackets(self, brackets: list[object]) -> int:
+            return len(brackets)
+
         async def get_period_detail(self, period_id: int) -> object:
             return period_id
 
@@ -164,6 +168,7 @@ def test_use_case_placeholders_are_instantiable() -> None:
     assert isinstance(DeflateAmounts(StubRepository(), StubRepository()), DeflateAmounts)
     assert isinstance(ComputeIncomeTax(StubRepository(), StubRepository()), ComputeIncomeTax)
     assert isinstance(RefreshRates(StubRepository()), RefreshRates)
+    assert isinstance(RefreshIncomeTaxBrackets(StubRepository(), object()), RefreshIncomeTaxBrackets)
 
 
 def test_dashboard_placeholder_prints_message(capsys: pytest.CaptureFixture[str]) -> None:

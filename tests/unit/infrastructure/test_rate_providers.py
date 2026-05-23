@@ -6,14 +6,19 @@ from urllib.error import URLError
 
 import pytest
 
-from payroll.application.dto import EconomicIndexWriteDTO, ExchangeRateWriteDTO
+from payroll.application.dto import EconomicIndexWriteDTO, ExchangeRateWriteDTO, IncomeTaxBracketWriteDTO
 from payroll.infrastructure.rate_providers.chained_provider import ChainedEconomicIndexProvider, ChainedFxProvider
 from payroll.infrastructure.rate_providers.official_providers import (
     BcchSeriesProvider,
     MindicadorRateProvider,
+    SiiIncomeTaxBracketProvider,
     SiiIndicatorsProvider,
+    _build_monthly_income_tax_brackets,
+    _extract_income_tax_month_rows,
     _extract_sii_rows,
     _fetch_url,
+    _parse_month_heading,
+    _parse_chilean_amount,
     _parse_chilean_decimal,
 )
 
@@ -110,6 +115,62 @@ async def test_sii_indicators_provider_handles_network_failures() -> None:
     provider = SiiIndicatorsProvider(fetcher=lambda url, timeout: (_ for _ in ()).throw(URLError("offline")))
 
     assert await provider.fetch_rate("UTM", date(2026, 1, 15)) is None
+
+
+@pytest.mark.asyncio
+async def test_sii_income_tax_bracket_provider_parses_monthly_sections_into_utm_brackets() -> None:
+    html = """
+    <div class='meses' id='mes_enero'>
+      <h3>Enero 2026</h3>
+      <div class='table-responsive'>
+        <table><tbody>
+          <tr><td><strong>MENSUAL</strong></td><td>-.-</td><td>$ 941.638,50</td><td>Exento</td><td>-.-</td><td>Exento</td></tr>
+          <tr><td><strong></strong></td><td>$ 941.638,51</td><td>$ 2.092.530,00</td><td>0,04</td><td>$ 37.665,54</td><td>2,20%</td></tr>
+          <tr><td><strong></strong></td><td>$ 2.092.530,01</td><td>Y M&Aacute;S</td><td>0,4</td><td>$ 2.708.922,84</td><td>M&Aacute;S DE 27,48%</td></tr>
+          <tr><td><strong>QUINCENAL</strong></td><td>-.-</td><td>$ 470.819,25</td><td>Exento</td><td>-.-</td><td>Exento</td></tr>
+        </tbody></table>
+      </div>
+    </div>
+    """
+    provider = SiiIncomeTaxBracketProvider(fetcher=lambda url, timeout: html)
+
+    result = await provider.fetch_income_tax_brackets(2026)
+
+    assert result == [
+        IncomeTaxBracketWriteDTO(
+            valid_from=date(2026, 1, 1),
+            valid_to=date(2026, 1, 31),
+            lower_bound_utm=Decimal("0.0000"),
+            upper_bound_utm=Decimal("13.5000"),
+            marginal_rate=Decimal("0"),
+            rebate_utm=Decimal("0.0000"),
+        ),
+        IncomeTaxBracketWriteDTO(
+            valid_from=date(2026, 1, 1),
+            valid_to=date(2026, 1, 31),
+            lower_bound_utm=Decimal("13.5000"),
+            upper_bound_utm=Decimal("30.0000"),
+            marginal_rate=Decimal("0.04"),
+            rebate_utm=Decimal("0.5400"),
+        ),
+        IncomeTaxBracketWriteDTO(
+            valid_from=date(2026, 1, 1),
+            valid_to=date(2026, 1, 31),
+            lower_bound_utm=Decimal("30.0000"),
+            upper_bound_utm=None,
+            marginal_rate=Decimal("0.4"),
+            rebate_utm=Decimal("38.8370"),
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sii_income_tax_bracket_provider_handles_missing_monthly_rows_and_network_failures() -> None:
+    provider = SiiIncomeTaxBracketProvider(fetcher=lambda url, timeout: "<h3>Enero 2026</h3><div class='table-responsive'><table><tbody></tbody></table></div>")
+    failing = SiiIncomeTaxBracketProvider(fetcher=lambda url, timeout: (_ for _ in ()).throw(URLError("offline")))
+
+    assert await provider.fetch_income_tax_brackets(2026) == []
+    assert await failing.fetch_income_tax_brackets(2026) == []
 
 
 @pytest.mark.asyncio
@@ -239,4 +300,31 @@ def test_rate_provider_helpers_cover_local_fetch_and_edge_parsing(tmp_path: Path
 
     assert '"ok": true' in _fetch_url(sample.as_uri(), 5)
     assert _parse_chilean_decimal(" ") is None
+    assert _parse_chilean_amount("$ 38.613,24") == Decimal("38613.24")
+    assert _parse_chilean_amount("Y MÁS") is None
+    assert _parse_month_heading("Sin mes") is None
+    assert _parse_month_heading("Foo 2026") is None
     assert _extract_sii_rows("<table><tr></tr><tr><td>Enero</td><td>69.751</td></tr></table>") == {1: ["Enero", "69.751"]}
+    assert _extract_income_tax_month_rows("<h3>Marzo 2026</h3><div class='table-responsive'><table><tbody><tr><td>MENSUAL</td></tr></tbody></table></div>") == {
+        date(2026, 3, 1): [["MENSUAL"]]
+    }
+    assert _extract_income_tax_month_rows("<h3>Foo 2026</h3><div class='table-responsive'><table><tbody><tr><td>MENSUAL</td></tr></tbody></table></div>") == {}
+    assert _build_monthly_income_tax_brackets(date(2026, 3, 1), [["QUINCENAL"]]) == []
+    assert _build_monthly_income_tax_brackets(date(2026, 3, 1), [["MENSUAL", "-.-"]]) == []
+    assert _build_monthly_income_tax_brackets(
+        date(2026, 3, 1),
+        [
+            ["MENSUAL", "-.-", "$ 1.350,00", "Exento", "-.-"],
+            ["", "$ 1.350,01"],
+            ["", "$ 2.000,00", "$ 3.000,00", "", "$ 100,00"],
+        ],
+    ) == [
+        IncomeTaxBracketWriteDTO(
+            valid_from=date(2026, 3, 1),
+            valid_to=date(2026, 3, 31),
+            lower_bound_utm=Decimal("0.0000"),
+            upper_bound_utm=Decimal("13.5000"),
+            marginal_rate=Decimal("0"),
+            rebate_utm=Decimal("0.0000"),
+        )
+    ]

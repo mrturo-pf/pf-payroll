@@ -301,6 +301,28 @@ class IncomeTaxBracketDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class IncomeTaxBracketWriteDTO:
+    valid_from: date
+    valid_to: date | None
+    lower_bound_utm: Decimal
+    upper_bound_utm: Decimal | None
+    marginal_rate: Decimal
+    rebate_utm: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class RefreshIncomeTaxBracketsCommandDTO:
+    year: int
+
+
+@dataclass(frozen=True, slots=True)
+class RefreshIncomeTaxBracketsResultDTO:
+    year: int
+    refreshed_months: int
+    upserted_brackets: int
+
+
+@dataclass(frozen=True, slots=True)
 class DeflateAmountsCommandDTO:
     period_id: int
     target_year: int

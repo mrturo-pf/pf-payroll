@@ -10,6 +10,7 @@ from payroll.infrastructure.rate_providers.chained_provider import ChainedEconom
 from payroll.infrastructure.rate_providers.official_providers import (
     BcchSeriesProvider,
     MindicadorRateProvider,
+    SiiIncomeTaxBracketProvider,
     SiiIndicatorsProvider,
 )
 from payroll.application.use_cases.market_data import MarketDataQueries
@@ -19,6 +20,7 @@ from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
+from payroll.application.use_cases.refresh_income_tax_brackets import RefreshIncomeTaxBrackets
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.application.use_cases.refresh_rates import RefreshRates
 from payroll.infrastructure.db.repositories.market_data_repository import SqlAlchemyMarketDataRepository
@@ -43,6 +45,19 @@ def get_reference_data_queries(
     repository: ReferenceDataRepository = Depends(get_reference_data_repository),
 ) -> ReferenceDataQueries:
     return ReferenceDataQueries(repository)
+
+
+def get_income_tax_bracket_provider() -> SiiIncomeTaxBracketProvider:
+    return SiiIncomeTaxBracketProvider(
+        base_url=settings.sii_base_url,
+        timeout_seconds=settings.rate_provider_timeout_seconds,
+    )
+
+
+def get_refresh_income_tax_brackets_use_case(
+    repository: ReferenceDataRepository = Depends(get_reference_data_repository),
+) -> RefreshIncomeTaxBrackets:
+    return RefreshIncomeTaxBrackets(repository, get_income_tax_bracket_provider())
 
 
 def get_payroll_repository(

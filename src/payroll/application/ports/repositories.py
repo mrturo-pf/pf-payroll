@@ -19,6 +19,7 @@ from payroll.application.dto import (
     HealthInstitutionDTO,
     HealthPlanDTO,
     IncomeTaxBracketDTO,
+    IncomeTaxBracketWriteDTO,
     IncomeTaxContextDTO,
     ImportPayrollResultDTO,
     ImportPayrollRowDTO,
@@ -34,7 +35,7 @@ from payroll.domain.taxes import IncomeTaxBracket
 
 
 class ReferenceDataRepository(Protocol):
-    """Read-only access to reference catalogs."""
+    """Access to reference catalogs and official synchronization flows."""
 
     async def list_currencies(self) -> list[CurrencyDTO]: ...
 
@@ -51,6 +52,8 @@ class ReferenceDataRepository(Protocol):
     async def list_payroll_concepts(self) -> list[PayrollConceptDTO]: ...
 
     async def list_income_tax_brackets(self) -> list[IncomeTaxBracketDTO]: ...
+
+    async def upsert_income_tax_brackets(self, brackets: list[IncomeTaxBracketWriteDTO]) -> int: ...
 
 
 class PayrollRepository(Protocol):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from calendar import monthrange
 from datetime import date, datetime
 from decimal import Decimal
 from html import unescape
@@ -13,7 +14,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-from payroll.application.dto import EconomicIndexWriteDTO, ExchangeRateWriteDTO
+from payroll.application.dto import EconomicIndexWriteDTO, ExchangeRateWriteDTO, IncomeTaxBracketWriteDTO
 
 _MONTHS = {
     "ENERO": 1,
@@ -29,6 +30,8 @@ _MONTHS = {
     "NOVIEMBRE": 11,
     "DICIEMBRE": 12,
 }
+_MONTHLY_EXEMPT_LIMIT_UTM = Decimal("13.5")
+_BRACKET_UTM_QUANT = Decimal("0.0001")
 
 
 def _fetch_url(url: str, timeout_seconds: int) -> str:
@@ -56,6 +59,13 @@ def _strip_html(raw: str) -> str:
     return re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", raw))).strip()
 
 
+def _parse_chilean_amount(raw: str) -> Decimal | None:
+    cleaned = raw.replace("$", "").replace("-.-", "").replace("Y MÁS", "").replace("Y MAS", "").strip()
+    if not cleaned:
+        return None
+    return _parse_chilean_decimal(cleaned)
+
+
 def _extract_sii_rows(html: str) -> dict[int, list[str]]:
     rows_by_month: dict[int, list[str]] = {}
     for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, flags=re.IGNORECASE | re.DOTALL):
@@ -66,6 +76,93 @@ def _extract_sii_rows(html: str) -> dict[int, list[str]]:
         if month is not None:
             rows_by_month[month] = cells
     return rows_by_month
+
+
+def _parse_month_heading(raw: str) -> date | None:
+    match = re.search(r"([A-Za-zÁÉÍÓÚáéíóúñÑ]+)\s+(\d{4})", raw)
+    if match is None:
+        return None
+    month = _MONTHS.get(unescape(match.group(1)).upper())
+    if month is None:
+        return None
+    return date(int(match.group(2)), month, 1)
+
+
+def _extract_income_tax_month_rows(html: str) -> dict[date, list[list[str]]]:
+    rows_by_month: dict[date, list[list[str]]] = {}
+    for section in re.finditer(
+        r"<h3>(.*?)</h3>\s*<div class=['\"]table-responsive['\"][^>]*>.*?<tbody>(.*?)</tbody>",
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    ):
+        month_start = _parse_month_heading(_strip_html(section.group(1)))
+        if month_start is None:
+            continue
+        rows_by_month[month_start] = [
+            [_strip_html(cell) for cell in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, flags=re.IGNORECASE | re.DOTALL)]
+            for row in re.findall(r"<tr[^>]*>(.*?)</tr>", section.group(2), flags=re.IGNORECASE | re.DOTALL)
+            if re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, flags=re.IGNORECASE | re.DOTALL)
+        ]
+    return rows_by_month
+
+
+def _quantize_bracket_utm(value: Decimal) -> Decimal:
+    return value.quantize(_BRACKET_UTM_QUANT)
+
+
+def _build_monthly_income_tax_brackets(
+    valid_from: date,
+    rows: list[list[str]],
+) -> list[IncomeTaxBracketWriteDTO]:
+    monthly_rows: list[list[str]] = []
+    collecting = False
+    for row in rows:
+        period_label = row[0].upper() if row else ""
+        if period_label:
+            if period_label == "MENSUAL":
+                collecting = True
+            elif collecting:
+                break
+            else:
+                continue
+        if collecting:
+            monthly_rows.append(row)
+
+    if not monthly_rows:
+        return []
+
+    first_upper_clp = _parse_chilean_amount(monthly_rows[0][2]) if len(monthly_rows[0]) > 2 else None
+    if first_upper_clp is None or first_upper_clp <= 0:
+        return []
+
+    utm_value = first_upper_clp / _MONTHLY_EXEMPT_LIMIT_UTM
+    valid_to = date(valid_from.year, valid_from.month, monthrange(valid_from.year, valid_from.month)[1])
+    lower_bound_utm = Decimal("0.0000")
+    brackets: list[IncomeTaxBracketWriteDTO] = []
+
+    for row in monthly_rows:
+        if len(row) < 5:
+            continue
+        upper_clp = _parse_chilean_amount(row[2])
+        factor = Decimal("0") if row[3].upper() == "EXENTO" else _parse_chilean_decimal(row[3])
+        if factor is None:
+            continue
+        rebate_clp = _parse_chilean_amount(row[4]) or Decimal("0")
+        upper_bound_utm = _quantize_bracket_utm(upper_clp / utm_value) if upper_clp is not None else None
+        brackets.append(
+            IncomeTaxBracketWriteDTO(
+                valid_from=valid_from,
+                valid_to=valid_to,
+                lower_bound_utm=lower_bound_utm,
+                upper_bound_utm=upper_bound_utm,
+                marginal_rate=factor,
+                rebate_utm=_quantize_bracket_utm(rebate_clp / utm_value),
+            )
+        )
+        if upper_bound_utm is not None:
+            lower_bound_utm = upper_bound_utm
+
+    return brackets
 
 
 class MindicadorRateProvider:
@@ -171,6 +268,32 @@ class SiiIndicatorsProvider:
             base_period="2023=100",
             source=self.name,
         )
+
+
+class SiiIncomeTaxBracketProvider:
+    name = "sii"
+
+    def __init__(
+        self,
+        base_url: str = "https://www.sii.cl",
+        timeout_seconds: int = 10,
+        fetcher: Callable[[str, int], str] | None = None,
+    ) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._timeout_seconds = timeout_seconds
+        self._fetcher = fetcher or _fetch_url
+
+    async def fetch_income_tax_brackets(self, year: int) -> list[IncomeTaxBracketWriteDTO]:
+        url = f"{self._base_url}/valores_y_fechas/impuesto_2da_categoria/impuesto{year}.htm"
+        try:
+            html = await asyncio.to_thread(self._fetcher, url, self._timeout_seconds)
+        except (HTTPError, URLError):
+            return []
+
+        brackets: list[IncomeTaxBracketWriteDTO] = []
+        for valid_from, rows in sorted(_extract_income_tax_month_rows(html).items()):
+            brackets.extend(_build_monthly_income_tax_brackets(valid_from, rows))
+        return brackets
 
 
 class BcchSeriesProvider:

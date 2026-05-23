@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Protocol
 
-from payroll.application.dto import EconomicIndexWriteDTO, ExchangeRateWriteDTO
+from payroll.application.dto import EconomicIndexWriteDTO, ExchangeRateWriteDTO, IncomeTaxBracketWriteDTO
 
 
 class FxRateProvider(Protocol):
@@ -14,3 +14,7 @@ class FxRateProvider(Protocol):
 
 class EconomicIndexProvider(Protocol):
     async def fetch_index(self, code: str, period_year: int, period_month: int) -> EconomicIndexWriteDTO | None: ...
+
+
+class IncomeTaxBracketProvider(Protocol):
+    async def fetch_income_tax_brackets(self, year: int) -> list[IncomeTaxBracketWriteDTO]: ...

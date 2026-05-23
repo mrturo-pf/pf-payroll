@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
+from payroll.application.use_cases.refresh_income_tax_brackets import RefreshIncomeTaxBrackets
 from payroll.domain.contributions import HealthInstitutionKind
 from payroll.infrastructure.db.models import (
     ContributionCapModel,
@@ -46,10 +47,14 @@ class FakeSession:
     def __init__(self, results: list[FakeResult]) -> None:
         self._results = results
         self.statements: list[object] = []
+        self.commit_calls = 0
 
     async def execute(self, statement: object) -> FakeResult:
         self.statements.append(statement)
         return self._results.pop(0)
+
+    async def commit(self) -> None:
+        self.commit_calls += 1
 
 
 @pytest.mark.asyncio
@@ -170,9 +175,44 @@ async def test_api_dependencies_build_repository_queries_and_session(monkeypatch
 
     repository = dependencies.get_reference_data_repository(fake_session)  # type: ignore[arg-type]
     queries = dependencies.get_reference_data_queries(repository)
+    refresh_use_case = dependencies.get_refresh_income_tax_brackets_use_case(repository)
 
     assert isinstance(repository, SqlAlchemyReferenceDataRepository)
     assert isinstance(queries, ReferenceDataQueries)
+    assert isinstance(refresh_use_case, RefreshIncomeTaxBrackets)
+
+
+@pytest.mark.asyncio
+async def test_sqlalchemy_reference_data_repository_upserts_income_tax_brackets() -> None:
+    session = FakeSession([FakeResult()])
+    repository = SqlAlchemyReferenceDataRepository(session)
+
+    result = await repository.upsert_income_tax_brackets(
+        [
+            SimpleNamespace(
+                valid_from=date(2026, 1, 1),
+                valid_to=date(2026, 1, 31),
+                lower_bound_utm=Decimal("0.0000"),
+                upper_bound_utm=Decimal("13.5000"),
+                marginal_rate=Decimal("0"),
+                rebate_utm=Decimal("0.0000"),
+            )
+        ]
+    )
+
+    assert result == 1
+    assert len(session.statements) == 1
+    assert session.commit_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_sqlalchemy_reference_data_repository_returns_zero_when_no_brackets_are_provided() -> None:
+    session = FakeSession([])
+    repository = SqlAlchemyReferenceDataRepository(session)
+
+    assert await repository.upsert_income_tax_brackets([]) == 0
+    assert session.statements == []
+    assert session.commit_calls == 0
 
 
 def test_reference_data_models_and_enums_are_declared() -> None:

@@ -1,5 +1,6 @@
 """SQLAlchemy repository for reference data."""
 
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +10,7 @@ from payroll.application.dto import (
     HealthInstitutionDTO,
     HealthPlanDTO,
     IncomeTaxBracketDTO,
+    IncomeTaxBracketWriteDTO,
     PayrollConceptDTO,
     PensionInstitutionDTO,
     PensionPlanDTO,
@@ -152,3 +154,34 @@ class SqlAlchemyReferenceDataRepository:
             )
             for row in result.scalars().all()
         ]
+
+    async def upsert_income_tax_brackets(self, brackets: list[IncomeTaxBracketWriteDTO]) -> int:
+        if not brackets:
+            return 0
+
+        statement = insert(IncomeTaxBracketModel).values(
+            [
+                {
+                    "valid_from": item.valid_from,
+                    "valid_to": item.valid_to,
+                    "lower_bound_utm": item.lower_bound_utm,
+                    "upper_bound_utm": item.upper_bound_utm,
+                    "marginal_rate": item.marginal_rate,
+                    "rebate_utm": item.rebate_utm,
+                }
+                for item in brackets
+            ]
+        )
+        await self._session.execute(
+            statement.on_conflict_do_update(
+                index_elements=[IncomeTaxBracketModel.valid_from, IncomeTaxBracketModel.lower_bound_utm],
+                set_={
+                    "valid_to": statement.excluded.valid_to,
+                    "upper_bound_utm": statement.excluded.upper_bound_utm,
+                    "marginal_rate": statement.excluded.marginal_rate,
+                    "rebate_utm": statement.excluded.rebate_utm,
+                },
+            )
+        )
+        await self._session.commit()
+        return len(brackets)

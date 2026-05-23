@@ -6,6 +6,12 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from payroll.application.ports.repositories import MarketDataRepository, PayrollRepository, ReferenceDataRepository
+from payroll.infrastructure.rate_providers.chained_provider import ChainedEconomicIndexProvider, ChainedFxProvider
+from payroll.infrastructure.rate_providers.official_providers import (
+    BcchSeriesProvider,
+    MindicadorRateProvider,
+    SiiIndicatorsProvider,
+)
 from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.compute_contributions import ComputeContributions
@@ -19,6 +25,7 @@ from payroll.infrastructure.db.repositories.market_data_repository import SqlAlc
 from payroll.infrastructure.db.repositories.payroll_repository import SqlAlchemyPayrollRepository
 from payroll.infrastructure.db.repositories.reference_data_repository import SqlAlchemyReferenceDataRepository
 from payroll.infrastructure.db.session import SessionLocal
+from payroll.config import settings
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
@@ -59,7 +66,47 @@ def get_market_data_queries(
 def get_refresh_rates_use_case(
     repository: MarketDataRepository = Depends(get_market_data_repository),
 ) -> RefreshRates:
-    return RefreshRates(repository)
+    return RefreshRates(repository, get_fx_rate_provider(), get_economic_index_provider())
+
+
+def get_fx_rate_provider() -> ChainedFxProvider:
+    bcch_provider = BcchSeriesProvider(
+        user=settings.bcch_api_user,
+        password=settings.bcch_api_password,
+        series_codes={
+            "UF": settings.bcch_series_uf,
+            "USD": settings.bcch_series_usd,
+            "EUR": settings.bcch_series_eur,
+            "UTM": settings.bcch_series_utm,
+        },
+        base_url=settings.bcch_api_base_url,
+        timeout_seconds=settings.rate_provider_timeout_seconds,
+    )
+    return ChainedFxProvider(
+        [
+            bcch_provider,
+            SiiIndicatorsProvider(base_url=settings.sii_base_url, timeout_seconds=settings.rate_provider_timeout_seconds),
+            MindicadorRateProvider(
+                base_url=settings.mindicador_base_url,
+                timeout_seconds=settings.rate_provider_timeout_seconds,
+            ),
+        ]
+    )
+
+
+def get_economic_index_provider() -> ChainedEconomicIndexProvider:
+    return ChainedEconomicIndexProvider(
+        [
+            BcchSeriesProvider(
+                user=settings.bcch_api_user,
+                password=settings.bcch_api_password,
+                series_codes={"IPC_CL": settings.bcch_series_ipc_cl},
+                base_url=settings.bcch_api_base_url,
+                timeout_seconds=settings.rate_provider_timeout_seconds,
+            ),
+            SiiIndicatorsProvider(base_url=settings.sii_base_url, timeout_seconds=settings.rate_provider_timeout_seconds),
+        ]
+    )
 
 
 def get_import_payroll_use_case(

@@ -6,6 +6,8 @@ import pytest
 from payroll.application.dto import (
     EconomicIndexWriteDTO,
     ExchangeRateWriteDTO,
+    ProviderEconomicIndexRequestDTO,
+    ProviderExchangeRateRequestDTO,
     RefreshRatesCommandDTO,
     RefreshRatesResultDTO,
 )
@@ -31,6 +33,29 @@ class StubMarketDataRepository:
             upserted_exchange_rates=len(command.exchange_rates),
             upserted_economic_indices=len(command.economic_indices),
         )
+
+
+class StubFxProvider:
+    async def fetch_rate_entry(self, currency_code: str, rate_date: date) -> ExchangeRateWriteDTO | None:
+        if currency_code == "UF":
+            return ExchangeRateWriteDTO(currency_code="UF", rate_date=rate_date, value_clp=Decimal("38000"), source="mindicador")
+        return None
+
+
+class StubEconomicIndexProvider:
+    async def fetch_index(self, code: str, period_year: int, period_month: int) -> EconomicIndexWriteDTO | None:
+        if code == "IPC_CL":
+            return EconomicIndexWriteDTO(
+                code="IPC_CL",
+                period_year=period_year,
+                period_month=period_month,
+                index_value=Decimal("112.340000"),
+                monthly_change=Decimal("0.7000"),
+                yearly_change=Decimal("4.1000"),
+                base_period="2023=100",
+                source="sii",
+            )
+        return None
 
 
 @pytest.mark.asyncio
@@ -78,3 +103,78 @@ async def test_refresh_rates_normalizes_codes_and_delegates() -> None:
     assert repository.command.economic_indices[0].code == "IPC_CL"
     assert repository.command.economic_indices[0].base_period == "DIC-2018"
     assert repository.command.economic_indices[0].source == "manual"
+
+
+@pytest.mark.asyncio
+async def test_refresh_rates_fetches_provider_backed_entries_and_manual_values_override() -> None:
+    repository = StubMarketDataRepository()
+    result = await RefreshRates(
+        repository,
+        fx_provider=StubFxProvider(),  # type: ignore[arg-type]
+        economic_index_provider=StubEconomicIndexProvider(),  # type: ignore[arg-type]
+    ).execute(
+        RefreshRatesCommandDTO(
+            exchange_rates=[
+                ExchangeRateWriteDTO(currency_code="uf", rate_date=date(2026, 1, 31), value_clp=Decimal("38100"), source="manual")
+            ],
+            provider_exchange_rates=[ProviderExchangeRateRequestDTO(currency_code=" uf ", rate_date=date(2026, 1, 31))],
+            provider_economic_indices=[ProviderEconomicIndexRequestDTO(code=" ipc_cl ", period_year=2026, period_month=1)],
+        )
+    )
+
+    assert result == RefreshRatesResultDTO(upserted_exchange_rates=1, upserted_economic_indices=1)
+    assert repository.command is not None
+    assert repository.command.exchange_rates == [
+        ExchangeRateWriteDTO(currency_code="UF", rate_date=date(2026, 1, 31), value_clp=Decimal("38100"), source="manual")
+    ]
+    assert repository.command.economic_indices == [
+        EconomicIndexWriteDTO(
+            code="IPC_CL",
+            period_year=2026,
+            period_month=1,
+            index_value=Decimal("112.340000"),
+            monthly_change=Decimal("0.7000"),
+            yearly_change=Decimal("4.1000"),
+            base_period="2023=100",
+            source="sii",
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_refresh_rates_rejects_missing_provider_configuration_and_fetch_misses() -> None:
+    with pytest.raises(ValueError, match="Exchange-rate provider chain is not configured."):
+        await RefreshRates(StubMarketDataRepository()).execute(
+            RefreshRatesCommandDTO(
+                provider_exchange_rates=[ProviderExchangeRateRequestDTO(currency_code="UF", rate_date=date(2026, 1, 31))]
+            )
+        )
+
+    with pytest.raises(ValueError, match="Exchange rate USD for 2026-01-31 could not be fetched"):
+        await RefreshRates(
+            StubMarketDataRepository(),
+            fx_provider=StubFxProvider(),  # type: ignore[arg-type]
+            economic_index_provider=StubEconomicIndexProvider(),  # type: ignore[arg-type]
+        ).execute(
+            RefreshRatesCommandDTO(
+                provider_exchange_rates=[ProviderExchangeRateRequestDTO(currency_code="USD", rate_date=date(2026, 1, 31))]
+            )
+        )
+
+    with pytest.raises(ValueError, match="Economic-index provider chain is not configured."):
+        await RefreshRates(StubMarketDataRepository(), fx_provider=StubFxProvider()).execute(
+            RefreshRatesCommandDTO(
+                provider_economic_indices=[ProviderEconomicIndexRequestDTO(code="IPC_CL", period_year=2026, period_month=1)]
+            )
+        )
+
+    with pytest.raises(ValueError, match="Economic index UF_CL for 2026-01 could not be fetched"):
+        await RefreshRates(
+            StubMarketDataRepository(),
+            fx_provider=StubFxProvider(),  # type: ignore[arg-type]
+            economic_index_provider=StubEconomicIndexProvider(),  # type: ignore[arg-type]
+        ).execute(
+            RefreshRatesCommandDTO(
+                provider_economic_indices=[ProviderEconomicIndexRequestDTO(code="UF_CL", period_year=2026, period_month=1)]
+            )
+        )

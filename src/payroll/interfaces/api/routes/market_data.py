@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 from payroll.application.dto import (
     EconomicIndexWriteDTO,
     ExchangeRateWriteDTO,
+    ProviderEconomicIndexRequestDTO,
+    ProviderExchangeRateRequestDTO,
     RefreshRatesCommandDTO,
 )
 from payroll.application.use_cases.market_data import MarketDataQueries
@@ -54,9 +56,22 @@ class EconomicIndexWrite(BaseModel):
     source: str = Field(default="manual", min_length=1)
 
 
+class ProviderExchangeRateRequest(BaseModel):
+    currency_code: str = Field(min_length=1)
+    rate_date: date
+
+
+class ProviderEconomicIndexRequest(BaseModel):
+    code: str = Field(min_length=1)
+    period_year: int = Field(ge=1990, le=2100)
+    period_month: int = Field(ge=1, le=12)
+
+
 class RefreshRatesRequest(BaseModel):
     exchange_rates: list[ExchangeRateWrite] = Field(default_factory=list)
     economic_indices: list[EconomicIndexWrite] = Field(default_factory=list)
+    fetch_exchange_rates: list[ProviderExchangeRateRequest] = Field(default_factory=list)
+    fetch_economic_indices: list[ProviderEconomicIndexRequest] = Field(default_factory=list)
 
 
 class RefreshRatesResponse(BaseModel):
@@ -115,7 +130,7 @@ async def refresh_rates(
                         value_clp=item.value_clp,
                         source=item.source,
                     )
-                    for item in payload.exchange_rates
+                    for item in getattr(payload, "exchange_rates", [])
                 ],
                 economic_indices=[
                     EconomicIndexWriteDTO(
@@ -128,7 +143,19 @@ async def refresh_rates(
                         base_period=item.base_period,
                         source=item.source,
                     )
-                    for item in payload.economic_indices
+                    for item in getattr(payload, "economic_indices", [])
+                ],
+                provider_exchange_rates=[
+                    ProviderExchangeRateRequestDTO(currency_code=item.currency_code, rate_date=item.rate_date)
+                    for item in getattr(payload, "fetch_exchange_rates", [])
+                ],
+                provider_economic_indices=[
+                    ProviderEconomicIndexRequestDTO(
+                        code=item.code,
+                        period_year=item.period_year,
+                        period_month=item.period_month,
+                    )
+                    for item in getattr(payload, "fetch_economic_indices", [])
                 ],
             )
         )

@@ -1,6 +1,6 @@
 """Application DTOs."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from typing import Literal
@@ -202,9 +202,24 @@ class EconomicIndexWriteDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class ProviderExchangeRateRequestDTO:
+    currency_code: str
+    rate_date: date
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderEconomicIndexRequestDTO:
+    code: str
+    period_year: int
+    period_month: int
+
+
+@dataclass(frozen=True, slots=True)
 class RefreshRatesCommandDTO:
-    exchange_rates: list[ExchangeRateWriteDTO]
-    economic_indices: list[EconomicIndexWriteDTO]
+    exchange_rates: list[ExchangeRateWriteDTO] = field(default_factory=list)
+    economic_indices: list[EconomicIndexWriteDTO] = field(default_factory=list)
+    provider_exchange_rates: list[ProviderExchangeRateRequestDTO] = field(default_factory=list)
+    provider_economic_indices: list[ProviderEconomicIndexRequestDTO] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)

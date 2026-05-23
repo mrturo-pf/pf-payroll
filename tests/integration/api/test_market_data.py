@@ -37,6 +37,17 @@ class FakeRefreshRates:
     async def execute(self, command: object) -> RefreshRatesResultDTO:
         assert len(getattr(command, "exchange_rates")) == 1
         assert len(getattr(command, "economic_indices")) == 1
+        assert len(getattr(command, "provider_exchange_rates")) == 0
+        assert len(getattr(command, "provider_economic_indices")) == 0
+        return RefreshRatesResultDTO(upserted_exchange_rates=1, upserted_economic_indices=1)
+
+
+class FakeProviderRefreshRates:
+    async def execute(self, command: object) -> RefreshRatesResultDTO:
+        assert len(getattr(command, "exchange_rates")) == 0
+        assert len(getattr(command, "economic_indices")) == 0
+        assert len(getattr(command, "provider_exchange_rates")) == 1
+        assert len(getattr(command, "provider_economic_indices")) == 1
         return RefreshRatesResultDTO(upserted_exchange_rates=1, upserted_economic_indices=1)
 
 
@@ -117,6 +128,25 @@ def test_market_data_refresh_endpoint_surfaces_domain_errors() -> None:
 
     assert response.status_code == 400
     assert response.json() == {"detail": "bad market data payload"}
+
+
+def test_market_data_refresh_endpoint_accepts_provider_fetch_requests() -> None:
+    app.dependency_overrides[get_refresh_rates_use_case] = lambda: FakeProviderRefreshRates()
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+            "/market-data/refresh",
+            json={
+                "fetch_exchange_rates": [{"currency_code": "UF", "rate_date": "2026-01-31"}],
+                "fetch_economic_indices": [{"code": "IPC_CL", "period_year": 2026, "period_month": 4}],
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {"upserted_exchange_rates": 1, "upserted_economic_indices": 1}
 
 
 @pytest.mark.asyncio

@@ -51,7 +51,7 @@ The API currently exposes these HTTP endpoints:
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/health` | Basic healthcheck. Returns `{"status": "ok"}`. |
-| `POST` | `/market-data/refresh` | Upserts historical exchange rates and economic indices such as UF, UTM, FX, and IPC. |
+| `POST` | `/market-data/refresh` | Upserts historical exchange rates and economic indices such as UF, UTM, FX, and IPC. Supports both manual payloads and provider-backed fetch requests. |
 | `GET` | `/market-data/exchange-rates` | Lists stored exchange rates, optionally filtered by `currency_code`. |
 | `GET` | `/market-data/economic-indices` | Lists stored economic indices, optionally filtered by `code`. |
 | `POST` | `/payroll/import` | Imports a CSV or XLSX payroll file and persists employers, periods, and items into PostgreSQL. |
@@ -102,9 +102,35 @@ curl -X POST http://127.0.0.1:8000/market-data/refresh \
     ]
   }'
 
+curl -X POST http://127.0.0.1:8000/market-data/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fetch_exchange_rates": [
+      {"currency_code": "UF", "rate_date": "2026-01-31"},
+      {"currency_code": "UTM", "rate_date": "2026-01-01"},
+      {"currency_code": "USD", "rate_date": "2026-01-31"}
+    ],
+    "fetch_economic_indices": [
+      {"code": "IPC_CL", "period_year": 2026, "period_month": 4}
+    ]
+  }'
+
 curl http://127.0.0.1:8000/market-data/exchange-rates?currency_code=UF
 curl http://127.0.0.1:8000/market-data/economic-indices?code=IPC_CL
 ```
+
+The refresh endpoint can now:
+
+- upsert manual rates and indices exactly as before
+- fetch UF, UTM, USD, and EUR quotes from a configured provider chain
+- fetch `IPC_CL` index points from official/public providers
+- prefer configured official providers first and fall back to public sources when available
+
+Default provider behavior:
+
+- `UTM` and `IPC_CL`: SII-backed lookup without credentials
+- `UF`, `USD`, `EUR`: `mindicador` fallback
+- BCCh support is available through optional environment variables for API credentials and series codes
 
 Reference data examples:
 

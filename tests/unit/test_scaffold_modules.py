@@ -19,6 +19,7 @@ from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
+from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
 from payroll.application.use_cases.refresh_income_tax_brackets import RefreshIncomeTaxBrackets
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.application.use_cases.refresh_rates import RefreshRates
@@ -120,6 +121,9 @@ def test_use_case_placeholders_are_instantiable() -> None:
         async def assign_plans(self, command: object) -> object:
             return command
 
+        async def review_period(self, command: object) -> object:
+            return command
+
         async def get_contribution_context(self, command: object) -> object:
             return command
 
@@ -162,6 +166,7 @@ def test_use_case_placeholders_are_instantiable() -> None:
     assert isinstance(ImportPayroll(StubRepository()), ImportPayroll)
     assert isinstance(PayrollQueries(StubRepository()), PayrollQueries)
     assert isinstance(AssignPlans(StubRepository()), AssignPlans)
+    assert isinstance(ReviewPayrollPeriod(StubRepository()), ReviewPayrollPeriod)
     assert isinstance(ReferenceDataQueries(object()), ReferenceDataQueries)
     assert isinstance(MarketDataQueries(StubRepository()), MarketDataQueries)
     assert isinstance(ComputeContributions(StubRepository(), StubRepository()), ComputeContributions)

@@ -58,6 +58,7 @@ The API currently exposes these HTTP endpoints:
 | `GET` | `/payroll/summary` | Lists payroll period totals from `mv_payroll_summary`, including taxable income, gross income, discounts, and net pay. |
 | `GET` | `/payroll/{period_id}` | Returns a payroll period with employer data, itemized concepts, selected plans, and summary totals. |
 | `POST` | `/payroll/{period_id}/assign-plans` | Assigns pension and health plan snapshot ids to a payroll period, validating that both plans are active for the period payment date. |
+| `POST` | `/payroll/{period_id}/review` | Marks a payroll period as `reviewed` once plans are assigned and all mandatory computed items exist. |
 | `POST` | `/payroll/{period_id}/compute-contributions` | Computes pension and health contributions for an imported payroll period and persists the resulting discount items. If `uf_value_clp` is omitted, the API uses the stored UF rate for the payment date. |
 | `POST` | `/payroll/{period_id}/compute-tax` | Computes Chilean monthly income tax withholding for an imported payroll period and persists it as `INCOME_TAX`. If `utm_value_clp` is omitted, the API uses the stored UTM rate for the payment date. |
 | `POST` | `/payroll/{period_id}/deflate` | Converts payroll summary totals from nominal CLP into real CLP using stored economic indices such as `IPC_CL`, taking the payroll period month as the source period. |
@@ -197,6 +198,19 @@ The assignment endpoint:
 - validates that the selected pension and health plans exist
 - enforces that both plans are valid for the original payment date of the period
 - stores `pension_plan_id` and `health_plan_id` on the payroll period as the historical snapshot
+
+Review example:
+
+```bash
+curl -X POST http://127.0.0.1:8000/payroll/1/review
+```
+
+The review endpoint:
+
+- requires the payroll period to exist
+- requires `pension_plan_id` and `health_plan_id` to be assigned on the period
+- requires computed contribution items and `INCOME_TAX` to already exist on the period
+- marks the period status as `reviewed`
 
 The contribution endpoint:
 

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from payroll.application.dto import (
     AssignPlansCommandDTO,
+    ReviewPayrollPeriodCommandDTO,
     ComputeContributionsCommandDTO,
     DeflateAmountsCommandDTO,
     DeflatedAmountDTO,
@@ -21,6 +22,7 @@ from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
+from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
 from payroll.interfaces.api.dependencies import (
     get_assign_plans_use_case,
     get_compute_contributions_use_case,
@@ -28,6 +30,7 @@ from payroll.interfaces.api.dependencies import (
     get_compute_income_tax_use_case,
     get_import_payroll_use_case,
     get_payroll_queries,
+    get_review_payroll_period_use_case,
 )
 
 router = APIRouter(prefix="/payroll", tags=["payroll"])
@@ -66,6 +69,12 @@ class AssignPlansResponse(BaseModel):
     payment_date: date
     pension_plan_id: int
     health_plan_id: int
+
+
+class ReviewPayrollPeriodResponse(BaseModel):
+    period_id: int
+    payment_date: date
+    status: str
 
 
 class PensionContributionRead(BaseModel):
@@ -303,6 +312,23 @@ async def assign_plans(
         payment_date=result.payment_date,
         pension_plan_id=result.pension_plan_id,
         health_plan_id=result.health_plan_id,
+    )
+
+
+@router.post("/{period_id}/review", response_model=ReviewPayrollPeriodResponse)
+async def review_payroll_period(
+    period_id: int = Path(..., gt=0),
+    use_case: ReviewPayrollPeriod = Depends(get_review_payroll_period_use_case),
+) -> ReviewPayrollPeriodResponse:
+    try:
+        result = await use_case.execute(ReviewPayrollPeriodCommandDTO(period_id=period_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return ReviewPayrollPeriodResponse(
+        period_id=result.period_id,
+        payment_date=result.payment_date,
+        status=result.status,
     )
 
 

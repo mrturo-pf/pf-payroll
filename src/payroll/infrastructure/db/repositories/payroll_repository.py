@@ -22,6 +22,8 @@ from payroll.application.dto import (
     PayrollItemDetailDTO,
     PayrollPeriodDetailDTO,
     PayrollSummaryDTO,
+    ReviewPayrollPeriodCommandDTO,
+    ReviewPayrollPeriodResultDTO,
 )
 from payroll.domain.contributions import (
     ContributionCap,
@@ -208,6 +210,44 @@ class SqlAlchemyPayrollRepository:
             payment_date=period.payment_date,
             pension_plan_id=period.pension_plan_id,
             health_plan_id=period.health_plan_id,
+        )
+
+    async def review_period(self, command: ReviewPayrollPeriodCommandDTO) -> ReviewPayrollPeriodResultDTO:
+        period = await self._get_period(command.period_id)
+        if period.pension_plan_id is None or period.health_plan_id is None:
+            raise ValueError(
+                f"Payroll period {period.id} must have pension and health plans assigned before review."
+            )
+
+        required_codes = {
+            "PENSION_BASE",
+            "PENSION_ADDITIONAL",
+            "HEALTH_BASE",
+            "HEALTH_ADDITIONAL_UF",
+            "UNEMPLOYMENT_INSURANCE",
+            "INCOME_TAX",
+        }
+        present_result = await self._session.execute(
+            select(PayrollConceptModel.code)
+            .join(PayrollItemModel, PayrollItemModel.concept_id == PayrollConceptModel.id)
+            .where(PayrollItemModel.period_id == period.id)
+            .where(PayrollConceptModel.code.in_(required_codes))
+        )
+        present_codes = set(present_result.scalars().all())
+        missing_codes = sorted(required_codes - present_codes)
+        if missing_codes:
+            raise ValueError(
+                "Payroll period "
+                f"{period.id} must have computed contributions and income tax before review. Missing: "
+                f"{', '.join(missing_codes)}"
+            )
+
+        period.status = PayrollStatus.REVIEWED
+        await self._session.commit()
+        return ReviewPayrollPeriodResultDTO(
+            period_id=period.id,
+            payment_date=period.payment_date,
+            status=period.status.value,
         )
 
     async def get_contribution_context(

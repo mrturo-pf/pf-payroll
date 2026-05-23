@@ -30,6 +30,8 @@ from payroll.application.dto import (
     PensionPlanDTO,
     RefreshRatesCommandDTO,
     RefreshRatesResultDTO,
+    ReviewPayrollPeriodCommandDTO,
+    ReviewPayrollPeriodResultDTO,
 )
 from payroll.domain.taxes import IncomeTaxBracket
 
@@ -62,6 +64,8 @@ class PayrollRepository(Protocol):
     async def import_rows(self, rows: list[ImportPayrollRowDTO]) -> ImportPayrollResultDTO: ...
 
     async def assign_plans(self, command: AssignPlansCommandDTO) -> AssignPlansResultDTO: ...
+
+    async def review_period(self, command: ReviewPayrollPeriodCommandDTO) -> ReviewPayrollPeriodResultDTO: ...
 
     async def get_contribution_context(
         self,

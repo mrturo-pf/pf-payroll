@@ -165,6 +165,18 @@ class AssignPlansResultDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class ReviewPayrollPeriodCommandDTO:
+    period_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewPayrollPeriodResultDTO:
+    period_id: int
+    payment_date: date
+    status: PayrollStatusKind
+
+
+@dataclass(frozen=True, slots=True)
 class ContributionComputationContextDTO:
     period_id: int
     payment_date: date

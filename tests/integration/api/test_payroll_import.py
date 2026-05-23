@@ -15,6 +15,7 @@ from payroll.application.dto import (
     ComputeIncomeTaxResultDTO,
     ImportPayrollResultDTO,
     ImportedPayrollPeriodDTO,
+    ReviewPayrollPeriodResultDTO,
 )
 from payroll.domain.contributions import (
     EmploymentContractKind,
@@ -30,6 +31,7 @@ from payroll.interfaces.api.dependencies import (
     get_deflate_amounts_use_case,
     get_compute_income_tax_use_case,
     get_import_payroll_use_case,
+    get_review_payroll_period_use_case,
 )
 from payroll.interfaces.api.main import app
 from payroll.interfaces.api.routes.payroll import (
@@ -38,6 +40,7 @@ from payroll.interfaces.api.routes.payroll import (
     compute_income_tax,
     deflate_amounts,
     import_payroll,
+    review_payroll_period,
 )
 
 
@@ -133,6 +136,16 @@ class FakeComputeIncomeTax:
                 tax_utm=Decimal("0"),
                 tax_clp=Decimal("0"),
             ),
+        )
+
+
+class FakeReviewPayrollPeriod:
+    async def execute(self, command: object) -> ReviewPayrollPeriodResultDTO:
+        assert getattr(command, "period_id") == 5
+        return ReviewPayrollPeriodResultDTO(
+            period_id=5,
+            payment_date=date(2026, 1, 31),
+            status="reviewed",
         )
 
 
@@ -287,6 +300,23 @@ def test_assign_plans_endpoint() -> None:
     }
 
 
+def test_review_payroll_period_endpoint() -> None:
+    app.dependency_overrides[get_review_payroll_period_use_case] = lambda: FakeReviewPayrollPeriod()
+    client = TestClient(app)
+
+    try:
+        response = client.post("/payroll/5/review")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "period_id": 5,
+        "payment_date": "2026-01-31",
+        "status": "reviewed",
+    }
+
+
 def test_assign_plans_endpoint_surfaces_domain_errors() -> None:
     class ErrorAssignPlans:
         async def execute(self, command: object) -> AssignPlansResultDTO:
@@ -302,6 +332,23 @@ def test_assign_plans_endpoint_surfaces_domain_errors() -> None:
 
     assert response.status_code == 400
     assert response.json() == {"detail": "invalid plan for period"}
+
+
+def test_review_payroll_period_endpoint_surfaces_domain_errors() -> None:
+    class ErrorReviewPayrollPeriod:
+        async def execute(self, command: object) -> ReviewPayrollPeriodResultDTO:
+            raise ValueError("period must have computed items before review")
+
+    app.dependency_overrides[get_review_payroll_period_use_case] = lambda: ErrorReviewPayrollPeriod()
+    client = TestClient(app)
+
+    try:
+        response = client.post("/payroll/5/review")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "period must have computed items before review"}
 
 
 def test_compute_contributions_endpoint_surfaces_domain_errors() -> None:
@@ -449,6 +496,19 @@ async def test_assign_plans_endpoint_maps_value_errors_in_handler() -> None:
             payload=type("Payload", (), {"pension_plan_id": 1, "health_plan_id": 2})(),
             period_id=1,
             use_case=ErrorAssignPlans(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_review_payroll_period_endpoint_maps_value_errors_in_handler() -> None:
+    class ErrorReviewPayrollPeriod:
+        async def execute(self, command: object) -> ReviewPayrollPeriodResultDTO:
+            raise ValueError("bad review payload")
+
+    with pytest.raises(HTTPException, match="bad review payload"):
+        await review_payroll_period(
+            period_id=1,
+            use_case=ErrorReviewPayrollPeriod(),
         )
 
 

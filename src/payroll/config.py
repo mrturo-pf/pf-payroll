@@ -6,6 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     env: str = "development"
     database_url: str = "postgresql+asyncpg://payroll:payroll@localhost:5432/payroll"
+    api_base_url: str = "http://127.0.0.1:8000"
     log_level: str = "INFO"
     rate_provider_timeout_seconds: int = 10
     mindicador_base_url: str = "https://mindicador.cl/api"

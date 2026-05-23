@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 import runpy
 import sys
@@ -311,3 +312,19 @@ def test_cli_module_runs_as_main(monkeypatch: pytest.MonkeyPatch) -> None:
     runpy.run_module("payroll.interfaces.cli.main", run_name="__main__")
 
     assert called == [True]
+
+
+def test_dashboard_module_runs_as_main(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fake_run(coro: object) -> str:
+        getattr(coro, "close")()
+        return "<html>dashboard</html>"
+
+    monkeypatch.setattr(asyncio, "run", fake_run)
+    sys.modules.pop("payroll.interfaces.dashboard.app", None)
+
+    runpy.run_module("payroll.interfaces.dashboard.app", run_name="__main__")
+
+    assert capsys.readouterr().out.strip() == "<html>dashboard</html>"

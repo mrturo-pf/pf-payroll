@@ -12,6 +12,7 @@ from payroll.interfaces.dashboard.app import (
     _format_period,
     _missing_required_items,
     _next_action,
+    _report_url,
     render_dashboard_html,
 )
 
@@ -187,6 +188,7 @@ def test_next_action_prioritizes_contributions_then_tax_then_review_then_pdf() -
 
 def test_assigned_plans_label_and_period_row() -> None:
     detail = sample_detail(
+        status="reviewed",
         pension_plan_id=1,
         health_plan_id=2,
         item_codes=[
@@ -202,8 +204,11 @@ def test_assigned_plans_label_and_period_row() -> None:
     row = _build_period_row(sample_summary(), detail)
 
     assert _assigned_plans_label(sample_detail()) == "Missing"
+    assert _report_url(sample_detail()) is None
+    assert _report_url(detail) == "http://127.0.0.1:8000/payroll/7/report.pdf"
     assert row.assigned_plans == "Pension #1 / Health #2"
-    assert row.missing_items == "REVIEW_PERIOD"
+    assert row.missing_items == "Ready"
+    assert row.report_url == "http://127.0.0.1:8000/payroll/7/report.pdf"
     assert row.net_pay_clp == "$1.070.000"
 
 
@@ -233,10 +238,19 @@ def test_render_dashboard_html_handles_empty_and_populated_states() -> None:
     assert "Payroll operations dashboard" in html
     assert "Business flow: import -&gt; assign plans" not in html
     assert "Business flow: import -> assign plans -> compute contributions -> compute tax -> review -> PDF." in html
-    assert "Download payroll PDF" in html
-    assert "GET /payroll/7/report.pdf" in html
+    assert "<th>Next action</th>" not in html
+    assert "GET /payroll/7/report.pdf" not in html
+    assert 'href="http://127.0.0.1:8000/payroll/7/report.pdf"' in html
+    assert "Download PDF</a>" in html
     assert "AFP Uno" in html
     assert "Fonasa" in html
+
+    pending_html = render_dashboard_html(
+        [_build_period_row(sample_summary(), sample_detail())],
+        [sample_pension_plan()],
+        [sample_health_plan()],
+    )
+    assert "Available after review" in pending_html
 
 
 def test_build_dashboard_html_uses_queries_and_renders_result(monkeypatch) -> None:
@@ -292,5 +306,5 @@ def test_build_dashboard_html_uses_queries_and_renders_result(monkeypatch) -> No
     html = asyncio.run(dashboard_app.build_dashboard_html())
 
     assert "Payroll operations dashboard" in html
-    assert "Download payroll PDF" in html
+    assert "Download PDF" in html
     assert "AFP Uno" in html

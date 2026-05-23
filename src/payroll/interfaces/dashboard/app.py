@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from html import escape
 
+from payroll.config import settings
 from payroll.application.dto import HealthPlanDTO, PayrollPeriodDetailDTO, PayrollSummaryDTO, PensionPlanDTO
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
@@ -35,6 +36,7 @@ class DashboardPeriodRow:
     missing_items: str
     next_action: str
     action_endpoint: str
+    report_url: str | None
     net_pay_clp: str
 
 
@@ -79,6 +81,21 @@ def _assigned_plans_label(detail: PayrollPeriodDetailDTO) -> str:
     return f"Pension #{detail.pension_plan_id} / Health #{detail.health_plan_id}"
 
 
+def _report_url(detail: PayrollPeriodDetailDTO) -> str | None:
+    if detail.status != "reviewed":
+        return None
+    return f"{settings.api_base_url}/payroll/{detail.id}/report.pdf"
+
+
+def _render_report_cell(row: DashboardPeriodRow) -> str:
+    if row.report_url is None:
+        return "<td>Available after review</td>"
+    return (
+        f'<td><a href="{escape(row.report_url)}" target="_blank" '
+        'rel="noopener noreferrer">Download PDF</a></td>'
+    )
+
+
 def _build_period_row(summary: PayrollSummaryDTO, detail: PayrollPeriodDetailDTO) -> DashboardPeriodRow:
     next_action, action_endpoint = _next_action(detail)
     missing_items = _missing_required_items(detail)
@@ -93,6 +110,7 @@ def _build_period_row(summary: PayrollSummaryDTO, detail: PayrollPeriodDetailDTO
         missing_items=", ".join(missing_items) if missing_items else "Ready",
         next_action=next_action,
         action_endpoint=action_endpoint,
+        report_url=_report_url(detail),
         net_pay_clp=_format_clp(summary.net_pay_clp),
     )
 
@@ -147,7 +165,7 @@ def render_dashboard_html(
             f"<td>{escape(row.contract_kind)}</td>"
             f"<td>{escape(row.assigned_plans)}</td>"
             f"<td>{escape(row.missing_items)}</td>"
-            f"<td>{escape(row.next_action)}<br><code>{escape(row.action_endpoint)}</code></td>"
+            f"{_render_report_cell(row)}"
             f"<td>{escape(row.net_pay_clp)}</td>"
             "</tr>"
         )
@@ -164,7 +182,7 @@ def render_dashboard_html(
             "<table>"
             "<thead><tr>"
             "<th>ID</th><th>Employer</th><th>Period</th><th>Payment date</th><th>Status</th>"
-            "<th>Contract</th><th>Plans</th><th>Missing</th><th>Next action</th><th>Net pay</th>"
+            "<th>Contract</th><th>Plans</th><th>Missing</th><th>PDF</th><th>Net pay</th>"
             "</tr></thead>"
             f"<tbody>{rows_html}</tbody>"
             "</table>"
@@ -221,3 +239,7 @@ async def build_dashboard_html() -> str:
 
 def main() -> None:
     print(asyncio.run(build_dashboard_html()))
+
+
+if __name__ == "__main__":
+    main()

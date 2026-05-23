@@ -181,6 +181,8 @@ curl -X POST http://127.0.0.1:8000/payroll/1/deflate \
 
 ## Import format
 
+The importer accepts payroll flat files in **`.csv`** and **`.xlsx`** formats with the same column layout.
+
 Minimal CSV:
 
 ```csv
@@ -214,3 +216,5 @@ Import notes:
 - `employment_contract_kind` is required
 - accepted contract kind aliases include `indefinite`, `fixed_term`, `indefinido`, and `plazo_fijo`
 - `net_pay` is optional; if present, the imported period is marked as `actual`, otherwise it is marked as `projected`
+- `net_pay` is used only to derive the imported period status; it is **not** imported as a payroll concept row
+- each populated payroll amount column becomes one imported payroll concept row for that period

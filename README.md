@@ -315,7 +315,18 @@ Run the CLI:
 ```bash
 source .venv/bin/activate
 python -m payroll.interfaces.cli.main health
+python -m payroll.interfaces.cli.main import-payroll tests/fixtures/sample_payroll.csv
+python -m payroll.interfaces.cli.main summary
+python -m payroll.interfaces.cli.main period-detail 1
+python -m payroll.interfaces.cli.main plan-snapshots
+python -m payroll.interfaces.cli.main assign-plans 1 1 1
+python -m payroll.interfaces.cli.main compute-contributions 1 1 1 --uf-value-clp 39000
+python -m payroll.interfaces.cli.main compute-tax 1 --utm-value-clp 68000
+python -m payroll.interfaces.cli.main review 1
+python -m payroll.interfaces.cli.main report-pdf 1 --output payroll-period-1.pdf
 ```
+
+All CLI commands emit JSON except `health`, so they can be chained into scripts for the monthly payroll flow.
 
 Render the operations dashboard as HTML:
 

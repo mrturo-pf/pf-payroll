@@ -120,6 +120,9 @@ class ImportPayrollRowDTO:
     employment_contract_kind: EmploymentContractKind
     concept_code: str
     amount_clp: Decimal
+    declared_net_pay_clp: Decimal | None = None
+    expected_net_pay_clp: Decimal | None = None
+    net_pay_difference_clp: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +135,10 @@ class ImportedPayrollPeriodDTO:
     status: PayrollStatusKind
     employment_contract_kind: EmploymentContractKind
     item_count: int
+    declared_net_pay_clp: Decimal | None = None
+    expected_net_pay_clp: Decimal | None = None
+    net_pay_difference_clp: Decimal | None = None
+    net_pay_warning: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,6 +276,10 @@ class PayrollSummaryDTO:
     gross_income_clp: Decimal
     total_discounts_clp: Decimal
     net_pay_clp: Decimal
+    declared_net_pay_clp: Decimal | None = None
+    expected_net_pay_clp: Decimal | None = None
+    net_pay_difference_clp: Decimal | None = None
+    net_pay_warning: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

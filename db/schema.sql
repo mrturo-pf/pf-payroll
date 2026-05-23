@@ -137,6 +137,9 @@ CREATE TABLE IF NOT EXISTS payroll_periods (
     worked_days     SMALLINT       NOT NULL DEFAULT 30,
     status          payroll_status NOT NULL DEFAULT 'projected',
     employment_contract_kind employment_contract_kind NOT NULL DEFAULT 'indefinite',
+    declared_net_pay_clp NUMERIC(18,2),
+    expected_net_pay_clp NUMERIC(18,2),
+    net_pay_difference_clp NUMERIC(18,2),
     pension_plan_id BIGINT         REFERENCES pension_plans(id),
     health_plan_id  BIGINT         REFERENCES health_plans(id),
     UNIQUE (employer_id, period_year, period_month)
@@ -144,6 +147,12 @@ CREATE TABLE IF NOT EXISTS payroll_periods (
 
 ALTER TABLE payroll_periods
     ADD COLUMN IF NOT EXISTS employment_contract_kind employment_contract_kind NOT NULL DEFAULT 'indefinite';
+ALTER TABLE payroll_periods
+    ADD COLUMN IF NOT EXISTS declared_net_pay_clp NUMERIC(18,2);
+ALTER TABLE payroll_periods
+    ADD COLUMN IF NOT EXISTS expected_net_pay_clp NUMERIC(18,2);
+ALTER TABLE payroll_periods
+    ADD COLUMN IF NOT EXISTS net_pay_difference_clp NUMERIC(18,2);
 
 CREATE TABLE IF NOT EXISTS payroll_concepts (
     id          BIGSERIAL PRIMARY KEY,

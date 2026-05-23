@@ -49,6 +49,10 @@ class ImportedPayrollPeriodRead(BaseModel):
     status: str
     employment_contract_kind: str
     item_count: int
+    declared_net_pay_clp: Decimal | None = None
+    expected_net_pay_clp: Decimal | None = None
+    net_pay_difference_clp: Decimal | None = None
+    net_pay_warning: str | None = None
 
 
 class ImportPayrollResponse(BaseModel):

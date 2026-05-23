@@ -123,6 +123,9 @@ async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
                 employment_contract_kind=EmploymentContractKind.INDEFINITE,
                 concept_code="SALARY_BASE",
                 amount_clp=Decimal("1000000"),
+                declared_net_pay_clp=Decimal("950000"),
+                expected_net_pay_clp=Decimal("900000"),
+                net_pay_difference_clp=Decimal("50000"),
             ),
             SimpleNamespace(
                 employer="ACME",
@@ -133,6 +136,9 @@ async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
                 employment_contract_kind=EmploymentContractKind.INDEFINITE,
                 concept_code="PENSION_BASE",
                 amount_clp=Decimal("100000"),
+                declared_net_pay_clp=Decimal("950000"),
+                expected_net_pay_clp=Decimal("900000"),
+                net_pay_difference_clp=Decimal("50000"),
             ),
         ]
     )
@@ -142,6 +148,12 @@ async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
     assert result.periods[0].employer == "ACME"
     assert result.periods[0].status == "projected"
     assert result.periods[0].employment_contract_kind is EmploymentContractKind.INDEFINITE
+    assert result.periods[0].declared_net_pay_clp == Decimal("950000")
+    assert result.periods[0].expected_net_pay_clp == Decimal("900000")
+    assert result.periods[0].net_pay_difference_clp == Decimal("50000")
+    assert result.periods[0].net_pay_warning == (
+        "Declared net_pay does not match the imported concept totals. Difference: 50000 CLP."
+    )
     assert session.flush_count == 1
     assert session.commit_count == 2
     assert any(isinstance(item, PayrollPeriodModel) for item in session.added)
@@ -1016,6 +1028,17 @@ async def test_sqlalchemy_payroll_repository_lists_period_summaries() -> None:
                             net_pay_clp=Decimal("830000"),
                         ),
                         employer,
+                        PayrollPeriodModel(
+                            id=7,
+                            employer_id=1,
+                            period_year=2026,
+                            period_month=1,
+                            payment_date=date(2026, 1, 31),
+                            status=PayrollStatus.ACTUAL,
+                            declared_net_pay_clp=Decimal("830000"),
+                            expected_net_pay_clp=Decimal("830000"),
+                            net_pay_difference_clp=Decimal("0"),
+                        ),
                     )
                 ]
             )
@@ -1028,6 +1051,7 @@ async def test_sqlalchemy_payroll_repository_lists_period_summaries() -> None:
     assert len(result) == 1
     assert result[0].period_id == 7
     assert result[0].employer_name == "ACME"
+    assert result[0].net_pay_difference_clp == Decimal("0")
 
 
 @pytest.mark.asyncio

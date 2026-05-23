@@ -216,5 +216,7 @@ Import notes:
 - `employment_contract_kind` is required
 - accepted contract kind aliases include `indefinite`, `fixed_term`, `indefinido`, and `plazo_fijo`
 - `net_pay` is optional; if present, the imported period is marked as `actual`, otherwise it is marked as `projected`
-- `net_pay` is used only to derive the imported period status; it is **not** imported as a payroll concept row
+- `net_pay` is **not** imported as a payroll concept row
+- when `net_pay` is present, the import response compares it against the sum of imported income and discount columns
+- a mismatch does **not** reject the import; the response includes `declared_net_pay_clp`, `expected_net_pay_clp`, `net_pay_difference_clp`, and `net_pay_warning`
 - each populated payroll amount column becomes one imported payroll concept row for that period

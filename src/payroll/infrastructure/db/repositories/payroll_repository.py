@@ -44,8 +44,17 @@ from payroll.infrastructure.db.models import (
     PensionPlanModel,
     PayrollSummaryModel,
 )
-from payroll.infrastructure.db.models.reference_data import ContributionCapType, PayrollConceptKind
 from payroll.infrastructure.db.models.payroll import PayrollItemModel, PayrollPeriodModel, PayrollStatus
+from payroll.infrastructure.db.models.reference_data import ContributionCapType, PayrollConceptKind
+
+
+def _build_net_pay_warning(net_pay_difference_clp: Decimal | None) -> str | None:
+    if net_pay_difference_clp is None or net_pay_difference_clp == 0:
+        return None
+    return (
+        "Declared net_pay does not match the imported concept totals. "
+        f"Difference: {net_pay_difference_clp} CLP."
+    )
 
 
 class SqlAlchemyPayrollRepository:
@@ -126,6 +135,9 @@ class SqlAlchemyPayrollRepository:
 
         for (employer_name, year, month), period_rows in sorted(grouped_rows.items()):
             first_row = period_rows[0]
+            declared_net_pay_clp = getattr(first_row, "declared_net_pay_clp", None)
+            expected_net_pay_clp = getattr(first_row, "expected_net_pay_clp", None)
+            net_pay_difference_clp = getattr(first_row, "net_pay_difference_clp", None)
 
             employer_result = await self._session.execute(
                 select(EmployerModel).where(EmployerModel.name == employer_name)
@@ -152,6 +164,9 @@ class SqlAlchemyPayrollRepository:
                     payment_date=first_row.payment_date,
                     status=PayrollStatus(first_row.status),
                     employment_contract_kind=first_row.employment_contract_kind,
+                    declared_net_pay_clp=declared_net_pay_clp,
+                    expected_net_pay_clp=expected_net_pay_clp,
+                    net_pay_difference_clp=net_pay_difference_clp,
                 )
                 self._session.add(period)
                 await self._session.flush()
@@ -159,6 +174,9 @@ class SqlAlchemyPayrollRepository:
                 period.payment_date = first_row.payment_date
                 period.status = PayrollStatus(first_row.status)
                 period.employment_contract_kind = first_row.employment_contract_kind
+                period.declared_net_pay_clp = declared_net_pay_clp
+                period.expected_net_pay_clp = expected_net_pay_clp
+                period.net_pay_difference_clp = net_pay_difference_clp
                 await self._session.execute(delete(PayrollItemModel).where(PayrollItemModel.period_id == period.id))
 
             items = [
@@ -182,6 +200,10 @@ class SqlAlchemyPayrollRepository:
                     status=period.status.value,
                     employment_contract_kind=period.employment_contract_kind,
                     item_count=len(items),
+                    declared_net_pay_clp=period.declared_net_pay_clp,
+                    expected_net_pay_clp=period.expected_net_pay_clp,
+                    net_pay_difference_clp=period.net_pay_difference_clp,
+                    net_pay_warning=_build_net_pay_warning(period.net_pay_difference_clp),
                 )
             )
 
@@ -462,6 +484,10 @@ class SqlAlchemyPayrollRepository:
                 gross_income_clp=summary_model.gross_income_clp,
                 total_discounts_clp=summary_model.total_discounts_clp,
                 net_pay_clp=summary_model.net_pay_clp,
+                declared_net_pay_clp=period.declared_net_pay_clp,
+                expected_net_pay_clp=period.expected_net_pay_clp,
+                net_pay_difference_clp=period.net_pay_difference_clp,
+                net_pay_warning=_build_net_pay_warning(period.net_pay_difference_clp),
             )
 
         return PayrollPeriodDetailDTO(
@@ -484,8 +510,9 @@ class SqlAlchemyPayrollRepository:
 
     async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
         result = await self._session.execute(
-            select(PayrollSummaryModel, EmployerModel)
+            select(PayrollSummaryModel, EmployerModel, PayrollPeriodModel)
             .join(EmployerModel, PayrollSummaryModel.employer_id == EmployerModel.id)
+            .join(PayrollPeriodModel, PayrollSummaryModel.period_id == PayrollPeriodModel.id)
             .order_by(PayrollSummaryModel.period_year.desc(), PayrollSummaryModel.period_month.desc(), EmployerModel.name)
         )
         return [
@@ -500,8 +527,12 @@ class SqlAlchemyPayrollRepository:
                 gross_income_clp=summary.gross_income_clp,
                 total_discounts_clp=summary.total_discounts_clp,
                 net_pay_clp=summary.net_pay_clp,
+                declared_net_pay_clp=period.declared_net_pay_clp,
+                expected_net_pay_clp=period.expected_net_pay_clp,
+                net_pay_difference_clp=period.net_pay_difference_clp,
+                net_pay_warning=_build_net_pay_warning(period.net_pay_difference_clp),
             )
-            for summary, employer in result.all()
+            for summary, employer, period in result.all()
         ]
 
     async def get_income_tax_context(self, command: ComputeIncomeTaxCommandDTO) -> IncomeTaxContextDTO:

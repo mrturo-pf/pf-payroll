@@ -25,6 +25,15 @@ class StubPayrollRepository:
                     status=rows[0].status,
                     employment_contract_kind=rows[0].employment_contract_kind,
                     item_count=len(rows),
+                    declared_net_pay_clp=getattr(rows[0], "declared_net_pay_clp", None),
+                    expected_net_pay_clp=getattr(rows[0], "expected_net_pay_clp", None),
+                    net_pay_difference_clp=getattr(rows[0], "net_pay_difference_clp", None),
+                    net_pay_warning=(
+                        None
+                        if getattr(rows[0], "net_pay_difference_clp", None) in (None, Decimal("0"))
+                        else "Declared net_pay does not match the imported concept totals. Difference: "
+                        f"{rows[0].net_pay_difference_clp} CLP."
+                    ),
                 )
             ],
         )
@@ -58,3 +67,24 @@ async def test_import_payroll_rejects_empty_import() -> None:
 
     with pytest.raises(ValueError, match="did not yield any importable rows"):
         await use_case.from_bytes("sample.csv", b"period,employer,payment_date\n")
+
+
+@pytest.mark.asyncio
+async def test_import_payroll_adds_net_pay_warning_without_rejecting_import() -> None:
+    repository = StubPayrollRepository()
+    use_case = ImportPayroll(repository)
+
+    result = await use_case.from_bytes(
+        "sample.csv",
+        (
+            b"period,employer,payment_date,employment_contract_kind,salary_base,pension_base,net_pay\n"
+            b"Jan/2026,ACME,2026-01-31,indefinite,1000000,100000,950000\n"
+        ),
+    )
+
+    assert result.periods[0].declared_net_pay_clp == Decimal("950000")
+    assert result.periods[0].expected_net_pay_clp == Decimal("900000")
+    assert result.periods[0].net_pay_difference_clp == Decimal("50000")
+    assert result.periods[0].net_pay_warning == (
+        "Declared net_pay does not match the imported concept totals. Difference: 50000 CLP."
+    )

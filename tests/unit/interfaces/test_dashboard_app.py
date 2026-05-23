@@ -11,6 +11,7 @@ from payroll.interfaces.dashboard.app import (
     _format_clp,
     _format_period,
     _missing_required_items,
+    _net_pay_check,
     _next_action,
     _report_url,
     render_dashboard_html,
@@ -29,6 +30,9 @@ def sample_summary() -> PayrollSummaryDTO:
         gross_income_clp=Decimal("1250000"),
         total_discounts_clp=Decimal("180000"),
         net_pay_clp=Decimal("1070000"),
+        declared_net_pay_clp=Decimal("1070000"),
+        expected_net_pay_clp=Decimal("1070000"),
+        net_pay_difference_clp=Decimal("0"),
     )
 
 
@@ -97,6 +101,7 @@ def sample_health_plan() -> HealthPlanDTO:
 def test_dashboard_format_helpers() -> None:
     assert _format_clp(Decimal("1234567")) == "$1.234.567"
     assert _format_period(2026, 4) == "04/2026"
+    assert _net_pay_check(sample_summary()) == ("Matches declared net pay", "matched")
 
 
 def test_missing_required_items_marks_every_pending_step() -> None:
@@ -210,6 +215,7 @@ def test_assigned_plans_label_and_period_row() -> None:
     assert row.missing_items == "Ready"
     assert row.report_url == "http://127.0.0.1:8000/payroll/7/report.pdf"
     assert row.net_pay_clp == "$1.070.000"
+    assert row.net_pay_check == "Matches declared net pay"
 
 
 def test_render_dashboard_html_handles_empty_and_populated_states() -> None:
@@ -239,9 +245,12 @@ def test_render_dashboard_html_handles_empty_and_populated_states() -> None:
     assert "Business flow: import -&gt; assign plans" not in html
     assert "Business flow: import -> assign plans -> compute contributions -> compute tax -> review -> PDF." in html
     assert "<th>Next action</th>" not in html
+    assert "<th>Check</th>" in html
     assert "GET /payroll/7/report.pdf" not in html
     assert 'href="http://127.0.0.1:8000/payroll/7/report.pdf"' in html
     assert "Download PDF</a>" in html
+    assert "Matched net pay" in html
+    assert "Matches declared net pay" in html
     assert "AFP Uno" in html
     assert "Fonasa" in html
 
@@ -251,6 +260,41 @@ def test_render_dashboard_html_handles_empty_and_populated_states() -> None:
         [sample_health_plan()],
     )
     assert "Available after review" in pending_html
+
+
+def test_dashboard_renders_mismatch_and_missing_net_pay_states() -> None:
+    mismatch_summary = PayrollSummaryDTO(
+        period_id=8,
+        employer_id=1,
+        employer_name="ACME",
+        period_year=2026,
+        period_month=5,
+        payment_date=date(2026, 5, 31),
+        taxable_income_clp=Decimal("1000000"),
+        gross_income_clp=Decimal("1250000"),
+        total_discounts_clp=Decimal("180000"),
+        net_pay_clp=Decimal("1070000"),
+        declared_net_pay_clp=Decimal("1050000"),
+        expected_net_pay_clp=Decimal("1070000"),
+        net_pay_difference_clp=Decimal("-20000"),
+    )
+    mismatch_row = _build_period_row(mismatch_summary, sample_detail())
+    assert mismatch_row.net_pay_check == "Mismatch by $20.000 (declared $1.050.000 vs expected $1.070.000)"
+
+    missing_summary = PayrollSummaryDTO(
+        period_id=9,
+        employer_id=1,
+        employer_name="ACME",
+        period_year=2026,
+        period_month=6,
+        payment_date=date(2026, 6, 30),
+        taxable_income_clp=Decimal("1000000"),
+        gross_income_clp=Decimal("1250000"),
+        total_discounts_clp=Decimal("180000"),
+        net_pay_clp=Decimal("1070000"),
+    )
+    missing_row = _build_period_row(missing_summary, sample_detail())
+    assert missing_row.net_pay_check == "No declared net pay"
 
 
 def test_build_dashboard_html_uses_queries_and_renders_result(monkeypatch) -> None:

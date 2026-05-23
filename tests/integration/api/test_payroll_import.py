@@ -64,6 +64,10 @@ class FakeImportPayroll:
                     status="projected",
                     employment_contract_kind=EmploymentContractKind.INDEFINITE,
                     item_count=1,
+                    declared_net_pay_clp=Decimal("950000"),
+                    expected_net_pay_clp=Decimal("900000"),
+                    net_pay_difference_clp=Decimal("50000"),
+                    net_pay_warning="Declared net_pay does not match the imported concept totals. Difference: 50000 CLP.",
                 )
             ],
         )
@@ -214,6 +218,10 @@ def test_payroll_import_endpoint() -> None:
                 "status": "projected",
                 "employment_contract_kind": "indefinite",
                 "item_count": 1,
+                "declared_net_pay_clp": "950000",
+                "expected_net_pay_clp": "900000",
+                "net_pay_difference_clp": "50000",
+                "net_pay_warning": "Declared net_pay does not match the imported concept totals. Difference: 50000 CLP.",
             }
         ],
     }

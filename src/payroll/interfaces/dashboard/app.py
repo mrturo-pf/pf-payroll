@@ -38,6 +38,8 @@ class DashboardPeriodRow:
     action_endpoint: str
     report_url: str | None
     net_pay_clp: str
+    net_pay_check: str
+    net_pay_check_status: str
 
 
 def _format_clp(amount: Decimal) -> str:
@@ -87,6 +89,21 @@ def _report_url(detail: PayrollPeriodDetailDTO) -> str | None:
     return f"{settings.api_base_url}/payroll/{detail.id}/report.pdf"
 
 
+def _net_pay_check(summary: PayrollSummaryDTO) -> tuple[str, str]:
+    if (
+        summary.declared_net_pay_clp is None
+        or summary.expected_net_pay_clp is None
+        or summary.net_pay_difference_clp is None
+    ):
+        return ("No declared net pay", "not_available")
+    if summary.net_pay_difference_clp == 0:
+        return ("Matches declared net pay", "matched")
+    difference = _format_clp(abs(summary.net_pay_difference_clp))
+    declared = _format_clp(summary.declared_net_pay_clp)
+    expected = _format_clp(summary.expected_net_pay_clp)
+    return (f"Mismatch by {difference} (declared {declared} vs expected {expected})", "mismatch")
+
+
 def _render_report_cell(row: DashboardPeriodRow) -> str:
     if row.report_url is None:
         return "<td>Available after review</td>"
@@ -99,6 +116,7 @@ def _render_report_cell(row: DashboardPeriodRow) -> str:
 def _build_period_row(summary: PayrollSummaryDTO, detail: PayrollPeriodDetailDTO) -> DashboardPeriodRow:
     next_action, action_endpoint = _next_action(detail)
     missing_items = _missing_required_items(detail)
+    net_pay_check, net_pay_check_status = _net_pay_check(summary)
     return DashboardPeriodRow(
         period_id=summary.period_id,
         employer_name=summary.employer_name,
@@ -112,6 +130,8 @@ def _build_period_row(summary: PayrollSummaryDTO, detail: PayrollPeriodDetailDTO
         action_endpoint=action_endpoint,
         report_url=_report_url(detail),
         net_pay_clp=_format_clp(summary.net_pay_clp),
+        net_pay_check=net_pay_check,
+        net_pay_check_status=net_pay_check_status,
     )
 
 
@@ -153,6 +173,8 @@ def render_dashboard_html(
     total_periods = len(period_rows)
     reviewed_periods = sum(1 for row in period_rows if row.status == "reviewed")
     pending_periods = total_periods - reviewed_periods
+    matched_periods = sum(1 for row in period_rows if row.net_pay_check_status == "matched")
+    mismatched_periods = sum(1 for row in period_rows if row.net_pay_check_status == "mismatch")
     total_net_pay = sum((Decimal(row.net_pay_clp.replace("$", "").replace(".", "")) for row in period_rows), Decimal("0"))
     rows_html = "".join(
         (
@@ -165,8 +187,9 @@ def render_dashboard_html(
             f"<td>{escape(row.contract_kind)}</td>"
             f"<td>{escape(row.assigned_plans)}</td>"
             f"<td>{escape(row.missing_items)}</td>"
-            f"{_render_report_cell(row)}"
             f"<td>{escape(row.net_pay_clp)}</td>"
+            f"<td>{escape(row.net_pay_check)}</td>"
+            f"{_render_report_cell(row)}"
             "</tr>"
         )
         for row in period_rows
@@ -182,7 +205,7 @@ def render_dashboard_html(
             "<table>"
             "<thead><tr>"
             "<th>ID</th><th>Employer</th><th>Period</th><th>Payment date</th><th>Status</th>"
-            "<th>Contract</th><th>Plans</th><th>Missing</th><th>PDF</th><th>Net pay</th>"
+            "<th>Contract</th><th>Plans</th><th>Missing</th><th>Net pay</th><th>Check</th><th>PDF</th>"
             "</tr></thead>"
             f"<tbody>{rows_html}</tbody>"
             "</table>"
@@ -197,7 +220,7 @@ def render_dashboard_html(
         "    <title>Payroll operations dashboard</title>\n"
         "    <style>\n"
         "      body { font-family: Arial, sans-serif; margin: 2rem; color: #1f2937; }\n"
-        "      .metrics { display: grid; grid-template-columns: repeat(4, minmax(160px, 1fr)); gap: 1rem; margin: 1.5rem 0; }\n"
+        "      .metrics { display: grid; grid-template-columns: repeat(5, minmax(160px, 1fr)); gap: 1rem; margin: 1.5rem 0; }\n"
         "      .card { border: 1px solid #d1d5db; border-radius: 8px; padding: 1rem; background: #f9fafb; }\n"
         "      table { width: 100%; border-collapse: collapse; margin-top: 1rem; }\n"
         "      th, td { border: 1px solid #e5e7eb; padding: 0.75rem; text-align: left; vertical-align: top; }\n"
@@ -213,6 +236,8 @@ def render_dashboard_html(
         f"      <div class=\"card\"><strong>Total periods</strong><div>{total_periods}</div></div>\n"
         f"      <div class=\"card\"><strong>Reviewed periods</strong><div>{reviewed_periods}</div></div>\n"
         f"      <div class=\"card\"><strong>Pending periods</strong><div>{pending_periods}</div></div>\n"
+        f"      <div class=\"card\"><strong>Matched net pay</strong><div>{matched_periods}</div></div>\n"
+        f"      <div class=\"card\"><strong>Mismatched net pay</strong><div>{mismatched_periods}</div></div>\n"
         f"      <div class=\"card\"><strong>Total net pay</strong><div>{total_net_pay_label}</div></div>\n"
         "    </div>\n"
         "    <section>\n"

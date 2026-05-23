@@ -47,6 +47,9 @@ class PayrollPeriodModel(Base):
         SAEnum(EmploymentContractKind, name="employment_contract_kind", values_callable=enum_values),
         default=EmploymentContractKind.INDEFINITE,
     )
+    declared_net_pay_clp: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    expected_net_pay_clp: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    net_pay_difference_clp: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     pension_plan_id: Mapped[int | None] = mapped_column(ForeignKey("pension_plans.id"), nullable=True)
     health_plan_id: Mapped[int | None] = mapped_column(ForeignKey("health_plans.id"), nullable=True)
 

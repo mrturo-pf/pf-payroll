@@ -1,5 +1,6 @@
 """Payroll flat-file import helpers."""
 
+from dataclasses import dataclass
 from decimal import Decimal
 from io import BufferedIOBase
 
@@ -25,6 +26,17 @@ CONTRACT_KIND_ALIASES = {
     "plazo_fijo": EmploymentContractKind.FIXED_TERM,
     "plazo fijo": EmploymentContractKind.FIXED_TERM,
 }
+
+
+@dataclass(frozen=True, slots=True)
+class NetPayValidation:
+    employer: str
+    period_year: int
+    period_month: int
+    declared_net_pay_clp: Decimal
+    expected_net_pay_clp: Decimal
+    net_pay_difference_clp: Decimal
+    warning: str | None
 
 
 def parse_payment_date(raw_value: object) -> pd.Timestamp | pd.NaT:
@@ -53,6 +65,53 @@ def parse_contract_kind(raw_value: object) -> EmploymentContractKind:
         raise ValueError(
             "Unsupported employment_contract_kind. Use one of: indefinite, fixed_term, indefinido, plazo_fijo."
         ) from exc
+
+
+def extract_net_pay_validations(wide_df: pd.DataFrame) -> dict[tuple[str, int, int], NetPayValidation]:
+    validations: dict[tuple[str, int, int], NetPayValidation] = {}
+
+    for _, row in wide_df.iterrows():
+        period_str = str(row.get("period", "")).strip()
+        if "/" not in period_str:
+            continue
+
+        m_str, y_str = period_str.split("/")
+        employer = str(row.get("employer", "")).strip()
+        if not employer:
+            continue
+
+        raw_net_pay = row.get("net_pay")
+        if pd.isna(raw_net_pay):
+            continue
+
+        year = int(y_str)
+        month = pd.to_datetime(m_str, format="%b").month
+        declared_net_pay_clp = Decimal(str(raw_net_pay))
+        expected_net_pay_clp = Decimal("0")
+        for col, (_, kind, _) in CONCEPT_MAP.items():
+            value = row.get(col)
+            if pd.isna(value):
+                continue
+            amount = Decimal(str(value))
+            expected_net_pay_clp += amount if kind == "income" else -amount
+
+        net_pay_difference_clp = declared_net_pay_clp - expected_net_pay_clp
+        validations[(employer, year, month)] = NetPayValidation(
+            employer=employer,
+            period_year=year,
+            period_month=month,
+            declared_net_pay_clp=declared_net_pay_clp,
+            expected_net_pay_clp=expected_net_pay_clp,
+            net_pay_difference_clp=net_pay_difference_clp,
+            warning=None
+            if net_pay_difference_clp == 0
+            else (
+                "Declared net_pay does not match the imported concept totals. "
+                f"Difference: {net_pay_difference_clp} CLP."
+            ),
+        )
+
+    return validations
 
 
 def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:

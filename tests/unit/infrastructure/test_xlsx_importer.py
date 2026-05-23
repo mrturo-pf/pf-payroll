@@ -1,9 +1,15 @@
 from io import BytesIO
+from decimal import Decimal
 
 import pandas as pd
 import pytest
 
-from payroll.infrastructure.importers.xlsx_importer import parse_payment_date, read_payroll_dataframe, to_long_format
+from payroll.infrastructure.importers.xlsx_importer import (
+    extract_net_pay_validations,
+    parse_payment_date,
+    read_payroll_dataframe,
+    to_long_format,
+)
 
 
 def test_read_payroll_dataframe_supports_csv_and_xlsx() -> None:
@@ -105,3 +111,54 @@ def test_to_long_format_rejects_invalid_contract_kind() -> None:
 def test_parse_payment_date_supports_iso_and_dayfirst_formats() -> None:
     assert str(parse_payment_date("2026-01-31").date()) == "2026-01-31"
     assert str(parse_payment_date("31/01/2026").date()) == "2026-01-31"
+
+
+def test_extract_net_pay_validations_returns_expected_and_difference_values() -> None:
+    result = extract_net_pay_validations(
+        pd.DataFrame(
+            [
+                {
+                    "period": "2026-01",
+                    "employer": "ACME",
+                    "payment_date": "2026-01-31",
+                    "employment_contract_kind": "indefinite",
+                    "salary_base": 1000,
+                    "net_pay": 1000,
+                },
+                {
+                    "period": "Jan/2026",
+                    "employer": "",
+                    "payment_date": "2026-01-31",
+                    "employment_contract_kind": "indefinite",
+                    "salary_base": 1000,
+                    "net_pay": 1000,
+                },
+                {
+                    "period": "Jan/2026",
+                    "employer": "ACME",
+                    "payment_date": "2026-01-31",
+                    "employment_contract_kind": "indefinite",
+                    "salary_base": 1000,
+                    "pension_base": 100,
+                    "net_pay": 950,
+                },
+                {
+                    "period": "Feb/2026",
+                    "employer": "ACME",
+                    "payment_date": "2026-02-28",
+                    "employment_contract_kind": "indefinite",
+                    "salary_base": 1000,
+                    "pension_base": 100,
+                    "net_pay": 900,
+                },
+            ]
+        )
+    )
+
+    assert result[("ACME", 2026, 1)].declared_net_pay_clp == Decimal("950")
+    assert result[("ACME", 2026, 1)].expected_net_pay_clp == Decimal("900")
+    assert result[("ACME", 2026, 1)].net_pay_difference_clp == Decimal("50")
+    assert result[("ACME", 2026, 2)].declared_net_pay_clp == Decimal("900")
+    assert result[("ACME", 2026, 2)].expected_net_pay_clp == Decimal("900")
+    assert result[("ACME", 2026, 2)].net_pay_difference_clp == Decimal("0")
+    assert result[("ACME", 2026, 2)].warning is None

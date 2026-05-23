@@ -5,6 +5,8 @@ from io import BufferedIOBase
 
 import pandas as pd
 
+from payroll.domain.contributions import EmploymentContractKind
+
 CONCEPT_MAP = {
     "salary_base": ("SALARY_BASE", "income", True),
     "monthly_legal_gratuity": ("LEGAL_GRATUITY", "income", True),
@@ -13,6 +15,15 @@ CONCEPT_MAP = {
     "pension_additional": ("PENSION_ADDITIONAL", "discount", False),
     "health_base": ("HEALTH_BASE", "discount", False),
     "health_additional_uf": ("HEALTH_ADDITIONAL_UF", "discount", False),
+}
+
+CONTRACT_KIND_ALIASES = {
+    "indefinite": EmploymentContractKind.INDEFINITE,
+    "indefinido": EmploymentContractKind.INDEFINITE,
+    "fixed_term": EmploymentContractKind.FIXED_TERM,
+    "fixed-term": EmploymentContractKind.FIXED_TERM,
+    "plazo_fijo": EmploymentContractKind.FIXED_TERM,
+    "plazo fijo": EmploymentContractKind.FIXED_TERM,
 }
 
 
@@ -30,6 +41,18 @@ def read_payroll_dataframe(filename: str, payload: BufferedIOBase) -> pd.DataFra
     if lowered.endswith(".xlsx"):
         return pd.read_excel(payload)
     raise ValueError("Unsupported payroll file format. Use .csv or .xlsx.")
+
+
+def parse_contract_kind(raw_value: object) -> EmploymentContractKind:
+    normalized = str(raw_value or "").strip().lower()
+    if not normalized:
+        raise ValueError("Every imported payroll row must include employment_contract_kind.")
+    try:
+        return CONTRACT_KIND_ALIASES[normalized]
+    except KeyError as exc:
+        raise ValueError(
+            "Unsupported employment_contract_kind. Use one of: indefinite, fixed_term, indefinido, plazo_fijo."
+        ) from exc
 
 
 def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:
@@ -56,6 +79,7 @@ def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:
             "month": pd.to_datetime(m_str, format="%b").month,
             "payment_date": payment_dt.date(),
             "status": "actual" if pd.notna(row.get("net_pay")) else "projected",
+            "employment_contract_kind": parse_contract_kind(row.get("employment_contract_kind")),
         }
 
         for col, (code, kind, is_tax) in CONCEPT_MAP.items():

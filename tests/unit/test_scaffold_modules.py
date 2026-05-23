@@ -179,16 +179,28 @@ def test_dashboard_placeholder_prints_message(capsys: pytest.CaptureFixture[str]
 
 def test_xlsx_importer_transforms_and_reads_files() -> None:
     source = pd.DataFrame(
-        [{"period": "Jan/2026", "employer": "ACME", "payment_date": "2026-01-31", "salary_base": 1000}]
+        [
+            {
+                "period": "Jan/2026",
+                "employer": "ACME",
+                "payment_date": "2026-01-31",
+                "employment_contract_kind": "indefinite",
+                "salary_base": 1000,
+            }
+        ]
     )
 
     result = to_long_format(source)
     dataframe = read_payroll_dataframe(
         "sample.csv",
-        __import__("io").BytesIO(b"period,employer,payment_date,salary_base\nJan/2026,ACME,2026-01-31,1000\n"),
+        __import__("io").BytesIO(
+            b"period,employer,payment_date,employment_contract_kind,salary_base\n"
+            b"Jan/2026,ACME,2026-01-31,indefinite,1000\n"
+        ),
     )
 
     assert result.to_dict(orient="records")[0]["concept_code"] == "SALARY_BASE"
+    assert result.to_dict(orient="records")[0]["employment_contract_kind"].value == "indefinite"
     assert dataframe.iloc[0]["employer"] == "ACME"
 
 

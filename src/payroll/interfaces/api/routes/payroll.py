@@ -40,6 +40,7 @@ class ImportedPayrollPeriodRead(BaseModel):
     period_month: int
     payment_date: date
     status: str
+    employment_contract_kind: str
     item_count: int
 
 
@@ -88,6 +89,17 @@ class HealthContributionRead(BaseModel):
     additional_amount_clp: str
 
 
+class UnemploymentContributionRead(BaseModel):
+    contract_kind: str
+    taxable_clp: str
+    cap_clp: str
+    capped_base_clp: str
+    employee_rate: str
+    employee_amount_clp: str
+    employer_rate: str
+    employer_amount_clp: str
+
+
 class ComputeContributionsResponse(BaseModel):
     period_id: int
     pension_plan_id: int
@@ -96,6 +108,7 @@ class ComputeContributionsResponse(BaseModel):
     total_discount_clp: str
     pension: PensionContributionRead
     health: HealthContributionRead
+    unemployment: UnemploymentContributionRead
 
 
 class ComputeIncomeTaxRequest(BaseModel):
@@ -176,6 +189,7 @@ class PayrollPeriodDetailRead(BaseModel):
     payment_date: date
     worked_days: int
     status: str
+    employment_contract_kind: str
     pension_plan_id: int | None
     health_plan_id: int | None
     items: list[PayrollItemDetailRead]
@@ -249,6 +263,7 @@ async def get_payroll_period(
         payment_date=detail.payment_date,
         worked_days=detail.worked_days,
         status=detail.status,
+        employment_contract_kind=detail.employment_contract_kind.value,
         pension_plan_id=detail.pension_plan_id,
         health_plan_id=detail.health_plan_id,
         items=[
@@ -401,5 +416,15 @@ async def compute_contributions(
             contracted_uf=str(result.health.contracted_uf),
             contracted_clp=str(result.health.contracted_clp),
             additional_amount_clp=str(result.health.additional_amount_clp),
+        ),
+        unemployment=UnemploymentContributionRead(
+            contract_kind=result.unemployment.contract_kind.value,
+            taxable_clp=str(result.unemployment.taxable_clp),
+            cap_clp=str(result.unemployment.cap_clp),
+            capped_base_clp=str(result.unemployment.capped_base_clp),
+            employee_rate=str(result.unemployment.employee_rate),
+            employee_amount_clp=str(result.unemployment.employee_amount_clp),
+            employer_rate=str(result.unemployment.employer_rate),
+            employer_amount_clp=str(result.unemployment.employer_amount_clp),
         ),
     )

@@ -27,6 +27,7 @@ class ImportPayroll:
                 period_month=int(row["month"]),
                 payment_date=row["payment_date"],
                 status=row["status"],
+                employment_contract_kind=row["employment_contract_kind"],
                 concept_code=str(row["concept_code"]),
                 amount_clp=row["amount_clp"],
             )

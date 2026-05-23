@@ -149,12 +149,14 @@ class SqlAlchemyPayrollRepository:
                     period_month=month,
                     payment_date=first_row.payment_date,
                     status=PayrollStatus(first_row.status),
+                    employment_contract_kind=first_row.employment_contract_kind,
                 )
                 self._session.add(period)
                 await self._session.flush()
             else:
                 period.payment_date = first_row.payment_date
                 period.status = PayrollStatus(first_row.status)
+                period.employment_contract_kind = first_row.employment_contract_kind
                 await self._session.execute(delete(PayrollItemModel).where(PayrollItemModel.period_id == period.id))
 
             items = [
@@ -176,6 +178,7 @@ class SqlAlchemyPayrollRepository:
                     period_month=month,
                     payment_date=period.payment_date,
                     status=period.status.value,
+                    employment_contract_kind=period.employment_contract_kind,
                     item_count=len(items),
                 )
             )
@@ -237,6 +240,22 @@ class SqlAlchemyPayrollRepository:
         if cap_model is None:
             raise ValueError(f"No contribution cap was found for {period.payment_date.isoformat()}.")
 
+        unemployment_cap_result = await self._session.execute(
+            select(ContributionCapModel)
+            .where(ContributionCapModel.cap_type == ContributionCapType.UNEMPLOYMENT)
+            .where(ContributionCapModel.valid_from <= period.payment_date)
+            .where(
+                or_(
+                    ContributionCapModel.valid_to.is_(None),
+                    ContributionCapModel.valid_to >= period.payment_date,
+                )
+            )
+            .order_by(ContributionCapModel.valid_from.desc())
+        )
+        unemployment_cap_model = unemployment_cap_result.scalar_one_or_none()
+        if unemployment_cap_model is None:
+            raise ValueError(f"No unemployment contribution cap was found for {period.payment_date.isoformat()}.")
+
         taxable_result = await self._session.execute(
             select(func.coalesce(func.sum(PayrollItemModel.amount_clp), 0))
             .join(PayrollConceptModel, PayrollItemModel.concept_id == PayrollConceptModel.id)
@@ -250,6 +269,7 @@ class SqlAlchemyPayrollRepository:
             period_id=period.id,
             payment_date=period.payment_date,
             taxable_income_clp=taxable_income_clp,
+            employment_contract_kind=period.employment_contract_kind,
             pension_plan=PensionPlan(
                 id=pension_plan_model.id,
                 institution=PensionInstitution(
@@ -280,6 +300,12 @@ class SqlAlchemyPayrollRepository:
                 valid_to=cap_model.valid_to,
                 value_uf=cap_model.value_uf,
             ),
+            unemployment_cap=ContributionCap(
+                cap_type=unemployment_cap_model.cap_type.value,
+                valid_from=unemployment_cap_model.valid_from,
+                valid_to=unemployment_cap_model.valid_to,
+                value_uf=unemployment_cap_model.value_uf,
+            ),
         )
 
     async def save_computed_contributions(
@@ -293,6 +319,7 @@ class SqlAlchemyPayrollRepository:
             "PENSION_ADDITIONAL",
             "HEALTH_BASE",
             "HEALTH_ADDITIONAL_UF",
+            "UNEMPLOYMENT_INSURANCE",
         }
         concept_result = await self._session.execute(
             select(PayrollConceptModel).where(PayrollConceptModel.code.in_(concept_codes))
@@ -332,6 +359,11 @@ class SqlAlchemyPayrollRepository:
                     period_id=result.period_id,
                     concept_id=concepts["HEALTH_ADDITIONAL_UF"].id,
                     amount_clp=result.health.additional_amount_clp,
+                ),
+                PayrollItemModel(
+                    period_id=result.period_id,
+                    concept_id=concepts["UNEMPLOYMENT_INSURANCE"].id,
+                    amount_clp=result.unemployment.employee_amount_clp,
                 ),
             ]
         )
@@ -403,6 +435,7 @@ class SqlAlchemyPayrollRepository:
             payment_date=period.payment_date,
             worked_days=period.worked_days,
             status=period.status.value,
+            employment_contract_kind=period.employment_contract_kind,
             pension_plan_id=period.pension_plan_id,
             health_plan_id=period.health_plan_id,
             items=items,
@@ -450,7 +483,17 @@ class SqlAlchemyPayrollRepository:
             select(func.coalesce(func.sum(PayrollItemModel.amount_clp), 0))
             .join(PayrollConceptModel, PayrollItemModel.concept_id == PayrollConceptModel.id)
             .where(PayrollItemModel.period_id == period.id)
-            .where(PayrollConceptModel.code.in_(["PENSION_BASE", "PENSION_ADDITIONAL", "HEALTH_BASE", "HEALTH_ADDITIONAL_UF"]))
+            .where(
+                PayrollConceptModel.code.in_(
+                    [
+                        "PENSION_BASE",
+                        "PENSION_ADDITIONAL",
+                        "HEALTH_BASE",
+                        "HEALTH_ADDITIONAL_UF",
+                        "UNEMPLOYMENT_INSURANCE",
+                    ]
+                )
+            )
         )
 
         return IncomeTaxContextDTO(

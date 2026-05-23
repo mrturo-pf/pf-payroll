@@ -11,6 +11,7 @@ from payroll.application.dto import (
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.domain.contributions import (
     ContributionCap,
+    EmploymentContractKind,
     HealthInstitution,
     HealthInstitutionKind,
     HealthPlan,
@@ -34,6 +35,7 @@ class StubPayrollRepository:
             period_id=10,
             payment_date=date(2026, 1, 31),
             taxable_income_clp=Decimal("1000000"),
+            employment_contract_kind=EmploymentContractKind.INDEFINITE,
             pension_plan=PensionPlan(
                 id=1,
                 institution=PensionInstitution(
@@ -60,6 +62,12 @@ class StubPayrollRepository:
             ),
             cap=ContributionCap(
                 cap_type="pension_health",
+                valid_from=date(2026, 1, 1),
+                valid_to=None,
+                value_uf=Decimal("90.0000"),
+            ),
+            unemployment_cap=ContributionCap(
+                cap_type="unemployment",
                 valid_from=date(2026, 1, 1),
                 valid_to=None,
                 value_uf=Decimal("90.0000"),
@@ -112,7 +120,9 @@ async def test_compute_contributions_uses_domain_calculator_and_persists_result(
     assert result.health.base_amount_clp == Decimal("70000")
     assert result.health.contracted_clp == Decimal("283500")
     assert result.health.additional_amount_clp == Decimal("213500")
-    assert result.total_discount_clp == Decimal("396200")
+    assert result.unemployment.employee_amount_clp == Decimal("6000")
+    assert result.unemployment.employer_amount_clp == Decimal("24000")
+    assert result.total_discount_clp == Decimal("402200")
     assert repository.saved == result
 
 
@@ -132,6 +142,7 @@ async def test_compute_contributions_uses_stored_uf_when_request_value_is_missin
 
     assert market_data_repository.lookups == [("UF", date(2026, 1, 31))]
     assert result.health.contracted_clp == Decimal("324000")
+    assert result.unemployment.employee_amount_clp == Decimal("6000")
 
 
 @pytest.mark.asyncio

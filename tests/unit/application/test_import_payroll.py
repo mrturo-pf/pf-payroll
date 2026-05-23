@@ -23,6 +23,7 @@ class StubPayrollRepository:
                     period_month=1,
                     payment_date=rows[0].payment_date,
                     status=rows[0].status,
+                    employment_contract_kind=rows[0].employment_contract_kind,
                     item_count=len(rows),
                 )
             ],
@@ -37,8 +38,8 @@ async def test_import_payroll_reads_csv_and_builds_rows() -> None:
     result = await use_case.from_bytes(
         "sample.csv",
         (
-            b"period,employer,payment_date,salary_base,pension_base\n"
-            b"Jan/2026,ACME,2026-01-31,1000000,100000\n"
+            b"period,employer,payment_date,employment_contract_kind,salary_base,pension_base\n"
+            b"Jan/2026,ACME,2026-01-31,indefinite,1000000,100000\n"
         ),
     )
 
@@ -46,6 +47,7 @@ async def test_import_payroll_reads_csv_and_builds_rows() -> None:
     assert result.imported_items == 2
     assert repository.rows[0].employer == "ACME"
     assert repository.rows[0].concept_code == "SALARY_BASE"
+    assert repository.rows[0].employment_contract_kind.value == "indefinite"
     assert repository.rows[1].amount_clp == Decimal("100000")
 
 

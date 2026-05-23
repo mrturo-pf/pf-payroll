@@ -9,6 +9,7 @@ from payroll.application.dto import PayrollItemDetailDTO, PayrollPeriodDetailDTO
 from payroll.interfaces.api.dependencies import get_payroll_queries
 from payroll.interfaces.api.main import app
 from payroll.interfaces.api.routes.payroll import get_payroll_period
+from payroll.domain.contributions import EmploymentContractKind
 
 
 class FakePayrollQueries:
@@ -25,6 +26,7 @@ class FakePayrollQueries:
             payment_date=date(2026, 1, 31),
             worked_days=30,
             status="actual",
+            employment_contract_kind=EmploymentContractKind.INDEFINITE,
             pension_plan_id=1,
             health_plan_id=2,
             items=[
@@ -113,6 +115,7 @@ def test_payroll_query_endpoints() -> None:
         "payment_date": "2026-01-31",
         "worked_days": 30,
         "status": "actual",
+        "employment_contract_kind": "indefinite",
         "pension_plan_id": 1,
         "health_plan_id": 2,
         "items": [

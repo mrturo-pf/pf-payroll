@@ -204,7 +204,8 @@ The contribution endpoint:
 - applies the seeded `pension_health` contribution cap using the stored UF rate for the payment date, or the provided `uf_value_clp` override
 - computes pension mandatory and additional amounts from the selected AFP plan
 - computes health mandatory and additional amounts from the selected health plan
-- persists the resulting discount items as `PENSION_BASE`, `PENSION_ADDITIONAL`, `HEALTH_BASE`, and `HEALTH_ADDITIONAL_UF`
+- computes unemployment insurance from the imported `employment_contract_kind` using the seeded `unemployment` cap
+- persists the resulting employee discount items as `PENSION_BASE`, `PENSION_ADDITIONAL`, `HEALTH_BASE`, `HEALTH_ADDITIONAL_UF`, and `UNEMPLOYMENT_INSURANCE`
 - refreshes `pension_plan_id` and `health_plan_id` on the payroll period as the period snapshot
 
 Income tax computation example:
@@ -245,16 +246,16 @@ The deflation endpoint:
 Example minimal CSV:
 
 ```csv
-period,employer,payment_date,salary_base
-Jan/2026,ACME,2026-01-31,1000000
+period,employer,payment_date,employment_contract_kind,salary_base
+Jan/2026,ACME,2026-01-31,indefinite,1000000
 ```
 
 Example full CSV:
 
 ```csv
-period,employer,payment_date,salary_base,monthly_legal_gratuity,teleworking_refund,pension_base,pension_additional,health_base,health_additional_uf,net_pay
-Jan/2026,ACME,2026-01-31,1000000,250000,50000,100000,25000,70000,2.5,1105000
-Feb/2026,ACME,2026-02-28,1000000,250000,50000,100000,25000,70000,2.5,1105000
+period,employer,payment_date,employment_contract_kind,salary_base,monthly_legal_gratuity,teleworking_refund,pension_base,pension_additional,health_base,health_additional_uf,net_pay
+Jan/2026,ACME,2026-01-31,indefinite,1000000,250000,50000,100000,25000,70000,2.5,1105000
+Feb/2026,ACME,2026-02-28,fixed_term,1000000,250000,50000,100000,25000,70000,2.5,1105000
 ```
 
 Supported payroll amount columns:
@@ -272,6 +273,7 @@ Notes:
 - `period` must use `Mon/YYYY`, for example `Jan/2026`
 - `payment_date` is required
 - `employer` is required
+- `employment_contract_kind` is required and supports `indefinite` / `fixed_term` plus aliases `indefinido` / `plazo_fijo`
 - `net_pay` is optional; if present, the imported period is marked as `actual`, otherwise it is marked as `projected`
 
 Open the interactive docs:

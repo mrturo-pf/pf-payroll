@@ -38,6 +38,12 @@ class ComputeContributions:
             context.cap,
             uf_value_clp,
         )
+        unemployment = self._calculator.unemployment(
+            context.taxable_income_clp,
+            context.employment_contract_kind,
+            context.unemployment_cap,
+            uf_value_clp,
+        )
         result = ComputeContributionsResultDTO(
             period_id=context.period_id,
             pension_plan_id=context.pension_plan.id,
@@ -45,11 +51,13 @@ class ComputeContributions:
             taxable_income_clp=context.taxable_income_clp,
             pension=pension,
             health=health,
+            unemployment=unemployment,
             total_discount_clp=(
                 pension.base_amount_clp
                 + pension.additional_amount_clp
                 + health.base_amount_clp
                 + health.additional_amount_clp
+                + unemployment.employee_amount_clp
             ),
         )
         return await self._repository.save_computed_contributions(result)

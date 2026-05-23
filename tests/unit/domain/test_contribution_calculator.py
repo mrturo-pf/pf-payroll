@@ -1,9 +1,12 @@
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from payroll.domain.contribution_calculator import ContributionCalculator
 from payroll.domain.contributions import (
     ContributionCap,
+    EmploymentContractKind,
     HealthInstitution,
     HealthInstitutionKind,
     HealthPlan,
@@ -88,3 +91,39 @@ def test_health_contribution_uses_contract_amount_for_isapre_only() -> None:
     assert isapre_contribution.additional_amount_clp == Decimal("0")
     assert fonasa_contribution.contracted_clp == Decimal("0")
     assert fonasa_contribution.additional_amount_clp == Decimal("0")
+
+
+def test_unemployment_contribution_depends_on_contract_kind() -> None:
+    calculator = ContributionCalculator()
+    cap = ContributionCap("unemployment", date(2026, 1, 1), None, Decimal("90.0000"))
+
+    indefinite = calculator.unemployment(
+        taxable_clp=Decimal("1000000"),
+        contract_kind=EmploymentContractKind.INDEFINITE,
+        cap=cap,
+        uf_value_clp=Decimal("10000"),
+    )
+    fixed_term = calculator.unemployment(
+        taxable_clp=Decimal("1000000"),
+        contract_kind=EmploymentContractKind.FIXED_TERM,
+        cap=cap,
+        uf_value_clp=Decimal("10000"),
+    )
+
+    assert indefinite.employee_amount_clp == Decimal("5400")
+    assert indefinite.employer_amount_clp == Decimal("21600")
+    assert fixed_term.employee_amount_clp == Decimal("0")
+    assert fixed_term.employer_amount_clp == Decimal("27000")
+
+
+def test_unemployment_contribution_rejects_unknown_contract_kind() -> None:
+    class UnsupportedContractKind:
+        value = "seasonal"
+
+    with pytest.raises(ValueError, match="Unsupported employment contract kind: seasonal"):
+        ContributionCalculator().unemployment(
+            taxable_clp=Decimal("1000000"),
+            contract_kind=UnsupportedContractKind(),  # type: ignore[arg-type]
+            cap=ContributionCap("unemployment", date(2026, 1, 1), None, Decimal("90.0000")),
+            uf_value_clp=Decimal("10000"),
+        )

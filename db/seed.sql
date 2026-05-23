@@ -119,6 +119,7 @@ INSERT INTO payroll_concepts (code, name, kind, is_taxable) VALUES
     ('PENSION_ADDITIONAL', 'Additional Pension Contribution', 'discount', FALSE),
     ('HEALTH_BASE', 'Mandatory Health Contribution', 'discount', FALSE),
     ('HEALTH_ADDITIONAL_UF', 'Additional Health Charge in UF', 'discount', FALSE),
+    ('UNEMPLOYMENT_INSURANCE', 'Employee Unemployment Insurance', 'discount', FALSE),
     ('INCOME_TAX', 'Monthly Income Tax Withholding', 'discount', FALSE)
 ON CONFLICT (code) DO UPDATE
 SET

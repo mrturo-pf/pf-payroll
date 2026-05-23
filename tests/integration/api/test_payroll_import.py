@@ -16,7 +16,13 @@ from payroll.application.dto import (
     ImportPayrollResultDTO,
     ImportedPayrollPeriodDTO,
 )
-from payroll.domain.contributions import HealthContribution, HealthInstitutionKind, PensionContribution
+from payroll.domain.contributions import (
+    EmploymentContractKind,
+    HealthContribution,
+    HealthInstitutionKind,
+    PensionContribution,
+    UnemploymentContribution,
+)
 from payroll.domain.taxes import IncomeTaxComputation
 from payroll.interfaces.api.dependencies import (
     get_assign_plans_use_case,
@@ -50,6 +56,7 @@ class FakeImportPayroll:
                     period_month=1,
                     payment_date=date(2026, 1, 31),
                     status="projected",
+                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
                     item_count=1,
                 )
             ],
@@ -64,7 +71,7 @@ class FakeComputeContributions:
             pension_plan_id=1,
             health_plan_id=2,
             taxable_income_clp=Decimal("1000000"),
-            total_discount_clp=Decimal("196200"),
+            total_discount_clp=Decimal("202200"),
             pension=PensionContribution(
                 institution_code="AFP_UNO",
                 taxable_clp=Decimal("1000000"),
@@ -83,6 +90,16 @@ class FakeComputeContributions:
                 contracted_uf=Decimal("0"),
                 contracted_clp=Decimal("0"),
                 additional_amount_clp=Decimal("13500"),
+            ),
+            unemployment=UnemploymentContribution(
+                contract_kind=EmploymentContractKind.INDEFINITE,
+                taxable_clp=Decimal("1000000"),
+                cap_clp=Decimal("3152100"),
+                capped_base_clp=Decimal("1000000"),
+                employee_rate=Decimal("0.006"),
+                employee_amount_clp=Decimal("6000"),
+                employer_rate=Decimal("0.024"),
+                employer_amount_clp=Decimal("24000"),
             ),
         )
 
@@ -105,10 +122,10 @@ class FakeComputeIncomeTax:
             period_id=5,
             tax=IncomeTaxComputation(
                 taxable_income_clp=Decimal("1000000"),
-                deductible_amount_clp=Decimal("170000"),
-                taxable_base_clp=Decimal("830000"),
+                deductible_amount_clp=Decimal("176000"),
+                taxable_base_clp=Decimal("824000"),
                 utm_value_clp=Decimal("67000"),
-                taxable_base_utm=Decimal("12.388060"),
+                taxable_base_utm=Decimal("12.298507"),
                 bracket_lower_bound_utm=Decimal("0"),
                 bracket_upper_bound_utm=Decimal("13.5"),
                 marginal_rate=Decimal("0"),
@@ -145,7 +162,14 @@ def test_payroll_import_endpoint() -> None:
     try:
         response = client.post(
             "/payroll/import",
-            files={"file": ("sample.csv", b"period,employer,payment_date,salary_base\nJan/2026,ACME,2026-01-31,1000000\n", "text/csv")},
+            files={
+                "file": (
+                    "sample.csv",
+                    b"period,employer,payment_date,employment_contract_kind,salary_base\n"
+                    b"Jan/2026,ACME,2026-01-31,indefinite,1000000\n",
+                    "text/csv",
+                )
+            },
         )
     finally:
         app.dependency_overrides.clear()
@@ -162,6 +186,7 @@ def test_payroll_import_endpoint() -> None:
                 "period_month": 1,
                 "payment_date": "2026-01-31",
                 "status": "projected",
+                "employment_contract_kind": "indefinite",
                 "item_count": 1,
             }
         ],
@@ -211,7 +236,7 @@ def test_compute_contributions_endpoint() -> None:
         "pension_plan_id": 1,
         "health_plan_id": 2,
         "taxable_income_clp": "1000000",
-        "total_discount_clp": "196200",
+        "total_discount_clp": "202200",
         "pension": {
             "institution_code": "AFP_UNO",
             "taxable_clp": "1000000",
@@ -230,6 +255,16 @@ def test_compute_contributions_endpoint() -> None:
             "contracted_uf": "0",
             "contracted_clp": "0",
             "additional_amount_clp": "13500",
+        },
+        "unemployment": {
+            "contract_kind": "indefinite",
+            "taxable_clp": "1000000",
+            "cap_clp": "3152100",
+            "capped_base_clp": "1000000",
+            "employee_rate": "0.006",
+            "employee_amount_clp": "6000",
+            "employer_rate": "0.024",
+            "employer_amount_clp": "24000",
         },
     }
 
@@ -302,10 +337,10 @@ def test_compute_income_tax_endpoint() -> None:
     assert response.json() == {
         "period_id": 5,
         "taxable_income_clp": "1000000",
-        "deductible_amount_clp": "170000",
-        "taxable_base_clp": "830000",
+        "deductible_amount_clp": "176000",
+        "taxable_base_clp": "824000",
         "utm_value_clp": "67000",
-        "taxable_base_utm": "12.388060",
+        "taxable_base_utm": "12.298507",
         "bracket_lower_bound_utm": "0",
         "bracket_upper_bound_utm": "13.5",
         "marginal_rate": "0",

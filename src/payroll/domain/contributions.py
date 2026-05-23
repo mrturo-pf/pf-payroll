@@ -11,6 +11,11 @@ class HealthInstitutionKind(StrEnum):
     ISAPRE = "isapre"
 
 
+class EmploymentContractKind(StrEnum):
+    INDEFINITE = "indefinite"
+    FIXED_TERM = "fixed_term"
+
+
 @dataclass(frozen=True, slots=True)
 class PensionInstitution:
     code: str
@@ -74,3 +79,15 @@ class HealthContribution:
     contracted_uf: Decimal
     contracted_clp: Decimal
     additional_amount_clp: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class UnemploymentContribution:
+    contract_kind: EmploymentContractKind
+    taxable_clp: Decimal
+    cap_clp: Decimal
+    capped_base_clp: Decimal
+    employee_rate: Decimal
+    employee_amount_clp: Decimal
+    employer_rate: Decimal
+    employer_amount_clp: Decimal

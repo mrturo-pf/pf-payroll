@@ -7,11 +7,13 @@ from typing import Literal
 
 from payroll.domain.contributions import (
     ContributionCap,
+    EmploymentContractKind,
     HealthContribution,
     HealthInstitutionKind,
     HealthPlan,
     PensionContribution,
     PensionPlan,
+    UnemploymentContribution,
 )
 from payroll.domain.taxes import IncomeTaxComputation
 
@@ -115,6 +117,7 @@ class ImportPayrollRowDTO:
     period_month: int
     payment_date: date
     status: PayrollStatusKind
+    employment_contract_kind: EmploymentContractKind
     concept_code: str
     amount_clp: Decimal
 
@@ -127,6 +130,7 @@ class ImportedPayrollPeriodDTO:
     period_month: int
     payment_date: date
     status: PayrollStatusKind
+    employment_contract_kind: EmploymentContractKind
     item_count: int
 
 
@@ -165,9 +169,11 @@ class ContributionComputationContextDTO:
     period_id: int
     payment_date: date
     taxable_income_clp: Decimal
+    employment_contract_kind: EmploymentContractKind
     pension_plan: PensionPlan
     health_plan: HealthPlan
     cap: ContributionCap
+    unemployment_cap: ContributionCap
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +184,7 @@ class ComputeContributionsResultDTO:
     taxable_income_clp: Decimal
     pension: PensionContribution
     health: HealthContribution
+    unemployment: UnemploymentContribution
     total_discount_clp: Decimal
 
 
@@ -264,6 +271,7 @@ class PayrollPeriodDetailDTO:
     payment_date: date
     worked_days: int
     status: PayrollStatusKind
+    employment_contract_kind: EmploymentContractKind
     pension_plan_id: int | None
     health_plan_id: int | None
     items: list[PayrollItemDetailDTO]

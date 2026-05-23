@@ -5,6 +5,7 @@ import pytest
 
 from payroll.application.dto import PayrollItemDetailDTO, PayrollPeriodDetailDTO, PayrollSummaryDTO
 from payroll.application.use_cases.payroll_queries import PayrollQueries
+from payroll.domain.contributions import EmploymentContractKind
 
 
 class StubPayrollRepository:
@@ -22,6 +23,7 @@ class StubPayrollRepository:
             payment_date=date(2026, 1, 31),
             worked_days=30,
             status="actual",
+            employment_contract_kind=EmploymentContractKind.INDEFINITE,
             pension_plan_id=1,
             health_plan_id=2,
             items=[

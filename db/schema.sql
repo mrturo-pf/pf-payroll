@@ -114,6 +114,12 @@ EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
+DO $$ BEGIN
+    CREATE TYPE employment_contract_kind AS ENUM ('indefinite', 'fixed_term');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
 CREATE TABLE IF NOT EXISTS employers (
     id           BIGSERIAL PRIMARY KEY,
     name         VARCHAR(120) NOT NULL UNIQUE,
@@ -130,10 +136,14 @@ CREATE TABLE IF NOT EXISTS payroll_periods (
     payment_date    DATE           NOT NULL,
     worked_days     SMALLINT       NOT NULL DEFAULT 30,
     status          payroll_status NOT NULL DEFAULT 'projected',
+    employment_contract_kind employment_contract_kind NOT NULL DEFAULT 'indefinite',
     pension_plan_id BIGINT         REFERENCES pension_plans(id),
     health_plan_id  BIGINT         REFERENCES health_plans(id),
     UNIQUE (employer_id, period_year, period_month)
 );
+
+ALTER TABLE payroll_periods
+    ADD COLUMN IF NOT EXISTS employment_contract_kind employment_contract_kind NOT NULL DEFAULT 'indefinite';
 
 CREATE TABLE IF NOT EXISTS payroll_concepts (
     id          BIGSERIAL PRIMARY KEY,

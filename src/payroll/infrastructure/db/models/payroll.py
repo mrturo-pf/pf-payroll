@@ -7,6 +7,7 @@ from enum import StrEnum
 from sqlalchemy import Date, Enum as SAEnum, ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from payroll.domain.contributions import EmploymentContractKind
 from payroll.infrastructure.db.base import Base
 from payroll.infrastructure.db.models.reference_data import PayrollConceptModel, enum_values
 
@@ -41,6 +42,10 @@ class PayrollPeriodModel(Base):
     status: Mapped[PayrollStatus] = mapped_column(
         SAEnum(PayrollStatus, name="payroll_status", values_callable=enum_values),
         default=PayrollStatus.PROJECTED,
+    )
+    employment_contract_kind: Mapped[EmploymentContractKind] = mapped_column(
+        SAEnum(EmploymentContractKind, name="employment_contract_kind", values_callable=enum_values),
+        default=EmploymentContractKind.INDEFINITE,
     )
     pension_plan_id: Mapped[int | None] = mapped_column(ForeignKey("pension_plans.id"), nullable=True)
     health_plan_id: Mapped[int | None] = mapped_column(ForeignKey("health_plans.id"), nullable=True)

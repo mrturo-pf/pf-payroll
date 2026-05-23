@@ -1,0 +1,96 @@
+import pytest
+import sys
+from datetime import date
+from decimal import Decimal
+
+from payroll.application.dto import PayrollItemDetailDTO, PayrollPeriodDetailDTO, PayrollSummaryDTO
+from payroll.domain.contributions import EmploymentContractKind
+from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import (
+    WeasyPrintPayrollReportRenderer,
+    _build_pdf,
+    _escape_pdf_text,
+    _format_clp,
+)
+
+
+def sample_detail() -> PayrollPeriodDetailDTO:
+    return PayrollPeriodDetailDTO(
+        id=10,
+        employer_id=1,
+        employer_name="ACME & Co",
+        employer_tax_id="76.123.456-7",
+        employer_country_code="CL",
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        worked_days=30,
+        status="reviewed",
+        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+        pension_plan_id=1,
+        health_plan_id=2,
+        items=[
+            PayrollItemDetailDTO(
+                concept_code="SALARY_BASE",
+                concept_name="Base Salary",
+                kind="income",
+                is_taxable=True,
+                amount_clp=Decimal("1000000"),
+                notes=None,
+            ),
+            PayrollItemDetailDTO(
+                concept_code="INCOME_TAX",
+                concept_name="Income Tax",
+                kind="discount",
+                is_taxable=False,
+                amount_clp=Decimal("0"),
+                notes="computed",
+            ),
+        ],
+        summary=PayrollSummaryDTO(
+            period_id=10,
+            employer_id=1,
+            employer_name="ACME & Co",
+            period_year=2026,
+            period_month=1,
+            payment_date=date(2026, 1, 31),
+            taxable_income_clp=Decimal("1000000"),
+            gross_income_clp=Decimal("1000000"),
+            total_discounts_clp=Decimal("176000"),
+            net_pay_clp=Decimal("824000"),
+        ),
+    )
+
+
+def test_format_clp_uses_chilean_thousands_separator() -> None:
+    assert _format_clp(Decimal("1234567")) == "$1.234.567"
+
+
+def test_escape_pdf_text_escapes_reserved_characters() -> None:
+    assert _escape_pdf_text(r"ACME (Chile)\Ops") == r"ACME \(Chile\)\\Ops"
+
+
+def test_build_pdf_returns_pdf_bytes() -> None:
+    assert _build_pdf(["hello"]).startswith(b"%PDF")
+
+
+def test_weasyprint_payroll_report_renderer_returns_pdf_bytes_without_native_libs() -> None:
+    pdf = WeasyPrintPayrollReportRenderer().render_payroll_period(sample_detail())
+
+    assert pdf.startswith(b"%PDF")
+
+
+def test_weasyprint_payroll_report_renderer_uses_weasyprint_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeHTML:
+        def __init__(self, string: str) -> None:
+            self.string = string
+
+        def write_pdf(self) -> bytes:
+            assert "Payroll Period Report" in self.string
+            return b"%PDF-weasy"
+
+    fake_module = type("FakeWeasyPrintModule", (), {"HTML": FakeHTML})()
+    monkeypatch.setitem(sys.modules, "weasyprint", fake_module)
+
+    pdf = WeasyPrintPayrollReportRenderer().render_payroll_period(sample_detail())
+
+    assert pdf == b"%PDF-weasy"

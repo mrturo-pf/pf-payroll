@@ -40,7 +40,7 @@ dev = [
 testpaths = ["tests"]
 
 [[tool.mypy.overrides]]
-module = ["pandas"]
+module = ["pandas", "weasyprint"]
 ignore_missing_imports = true
 
 [tool.setuptools]

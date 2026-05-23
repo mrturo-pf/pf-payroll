@@ -291,6 +291,13 @@ class PayrollPeriodDetailDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class GeneratedPayrollReportDTO:
+    period_id: int
+    filename: str
+    content: bytes
+
+
+@dataclass(frozen=True, slots=True)
 class ComputeIncomeTaxCommandDTO:
     period_id: int
     utm_value_clp: Decimal | None = None

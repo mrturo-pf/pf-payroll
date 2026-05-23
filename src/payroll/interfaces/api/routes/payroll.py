@@ -5,10 +5,12 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from payroll.application.dto import (
     AssignPlansCommandDTO,
+    GeneratedPayrollReportDTO,
     ReviewPayrollPeriodCommandDTO,
     ComputeContributionsCommandDTO,
     DeflateAmountsCommandDTO,
@@ -19,6 +21,7 @@ from payroll.application.dto import (
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
+from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
@@ -29,6 +32,7 @@ from payroll.interfaces.api.dependencies import (
     get_deflate_amounts_use_case,
     get_compute_income_tax_use_case,
     get_import_payroll_use_case,
+    get_generate_payroll_report_use_case,
     get_payroll_queries,
     get_review_payroll_period_use_case,
 )
@@ -224,6 +228,14 @@ def to_deflated_amount_read(amount: DeflatedAmountDTO) -> DeflatedAmountRead:
     return DeflatedAmountRead(nominal_clp=str(amount.nominal_clp), real_clp=str(amount.real_clp))
 
 
+def to_pdf_response(report: GeneratedPayrollReportDTO) -> Response:
+    return Response(
+        content=report.content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{report.filename}"'},
+    )
+
+
 @router.post("/import", response_model=ImportPayrollResponse)
 async def import_payroll(
     file: UploadFile = File(...),
@@ -288,6 +300,20 @@ async def get_payroll_period(
         ],
         summary=to_payroll_summary_read(detail.summary) if detail.summary is not None else None,
     )
+
+
+@router.get(
+    "/{period_id}/report.pdf",
+    responses={200: {"content": {"application/pdf": {}}}},
+)
+async def get_payroll_report(
+    period_id: int = Path(..., gt=0),
+    use_case: GeneratePayrollReport = Depends(get_generate_payroll_report_use_case),
+) -> Response:
+    try:
+        return to_pdf_response(await use_case.execute(period_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/{period_id}/assign-plans", response_model=AssignPlansResponse)

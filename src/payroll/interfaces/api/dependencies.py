@@ -13,10 +13,12 @@ from payroll.infrastructure.rate_providers.official_providers import (
     SiiIncomeTaxBracketProvider,
     SiiIndicatorsProvider,
 )
+from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import WeasyPrintPayrollReportRenderer
 from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
+from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
@@ -135,6 +137,12 @@ def get_payroll_queries(
     repository: PayrollRepository = Depends(get_payroll_repository),
 ) -> PayrollQueries:
     return PayrollQueries(repository)
+
+
+def get_generate_payroll_report_use_case(
+    repository: PayrollRepository = Depends(get_payroll_repository),
+) -> GeneratePayrollReport:
+    return GeneratePayrollReport(repository, WeasyPrintPayrollReportRenderer())
 
 
 def get_assign_plans_use_case(

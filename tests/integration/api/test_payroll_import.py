@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from starlette.datastructures import UploadFile
 
 from payroll.application.dto import (
+    GeneratedPayrollReportDTO,
     AssignPlansResultDTO,
     ComputeContributionsResultDTO,
     DeflateAmountsResultDTO,
@@ -30,6 +31,7 @@ from payroll.interfaces.api.dependencies import (
     get_compute_contributions_use_case,
     get_deflate_amounts_use_case,
     get_compute_income_tax_use_case,
+    get_generate_payroll_report_use_case,
     get_import_payroll_use_case,
     get_review_payroll_period_use_case,
 )
@@ -39,6 +41,7 @@ from payroll.interfaces.api.routes.payroll import (
     compute_contributions,
     compute_income_tax,
     deflate_amounts,
+    get_payroll_report,
     import_payroll,
     review_payroll_period,
 )
@@ -146,6 +149,16 @@ class FakeReviewPayrollPeriod:
             period_id=5,
             payment_date=date(2026, 1, 31),
             status="reviewed",
+        )
+
+
+class FakeGeneratePayrollReport:
+    async def execute(self, period_id: int) -> GeneratedPayrollReportDTO:
+        assert period_id == 5
+        return GeneratedPayrollReportDTO(
+            period_id=5,
+            filename="payroll-period-5.pdf",
+            content=b"%PDF-fake",
         )
 
 
@@ -317,6 +330,21 @@ def test_review_payroll_period_endpoint() -> None:
     }
 
 
+def test_payroll_report_endpoint_returns_pdf() -> None:
+    app.dependency_overrides[get_generate_payroll_report_use_case] = lambda: FakeGeneratePayrollReport()
+    client = TestClient(app)
+
+    try:
+        response = client.get("/payroll/5/report.pdf")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["content-disposition"] == 'attachment; filename="payroll-period-5.pdf"'
+    assert response.content == b"%PDF-fake"
+
+
 def test_assign_plans_endpoint_surfaces_domain_errors() -> None:
     class ErrorAssignPlans:
         async def execute(self, command: object) -> AssignPlansResultDTO:
@@ -349,6 +377,23 @@ def test_review_payroll_period_endpoint_surfaces_domain_errors() -> None:
 
     assert response.status_code == 400
     assert response.json() == {"detail": "period must have computed items before review"}
+
+
+def test_payroll_report_endpoint_surfaces_domain_errors() -> None:
+    class ErrorGeneratePayrollReport:
+        async def execute(self, period_id: int) -> GeneratedPayrollReportDTO:
+            raise ValueError("period must be reviewed before generating a report")
+
+    app.dependency_overrides[get_generate_payroll_report_use_case] = lambda: ErrorGeneratePayrollReport()
+    client = TestClient(app)
+
+    try:
+        response = client.get("/payroll/5/report.pdf")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "period must be reviewed before generating a report"}
 
 
 def test_compute_contributions_endpoint_surfaces_domain_errors() -> None:
@@ -509,6 +554,19 @@ async def test_review_payroll_period_endpoint_maps_value_errors_in_handler() -> 
         await review_payroll_period(
             period_id=1,
             use_case=ErrorReviewPayrollPeriod(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_payroll_report_endpoint_maps_value_errors_in_handler() -> None:
+    class ErrorGeneratePayrollReport:
+        async def execute(self, period_id: int) -> GeneratedPayrollReportDTO:
+            raise ValueError("bad report payload")
+
+    with pytest.raises(HTTPException, match="bad report payload"):
+        await get_payroll_report(
+            period_id=1,
+            use_case=ErrorGeneratePayrollReport(),
         )
 
 

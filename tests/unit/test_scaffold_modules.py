@@ -16,6 +16,7 @@ from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
+from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
@@ -40,6 +41,7 @@ from payroll.domain.entities import PayrollPeriod
 from payroll.domain.value_objects import Money
 from payroll.infrastructure.importers.xlsx_importer import read_payroll_dataframe, to_long_format
 from payroll.infrastructure.logging.logger import logger
+from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import WeasyPrintPayrollReportRenderer
 from payroll.infrastructure.rate_providers.chained_provider import ChainedFxProvider
 from payroll.interfaces.cli.main import app as cli_app
 from payroll.interfaces.dashboard.app import main as dashboard_main
@@ -166,6 +168,7 @@ def test_use_case_placeholders_are_instantiable() -> None:
     assert isinstance(ImportPayroll(StubRepository()), ImportPayroll)
     assert isinstance(PayrollQueries(StubRepository()), PayrollQueries)
     assert isinstance(AssignPlans(StubRepository()), AssignPlans)
+    assert isinstance(GeneratePayrollReport(StubRepository(), WeasyPrintPayrollReportRenderer()), GeneratePayrollReport)
     assert isinstance(ReviewPayrollPeriod(StubRepository()), ReviewPayrollPeriod)
     assert isinstance(ReferenceDataQueries(object()), ReferenceDataQueries)
     assert isinstance(MarketDataQueries(StubRepository()), MarketDataQueries)

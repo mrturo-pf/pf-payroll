@@ -7,6 +7,7 @@ import pytest
 
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.assign_plans import AssignPlans
+from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
 from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
 from payroll.domain.contributions import HealthContribution, HealthInstitutionKind, PensionContribution
 from payroll.domain.contributions import EmploymentContractKind, UnemploymentContribution
@@ -1171,6 +1172,7 @@ async def test_api_dependencies_build_payroll_repository_and_use_case(monkeypatc
     repository = dependencies.get_payroll_repository(fake_session)  # type: ignore[arg-type]
     use_case = dependencies.get_import_payroll_use_case(repository)
     queries = dependencies.get_payroll_queries(repository)
+    report_use_case = dependencies.get_generate_payroll_report_use_case(repository)
     assign_use_case = dependencies.get_assign_plans_use_case(repository)
     review_use_case = dependencies.get_review_payroll_period_use_case(repository)
     compute_use_case = dependencies.get_compute_contributions_use_case(repository)
@@ -1179,6 +1181,7 @@ async def test_api_dependencies_build_payroll_repository_and_use_case(monkeypatc
     assert isinstance(repository, SqlAlchemyPayrollRepository)
     assert isinstance(use_case, ImportPayroll)
     assert isinstance(assign_use_case, AssignPlans)
+    assert isinstance(report_use_case, GeneratePayrollReport)
     assert isinstance(review_use_case, ReviewPayrollPeriod)
     assert queries.__class__.__name__ == "PayrollQueries"
     assert compute_use_case.__class__.__name__ == "ComputeContributions"

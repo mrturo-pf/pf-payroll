@@ -1,0 +1,296 @@
+import asyncio
+from datetime import date
+from decimal import Decimal
+
+import payroll.interfaces.dashboard.app as dashboard_app
+from payroll.application.dto import HealthPlanDTO, PayrollItemDetailDTO, PayrollPeriodDetailDTO, PayrollSummaryDTO, PensionPlanDTO
+from payroll.domain.contributions import EmploymentContractKind, HealthInstitutionKind
+from payroll.interfaces.dashboard.app import (
+    _assigned_plans_label,
+    _build_period_row,
+    _format_clp,
+    _format_period,
+    _missing_required_items,
+    _next_action,
+    render_dashboard_html,
+)
+
+
+def sample_summary() -> PayrollSummaryDTO:
+    return PayrollSummaryDTO(
+        period_id=7,
+        employer_id=1,
+        employer_name="ACME",
+        period_year=2026,
+        period_month=4,
+        payment_date=date(2026, 4, 30),
+        taxable_income_clp=Decimal("1000000"),
+        gross_income_clp=Decimal("1250000"),
+        total_discounts_clp=Decimal("180000"),
+        net_pay_clp=Decimal("1070000"),
+    )
+
+
+def sample_detail(
+    *,
+    status: str = "projected",
+    pension_plan_id: int | None = None,
+    health_plan_id: int | None = None,
+    item_codes: list[str] | None = None,
+) -> PayrollPeriodDetailDTO:
+    codes = item_codes or ["SALARY_BASE"]
+    items = [
+        PayrollItemDetailDTO(
+            concept_code=code,
+            concept_name=code.title(),
+            kind="discount" if code != "SALARY_BASE" else "income",
+            is_taxable=code == "SALARY_BASE",
+            amount_clp=Decimal("1000"),
+            notes=None,
+        )
+        for code in codes
+    ]
+    return PayrollPeriodDetailDTO(
+        id=7,
+        employer_id=1,
+        employer_name="ACME",
+        employer_tax_id="76000000-1",
+        employer_country_code="CL",
+        period_year=2026,
+        period_month=4,
+        payment_date=date(2026, 4, 30),
+        worked_days=30,
+        status=status,
+        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+        pension_plan_id=pension_plan_id,
+        health_plan_id=health_plan_id,
+        items=items,
+        summary=sample_summary(),
+    )
+
+
+def sample_pension_plan() -> PensionPlanDTO:
+    return PensionPlanDTO(
+        id=1,
+        institution_code="AFP_UNO",
+        institution_name="AFP Uno",
+        valid_from=date(2026, 1, 1),
+        valid_to=None,
+        additional_rate=Decimal("0.0127"),
+    )
+
+
+def sample_health_plan() -> HealthPlanDTO:
+    return HealthPlanDTO(
+        id=2,
+        institution_code="FONASA",
+        institution_name="Fonasa",
+        institution_kind=HealthInstitutionKind.FONASA,
+        valid_from=date(2026, 1, 1),
+        valid_to=None,
+        plan_name="Base",
+        contracted_uf=Decimal("0"),
+    )
+
+
+def test_dashboard_format_helpers() -> None:
+    assert _format_clp(Decimal("1234567")) == "$1.234.567"
+    assert _format_period(2026, 4) == "04/2026"
+
+
+def test_missing_required_items_marks_every_pending_step() -> None:
+    missing = _missing_required_items(sample_detail())
+
+    assert missing == [
+        "ASSIGN_PLANS",
+        "HEALTH_ADDITIONAL_UF",
+        "HEALTH_BASE",
+        "PENSION_ADDITIONAL",
+        "PENSION_BASE",
+        "UNEMPLOYMENT_INSURANCE",
+        "INCOME_TAX",
+        "REVIEW_PERIOD",
+    ]
+
+
+def test_next_action_prioritizes_assign_plans() -> None:
+    action, endpoint = _next_action(sample_detail())
+
+    assert action == "Assign pension and health plans"
+    assert endpoint == "POST /payroll/7/assign-plans"
+
+
+def test_next_action_prioritizes_contributions_then_tax_then_review_then_pdf() -> None:
+    action, endpoint = _next_action(
+        sample_detail(
+            pension_plan_id=1,
+            health_plan_id=2,
+        )
+    )
+    assert action == "Compute contributions"
+    assert endpoint == "POST /payroll/7/compute-contributions"
+
+    action, endpoint = _next_action(
+        sample_detail(
+            pension_plan_id=1,
+            health_plan_id=2,
+            item_codes=[
+                "SALARY_BASE",
+                "PENSION_BASE",
+                "PENSION_ADDITIONAL",
+                "HEALTH_BASE",
+                "HEALTH_ADDITIONAL_UF",
+                "UNEMPLOYMENT_INSURANCE",
+            ],
+        )
+    )
+    assert action == "Compute income tax"
+    assert endpoint == "POST /payroll/7/compute-tax"
+
+    action, endpoint = _next_action(
+        sample_detail(
+            pension_plan_id=1,
+            health_plan_id=2,
+            item_codes=[
+                "SALARY_BASE",
+                "PENSION_BASE",
+                "PENSION_ADDITIONAL",
+                "HEALTH_BASE",
+                "HEALTH_ADDITIONAL_UF",
+                "UNEMPLOYMENT_INSURANCE",
+                "INCOME_TAX",
+            ],
+        )
+    )
+    assert action == "Review payroll period"
+    assert endpoint == "POST /payroll/7/review"
+
+    action, endpoint = _next_action(
+        sample_detail(
+            status="reviewed",
+            pension_plan_id=1,
+            health_plan_id=2,
+            item_codes=[
+                "SALARY_BASE",
+                "PENSION_BASE",
+                "PENSION_ADDITIONAL",
+                "HEALTH_BASE",
+                "HEALTH_ADDITIONAL_UF",
+                "UNEMPLOYMENT_INSURANCE",
+                "INCOME_TAX",
+            ],
+        )
+    )
+    assert action == "Download payroll PDF"
+    assert endpoint == "GET /payroll/7/report.pdf"
+
+
+def test_assigned_plans_label_and_period_row() -> None:
+    detail = sample_detail(
+        pension_plan_id=1,
+        health_plan_id=2,
+        item_codes=[
+            "SALARY_BASE",
+            "PENSION_BASE",
+            "PENSION_ADDITIONAL",
+            "HEALTH_BASE",
+            "HEALTH_ADDITIONAL_UF",
+            "UNEMPLOYMENT_INSURANCE",
+            "INCOME_TAX",
+        ],
+    )
+    row = _build_period_row(sample_summary(), detail)
+
+    assert _assigned_plans_label(sample_detail()) == "Missing"
+    assert row.assigned_plans == "Pension #1 / Health #2"
+    assert row.missing_items == "REVIEW_PERIOD"
+    assert row.net_pay_clp == "$1.070.000"
+
+
+def test_render_dashboard_html_handles_empty_and_populated_states() -> None:
+    empty_html = render_dashboard_html([], [], [])
+    assert "No payroll periods available yet" in empty_html
+    assert "No pension plans found." in empty_html
+    assert "No health plans found." in empty_html
+
+    detail = sample_detail(
+        status="reviewed",
+        pension_plan_id=1,
+        health_plan_id=2,
+        item_codes=[
+            "SALARY_BASE",
+            "PENSION_BASE",
+            "PENSION_ADDITIONAL",
+            "HEALTH_BASE",
+            "HEALTH_ADDITIONAL_UF",
+            "UNEMPLOYMENT_INSURANCE",
+            "INCOME_TAX",
+        ],
+    )
+    row = _build_period_row(sample_summary(), detail)
+    html = render_dashboard_html([row], [sample_pension_plan()], [sample_health_plan()])
+
+    assert "Payroll operations dashboard" in html
+    assert "Business flow: import -&gt; assign plans" not in html
+    assert "Business flow: import -> assign plans -> compute contributions -> compute tax -> review -> PDF." in html
+    assert "Download payroll PDF" in html
+    assert "GET /payroll/7/report.pdf" in html
+    assert "AFP Uno" in html
+    assert "Fonasa" in html
+
+
+def test_build_dashboard_html_uses_queries_and_renders_result(monkeypatch) -> None:
+    class FakeSessionContext:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+    reviewed_detail = sample_detail(
+        status="reviewed",
+        pension_plan_id=1,
+        health_plan_id=2,
+        item_codes=[
+            "SALARY_BASE",
+            "PENSION_BASE",
+            "PENSION_ADDITIONAL",
+            "HEALTH_BASE",
+            "HEALTH_ADDITIONAL_UF",
+            "UNEMPLOYMENT_INSURANCE",
+            "INCOME_TAX",
+        ],
+    )
+
+    class FakePayrollQueries:
+        def __init__(self, repository: object) -> None:
+            assert repository == "payroll-repo"
+
+        async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
+            return [sample_summary()]
+
+        async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO:
+            assert period_id == 7
+            return reviewed_detail
+
+    class FakeReferenceDataQueries:
+        def __init__(self, repository: object) -> None:
+            assert repository == "reference-repo"
+
+        async def list_pension_plans(self) -> list[PensionPlanDTO]:
+            return [sample_pension_plan()]
+
+        async def list_health_plans(self) -> list[HealthPlanDTO]:
+            return [sample_health_plan()]
+
+    monkeypatch.setattr(dashboard_app, "SessionLocal", lambda: FakeSessionContext())
+    monkeypatch.setattr(dashboard_app, "SqlAlchemyPayrollRepository", lambda session: "payroll-repo")
+    monkeypatch.setattr(dashboard_app, "SqlAlchemyReferenceDataRepository", lambda session: "reference-repo")
+    monkeypatch.setattr(dashboard_app, "PayrollQueries", FakePayrollQueries)
+    monkeypatch.setattr(dashboard_app, "ReferenceDataQueries", FakeReferenceDataQueries)
+
+    html = asyncio.run(dashboard_app.build_dashboard_html())
+
+    assert "Payroll operations dashboard" in html
+    assert "Download payroll PDF" in html
+    assert "AFP Uno" in html

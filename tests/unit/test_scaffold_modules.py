@@ -179,10 +179,18 @@ def test_use_case_placeholders_are_instantiable() -> None:
     assert isinstance(RefreshIncomeTaxBrackets(StubRepository(), object()), RefreshIncomeTaxBrackets)
 
 
-def test_dashboard_placeholder_prints_message(capsys: pytest.CaptureFixture[str]) -> None:
+def test_dashboard_main_prints_rendered_html(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    async def fake_build_dashboard_html() -> str:
+        return "<html>dashboard</html>"
+
+    monkeypatch.setattr("payroll.interfaces.dashboard.app.build_dashboard_html", fake_build_dashboard_html)
+
     dashboard_main()
 
-    assert capsys.readouterr().out.strip() == "Dashboard placeholder"
+    assert capsys.readouterr().out.strip() == "<html>dashboard</html>"
 
 
 def test_xlsx_importer_transforms_and_reads_files() -> None:

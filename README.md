@@ -317,6 +317,16 @@ source .venv/bin/activate
 python -m payroll.interfaces.cli.main health
 ```
 
+Render the operations dashboard as HTML:
+
+```bash
+source .venv/bin/activate
+python -m payroll.interfaces.dashboard.app > payroll-dashboard.html
+open payroll-dashboard.html
+```
+
+The dashboard summarizes payroll periods already loaded in PostgreSQL, highlights the next business action for each period, and lists the available pension/health plan snapshot ids for plan assignment.
+
 ## Local PostgreSQL in Rancher Desktop
 
 The repository includes a Rancher Desktop flow that:

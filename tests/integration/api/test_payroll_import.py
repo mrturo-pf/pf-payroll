@@ -298,6 +298,7 @@ def test_payroll_import_endpoint() -> None:
                 "period_year": 2026,
                 "period_month": 1,
                 "payment_date": "2026-01-31",
+                "worked_days": 30,
                 "status": "projected",
                 "employment_contract_kind": "indefinite",
                 "item_count": 1,

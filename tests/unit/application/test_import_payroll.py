@@ -34,6 +34,7 @@ class StubPayrollRepository:
                     period_year=2026,
                     period_month=1,
                     payment_date=rows[0].payment_date,
+                    worked_days=rows[0].worked_days,
                     status=rows[0].status,
                     employment_contract_kind=rows[0].employment_contract_kind,
                     item_count=len(rows),
@@ -79,6 +80,7 @@ def sample_rows() -> list[ImportPayrollRowDTO]:
             period_year=2026,
             period_month=1,
             payment_date=date(2026, 1, 31),
+            worked_days=30,
             status="actual",
             employment_contract_kind=EmploymentContractKind.INDEFINITE,
             concept_code="SALARY_BASE",
@@ -118,6 +120,7 @@ async def test_import_payroll_reads_csv_and_builds_rows() -> None:
     assert importer.calls == [("sample.csv", payload)]
     assert repository.rows[0].employer == "ACME"
     assert repository.rows[0].concept_code == "SALARY_BASE"
+    assert repository.rows[0].worked_days == 30
     assert repository.rows[0].employment_contract_kind.value == "indefinite"
     assert repository.rows[1].amount_clp == Decimal("100000")
 

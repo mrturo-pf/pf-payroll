@@ -58,6 +58,7 @@ class ImportedPayrollPeriodRead(BaseModel):
     period_year: int
     period_month: int
     payment_date: date
+    worked_days: int
     status: str
     employment_contract_kind: str
     item_count: int

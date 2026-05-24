@@ -1,2 +1,2 @@
-period,employer,payment_date,employment_contract_kind,salary_base,monthly_legal_gratuity,teleworking_refund,health_insurance_employer_contribution,pension_base,pension_additional,health_base,health_plan_additional,health_insurance,prior_month_leave_absence_discount,net_pay
-Jan/2026,ACME,2026-01-31,indefinite,1000000,250000,50000,10030,100000,25000,70000,87500,12000,3000,1105000
+period,employer,payment_date,worked_days,employment_contract_kind,salary_base,monthly_legal_gratuity,teleworking_refund,health_insurance_employer_contribution,pension_base,pension_additional,health_base,health_plan_additional,health_insurance,prior_month_leave_absence_discount,net_pay
+Jan/2026,ACME,2026-01-31,30,indefinite,1000000,250000,50000,10030,100000,25000,70000,87500,12000,3000,1105000

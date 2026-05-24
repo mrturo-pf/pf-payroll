@@ -76,6 +76,31 @@ def parse_payment_date(raw_value: object) -> pd.Timestamp | pd.NaT:
     return pd.to_datetime(raw_value, errors="coerce")
 
 
+def parse_worked_days(raw_value: object) -> int:
+    """Parse worked days, defaulting to 30 when omitted."""
+    if pd.isna(raw_value):
+        return 30
+    normalized = str(raw_value).strip()
+    if not normalized:
+        return 30
+    try:
+        decimal_value = Decimal(normalized)
+    except ArithmeticError as exc:
+        raise PayrollValidationError(
+            "worked_days must be a whole number between 0 and 31."
+        ) from exc
+    if decimal_value != decimal_value.to_integral_value():
+        raise PayrollValidationError(
+            "worked_days must be a whole number between 0 and 31."
+        )
+    worked_days = int(decimal_value)
+    if worked_days < 0 or worked_days > 31:
+        raise PayrollValidationError(
+            "worked_days must be a whole number between 0 and 31."
+        )
+    return worked_days
+
+
 def read_payroll_dataframe(filename: str, payload: BufferedIOBase) -> pd.DataFrame:
     """Read payroll dataframe."""
     lowered = filename.lower()
@@ -179,6 +204,7 @@ def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:
             "year": int(y_str),
             "month": pd.to_datetime(m_str, format="%b").month,
             "payment_date": payment_dt.date(),
+            "worked_days": parse_worked_days(row.get("worked_days")),
             "status": "actual" if pd.notna(row.get("net_pay")) else "projected",
             "employment_contract_kind": parse_contract_kind(
                 row.get("employment_contract_kind")
@@ -226,6 +252,7 @@ class XlsxPayrollImporter(PayrollImporter):
                     employment_contract_kind=row["employment_contract_kind"],
                     concept_code=str(row["concept_code"]),
                     amount_clp=row["amount_clp"],
+                    worked_days=int(row["worked_days"]),
                     declared_net_pay_clp=None
                     if validation is None
                     else validation.declared_net_pay_clp,

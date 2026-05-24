@@ -98,6 +98,7 @@ class ProcessImportedPayrollPeriods:
             status=detail.status,
             employment_contract_kind=detail.employment_contract_kind,
             item_count=len(detail.items),
+            worked_days=detail.worked_days,
             declared_net_pay_clp=summary.declared_net_pay_clp,
             expected_net_pay_clp=summary.expected_net_pay_clp,
             net_pay_difference_clp=summary.net_pay_difference_clp,

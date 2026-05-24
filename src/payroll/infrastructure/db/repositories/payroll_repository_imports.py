@@ -118,6 +118,7 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
 
         for (employer_name, year, month), period_rows in sorted(grouped_rows.items()):
             first_row = period_rows[0]
+            worked_days = getattr(first_row, "worked_days", 30)
 
             employer_result = await self._session.execute(
                 select(EmployerModel).where(EmployerModel.name == employer_name)
@@ -149,6 +150,7 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                     period_year=year,
                     period_month=month,
                     payment_date=first_row.payment_date,
+                    worked_days=worked_days,
                     status=PayrollStatus(first_row.status),
                     employment_contract_kind=first_row.employment_contract_kind,
                     declared_net_pay_clp=first_row.declared_net_pay_clp,
@@ -159,6 +161,7 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                 await self._session.flush()
             else:
                 period.payment_date = first_row.payment_date
+                period.worked_days = worked_days
                 period.status = PayrollStatus(first_row.status)
                 period.employment_contract_kind = first_row.employment_contract_kind
                 period.declared_net_pay_clp = first_row.declared_net_pay_clp
@@ -192,6 +195,7 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                     status=period.status.value,
                     employment_contract_kind=period.employment_contract_kind,
                     item_count=len(items),
+                    worked_days=period.worked_days,
                     declared_net_pay_clp=period.declared_net_pay_clp,
                     expected_net_pay_clp=period.expected_net_pay_clp,
                     net_pay_difference_clp=period.net_pay_difference_clp,

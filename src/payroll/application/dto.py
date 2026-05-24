@@ -142,6 +142,7 @@ class ImportPayrollRowDTO:
     employment_contract_kind: EmploymentContractKind
     concept_code: str
     amount_clp: Decimal
+    worked_days: int = 30
     declared_net_pay_clp: Decimal | None = None
     expected_net_pay_clp: Decimal | None = None
     net_pay_difference_clp: Decimal | None = None
@@ -159,6 +160,7 @@ class ImportedPayrollPeriodDTO:
     status: PayrollStatusKind
     employment_contract_kind: EmploymentContractKind
     item_count: int
+    worked_days: int = 30
     declared_net_pay_clp: Decimal | None = None
     expected_net_pay_clp: Decimal | None = None
     net_pay_difference_clp: Decimal | None = None

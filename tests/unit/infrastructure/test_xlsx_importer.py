@@ -11,6 +11,7 @@ from payroll.infrastructure.importers.xlsx_importer import (
     XlsxPayrollImporter,
     extract_net_pay_validations,
     parse_payment_date,
+    parse_worked_days,
     read_payroll_dataframe,
     to_long_format,
 )
@@ -68,6 +69,22 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
     )
     assert result.empty
 
+    result = to_long_format(
+        pd.DataFrame(
+            [
+                {
+                    "period": "Jan/2026",
+                    "employer": "ACME",
+                    "payment_date": "2026-01-31",
+                    "employment_contract_kind": "indefinite",
+                    "worked_days": 28,
+                    "salary_base": 1000,
+                }
+            ]
+        )
+    )
+    assert result.iloc[0]["worked_days"] == 28
+
     with pytest.raises(ValueError, match="payment_date"):
         to_long_format(
             pd.DataFrame(
@@ -102,6 +119,22 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
                         "period": "Jan/2026",
                         "employer": "ACME",
                         "payment_date": "2026-01-31",
+                    }
+                ]
+            )
+        )
+
+    with pytest.raises(ValueError, match="worked_days"):
+        to_long_format(
+            pd.DataFrame(
+                [
+                    {
+                        "period": "Jan/2026",
+                        "employer": "ACME",
+                        "payment_date": "2026-01-31",
+                        "employment_contract_kind": "indefinite",
+                        "worked_days": 31.5,
+                        "salary_base": 1000,
                     }
                 ]
             )
@@ -155,6 +188,22 @@ def test_parse_payment_date_supports_iso_and_dayfirst_formats() -> None:
     assert str(parse_payment_date(pd.Timestamp("2026-01-31")).date()) == "2026-01-31"
     assert str(parse_payment_date(datetime(2026, 1, 31, 8, 30)).date()) == "2026-01-31"
     assert str(parse_payment_date(date(2026, 1, 31)).date()) == "2026-01-31"
+
+
+def test_parse_worked_days_defaults_and_validates() -> None:
+    """Test parse worked days defaults and validates."""
+    assert parse_worked_days(None) == 30
+    assert parse_worked_days("") == 30
+    assert parse_worked_days("28") == 28
+
+    with pytest.raises(ValueError, match="worked_days"):
+        parse_worked_days("31.5")
+
+    with pytest.raises(ValueError, match="worked_days"):
+        parse_worked_days("32")
+
+    with pytest.raises(ValueError, match="worked_days"):
+        parse_worked_days("abc")
 
 
 def test_extract_net_pay_validations_returns_expected_and_difference_values() -> None:
@@ -221,13 +270,15 @@ def test_xlsx_payroll_importer_builds_application_rows() -> None:
     rows = XlsxPayrollImporter().read_rows(
         "sample.csv",
         (
-            b"period,employer,payment_date,employment_contract_kind,salary_base,pension_base,net_pay\n"
-            b"Jan/2026,ACME,31/01/2026,indefinite,1000000,100000,950000\n"
+            b"period,employer,payment_date,worked_days,employment_contract_kind,"
+            b"salary_base,pension_base,net_pay\n"
+            b"Jan/2026,ACME,31/01/2026,28,indefinite,1000000,100000,950000\n"
         ),
     )
 
     assert len(rows) == 2
     assert rows[0].payment_date.isoformat() == "2026-01-31"
+    assert rows[0].worked_days == 28
     assert rows[0].declared_net_pay_clp == Decimal("950000")
     assert rows[0].expected_net_pay_clp == Decimal("900000")
     assert rows[0].net_pay_difference_clp == Decimal("50000")

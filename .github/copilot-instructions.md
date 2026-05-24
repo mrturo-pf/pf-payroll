@@ -12,6 +12,14 @@ This repository follows a modular monolith with **DDD** and **hexagonal architec
 - Apply **DRY, SOLID, Clean Code, and DDD** consistently in every change.
 - Follow **PEP 8** for Python style and formatting so code stays compatible with the repository lint rules.
 - Follow **PEP 257** docstring conventions for every Python artifact. Module, package, class, function, method, and script docstrings must all be present; no Python artifact should be left undocumented.
+- Follow **PEP 484** typing consistently in public APIs, DTOs, ports, and application services; type safety is validated with `mypy`.
+- Use **PEP 544** protocols for application ports and structural contracts between the application layer and adapters.
+- Prefer **PEP 585** built-in generics like `list[str]` and `dict[str, Decimal]` instead of legacy `typing.List` or `typing.Dict`.
+- Prefer **PEP 604** unions like `X | None` instead of `Optional[X]` and `Union[...]`.
+- Prefer **PEP 498** f-strings for string interpolation unless another API requires a different formatting style.
+- Use **PEP 492** `async` / `await` for I/O-bound workflows and adapters so asynchronous boundaries stay explicit.
+- Treat **PEP 654** as the guideline for concurrent failure aggregation: use `ExceptionGroup` and `except*` only when multiple async or concurrent failures must be surfaced together.
+- Keep package metadata in **PEP 621** `pyproject.toml` fields instead of legacy setup metadata files.
 - Keep use cases decoupled from infrastructure. Application code should depend on **ports**, not concrete adapters.
 - Prefer small, focused classes and helpers. Avoid growing repository or service "god objects".
 - Extract repeated business constants and mapping logic to shared helpers instead of duplicating literals.
@@ -27,6 +35,8 @@ This repository follows a modular monolith with **DDD** and **hexagonal architec
 
 ## Scalability and safety
 
+- Follow **SemVer** for project versioning: breaking changes increment major, backward-compatible features increment minor, and fixes increment patch.
+- Follow **Twelve-Factor** principles where they apply to this service: keep config in environment variables, declare dependencies explicitly, keep processes disposable and stateless, and write logs to standard output/error.
 - Keep HTTP, CLI, and dashboard layers thin; orchestration belongs in application use cases.
 - Prefer reusable mappers, normalization helpers, and shared constants when multiple flows use the same rule.
 - Keep validations explicit and close to the boundary or domain rule they protect.
@@ -38,8 +48,12 @@ Before finishing changes, validate with:
 
 ```bash
 PATH=.venv/bin:$PATH make lint
+PATH=.venv/bin:$PATH make dead-code
 PATH=.venv/bin:$PATH make typecheck
 PATH=.venv/bin:$PATH make test-cov
 ```
 
+- `make lint` uses **Ruff** as the repository lint and formatting enforcement tool.
+- `make dead-code` uses **Vulture** to detect potentially unused production code under `src`.
+- `make typecheck` uses **mypy** to enforce the typing standards derived from PEP 484, 544, 585, and 604.
 The repository expects **100% coverage** for `src/payroll`.

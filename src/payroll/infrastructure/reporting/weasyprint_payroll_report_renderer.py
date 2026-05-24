@@ -55,10 +55,8 @@ def _build_pdf(lines: list[str]) -> bytes:
     parts.extend(f"{offset:010d} 00000 n \n".encode() for offset in offsets[1:])
     parts.append(
         (
-            "trailer << /Size {size} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".format(
-                size=len(objects) + 1,
-                xref=xref_offset,
-            )
+            f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref_offset}\n%%EOF"
         ).encode()
     )
     return b"".join(parts)

@@ -51,8 +51,11 @@ lint:
 	ruff format src tests
 	ruff check src tests
 
+dead-code:
+	vulture --config pyproject.toml
+
 typecheck:
-	mypy src
+	mypy --install-types --non-interactive src
 
 clean:
 	rm -rf .coverage htmlcov .pytest_cache .mypy_cache .ruff_cache build dist

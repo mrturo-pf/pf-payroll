@@ -34,16 +34,25 @@ dev = [
   "pytest-cov>=6.2",
   "ruff>=0.12",
   "testcontainers[postgres]>=4.12",
+  "vulture>=2.13",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.ruff.lint]
-extend-select = ["D", "E", "W"]
+extend-select = ["D", "E", "W", "UP"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "pep257"
+
+[tool.mypy]
+python_version = "3.12"
+
+[tool.vulture]
+paths = ["src"]
+min_confidence = 80
+sort_by_size = true
 
 [[tool.mypy.overrides]]
 module = ["pandas", "weasyprint"]

@@ -70,6 +70,7 @@ Expected response:
 
 ```bash
 make lint
+make dead-code
 make typecheck
 make test-cov
 ```

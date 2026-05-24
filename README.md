@@ -71,12 +71,36 @@ The **complete API endpoint list** is maintained in [`docs/interfaces.md`](docs/
 ```bash
 source .venv/bin/activate
 make lint
+make dead-code
 make typecheck
 make test
 make test-cov
 ```
 
+Validation and standards enforcement are split as follows:
+
+- `make lint` uses **Ruff** to auto-fix and validate repository Python style rules, including the adopted **PEP 8** and **PEP 257** conventions.
+- `make dead-code` uses **Vulture** to detect potentially unused production code under `src`.
+- `make typecheck` uses **mypy** to validate the repository typing baseline based on **PEP 484**, **PEP 544**, **PEP 585**, and **PEP 604**.
+- Project metadata is maintained in `pyproject.toml` using **PEP 621** fields.
+
 The project requires **100% coverage** for `src/payroll`.
+
+## Engineering policy
+
+This repository adopts the following engineering standards and conventions:
+
+- **PEP 8** for Python style and formatting.
+- **PEP 257** for module, package, class, function, method, and script docstrings.
+- **PEP 484** for type hints across public contracts and application flows.
+- **PEP 544** for structural contracts via `Protocol` in application ports.
+- **PEP 585** for built-in generic types such as `list[str]`.
+- **PEP 604** for union syntax such as `X | None`.
+- **PEP 498** for preferred string interpolation via f-strings.
+- **PEP 492** for explicit asynchronous I/O with `async` / `await`.
+- **PEP 654** when concurrent failures need to be aggregated and surfaced together.
+- **SemVer** for project versioning.
+- **Twelve-Factor** principles for configuration, dependency declaration, disposability, stateless execution, and logging.
 
 ## Repository structure
 

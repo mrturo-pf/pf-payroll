@@ -97,6 +97,7 @@ The repository requires **100% coverage** for `src/payroll`.
 ```bash
 source .venv/bin/activate
 make lint
+make dead-code
 make typecheck
 ```
 

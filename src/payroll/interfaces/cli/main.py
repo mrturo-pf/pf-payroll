@@ -9,7 +9,8 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Any, Coroutine, TypeVar, cast
+from collections.abc import Coroutine
+from typing import Annotated, Any, cast
 
 import typer
 
@@ -45,8 +46,6 @@ from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import 
 
 app = typer.Typer(help="Payroll CLI")
 
-T = TypeVar("T")
-
 
 def _json_default(value: object) -> Any:
     """Handle json default."""
@@ -64,7 +63,7 @@ def _emit_json(payload: object) -> None:
     typer.echo(json.dumps(payload, default=_json_default, indent=2, sort_keys=True))
 
 
-def _run_command(coro: Coroutine[Any, Any, T]) -> T:
+def _run_command[T](coro: Coroutine[Any, Any, T]) -> T:
     """Handle run command."""
     try:
         return asyncio.run(coro)

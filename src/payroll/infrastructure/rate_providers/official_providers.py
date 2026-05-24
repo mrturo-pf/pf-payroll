@@ -9,7 +9,7 @@ from calendar import monthrange
 from datetime import date, datetime
 from decimal import Decimal
 from html import unescape
-from typing import Callable
+from collections.abc import Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen

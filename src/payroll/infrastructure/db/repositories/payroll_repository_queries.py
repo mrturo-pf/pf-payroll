@@ -2,9 +2,20 @@
 
 from sqlalchemy import select
 
-from payroll.application.dto import PayrollItemDetailDTO, PayrollPeriodDetailDTO, PayrollSummaryDTO
-from payroll.infrastructure.db.models import EmployerModel, PayrollConceptModel, PayrollSummaryModel
-from payroll.infrastructure.db.models.payroll import PayrollItemModel, PayrollPeriodModel
+from payroll.application.dto import (
+    PayrollItemDetailDTO,
+    PayrollPeriodDetailDTO,
+    PayrollSummaryDTO,
+)
+from payroll.infrastructure.db.models import (
+    EmployerModel,
+    PayrollConceptModel,
+    PayrollSummaryModel,
+)
+from payroll.infrastructure.db.models.payroll import (
+    PayrollItemModel,
+    PayrollPeriodModel,
+)
 from payroll.infrastructure.db.repositories.payroll_repository_shared import (
     SqlAlchemyPayrollRepositoryBase,
     build_payroll_summary_dto,
@@ -28,7 +39,10 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
 
         items_result = await self._session.execute(
             select(PayrollItemModel, PayrollConceptModel)
-            .join(PayrollConceptModel, PayrollItemModel.concept_id == PayrollConceptModel.id)
+            .join(
+                PayrollConceptModel,
+                PayrollItemModel.concept_id == PayrollConceptModel.id,
+            )
             .where(PayrollItemModel.period_id == period.id)
             .order_by(PayrollConceptModel.kind, PayrollConceptModel.code)
         )
@@ -82,8 +96,15 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
         result = await self._session.execute(
             select(PayrollSummaryModel, EmployerModel, PayrollPeriodModel)
             .join(EmployerModel, PayrollSummaryModel.employer_id == EmployerModel.id)
-            .join(PayrollPeriodModel, PayrollSummaryModel.period_id == PayrollPeriodModel.id)
-            .order_by(PayrollSummaryModel.period_year.desc(), PayrollSummaryModel.period_month.desc(), EmployerModel.name)
+            .join(
+                PayrollPeriodModel,
+                PayrollSummaryModel.period_id == PayrollPeriodModel.id,
+            )
+            .order_by(
+                PayrollSummaryModel.period_year.desc(),
+                PayrollSummaryModel.period_month.desc(),
+                EmployerModel.name,
+            )
         )
         return [
             build_payroll_summary_dto(

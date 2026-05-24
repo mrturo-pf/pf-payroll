@@ -5,7 +5,11 @@ from decimal import Decimal
 
 import pytest
 
-from payroll.application.dto import ImportPayrollResultDTO, ImportPayrollRowDTO, ImportedPayrollPeriodDTO
+from payroll.application.dto import (
+    ImportPayrollResultDTO,
+    ImportPayrollRowDTO,
+    ImportedPayrollPeriodDTO,
+)
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.domain.contributions import EmploymentContractKind
 
@@ -35,12 +39,18 @@ class StubPayrollRepository:
                     item_count=len(rows),
                     declared_net_pay_clp=getattr(rows[0], "declared_net_pay_clp", None),
                     expected_net_pay_clp=getattr(rows[0], "expected_net_pay_clp", None),
-                    net_pay_difference_clp=getattr(rows[0], "net_pay_difference_clp", None),
+                    net_pay_difference_clp=getattr(
+                        rows[0], "net_pay_difference_clp", None
+                    ),
                     net_pay_warning=(
                         None
-                        if getattr(rows[0], "net_pay_difference_clp", None) in (None, Decimal("0"))
-                        else "Declared net_pay does not match the imported concept totals. Difference: "
-                        f"{rows[0].net_pay_difference_clp} CLP."
+                        if getattr(rows[0], "net_pay_difference_clp", None)
+                        in (None, Decimal("0"))
+                        else (
+                            "Declared net_pay does not match the imported "
+                            "concept totals. Difference: "
+                            f"{rows[0].net_pay_difference_clp} CLP."
+                        )
                     ),
                 )
             ],
@@ -134,5 +144,6 @@ async def test_import_payroll_adds_net_pay_warning_without_rejecting_import() ->
     assert result.periods[0].expected_net_pay_clp == Decimal("900000")
     assert result.periods[0].net_pay_difference_clp == Decimal("50000")
     assert result.periods[0].net_pay_warning == (
-        "Declared net_pay does not match the imported concept totals. Difference: 50000 CLP."
+        "Declared net_pay does not match the imported concept "
+        "totals. Difference: 50000 CLP."
     )

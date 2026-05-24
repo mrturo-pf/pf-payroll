@@ -71,7 +71,10 @@ class ContributionCalculator:
 
         base_amount = quantize_clp(capped_base * plan.institution.mandatory_rate)
 
-        if plan.institution.kind is HealthInstitutionKind.ISAPRE and plan.contracted_uf > 0:
+        if (
+            plan.institution.kind is HealthInstitutionKind.ISAPRE
+            and plan.contracted_uf > 0
+        ):
             contracted_clp = quantize_clp(plan.contracted_uf * uf_value_clp)
             additional_amount = max(Decimal("0"), contracted_clp - base_amount)
         else:
@@ -121,7 +124,9 @@ class ContributionCalculator:
             employer_amount_clp=quantize_clp(capped_base * employer_rate),
         )
 
-    def pension_base(self, taxable_clp: Decimal, cap: ContributionCap, uf_value_clp: Decimal) -> Decimal:
+    def pension_base(
+        self, taxable_clp: Decimal, cap: ContributionCap, uf_value_clp: Decimal
+    ) -> Decimal:
         """Handle pension base."""
         _, capped_base = self._capped_base(taxable_clp, cap, uf_value_clp)
         return capped_base

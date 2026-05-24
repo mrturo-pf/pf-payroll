@@ -12,12 +12,23 @@ from payroll.application.use_cases.market_data import MarketDataQueries
 class StubMarketDataRepository:
     """Test double for Market Data Repository."""
 
-    async def list_exchange_rates(self, currency_code: str | None = None) -> list[ExchangeRateDTO]:
+    async def list_exchange_rates(
+        self, currency_code: str | None = None
+    ) -> list[ExchangeRateDTO]:
         """List exchange rates."""
         assert currency_code == "UF"
-        return [ExchangeRateDTO(currency_code="UF", rate_date=date(2026, 1, 31), value_clp=Decimal("38000"), source="manual")]
+        return [
+            ExchangeRateDTO(
+                currency_code="UF",
+                rate_date=date(2026, 1, 31),
+                value_clp=Decimal("38000"),
+                source="manual",
+            )
+        ]
 
-    async def list_economic_indices(self, code: str | None = None) -> list[EconomicIndexDTO]:
+    async def list_economic_indices(
+        self, code: str | None = None
+    ) -> list[EconomicIndexDTO]:
         """List economic indices."""
         assert code == "IPC_CL"
         return [
@@ -33,7 +44,9 @@ class StubMarketDataRepository:
             )
         ]
 
-    async def get_exchange_rate_value(self, currency_code: str, rate_date: date) -> Decimal | None:
+    async def get_exchange_rate_value(
+        self, currency_code: str, rate_date: date
+    ) -> Decimal | None:
         """Get exchange rate value."""
         raise AssertionError("not used")
 
@@ -43,7 +56,9 @@ class StubMarketDataRepository:
 
 
 @pytest.mark.asyncio
-async def test_market_data_queries_delegate_to_repository_and_normalize_filters() -> None:
+async def test_market_data_queries_delegate_to_repository_and_normalize_filters() -> (
+    None
+):
     """Test market data queries delegate to repository and normalize filters."""
     queries = MarketDataQueries(StubMarketDataRepository())
 

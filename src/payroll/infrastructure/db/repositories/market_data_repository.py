@@ -14,7 +14,11 @@ from payroll.application.dto import (
     RefreshRatesCommandDTO,
     RefreshRatesResultDTO,
 )
-from payroll.infrastructure.db.models.reference_data import CurrencyModel, EconomicIndexModel, ExchangeRateModel
+from payroll.infrastructure.db.models.reference_data import (
+    CurrencyModel,
+    EconomicIndexModel,
+    ExchangeRateModel,
+)
 
 
 class SqlAlchemyMarketDataRepository:
@@ -24,11 +28,17 @@ class SqlAlchemyMarketDataRepository:
         """Initialize the instance."""
         self._session = session
 
-    async def list_exchange_rates(self, currency_code: str | None = None) -> list[ExchangeRateDTO]:
+    async def list_exchange_rates(
+        self, currency_code: str | None = None
+    ) -> list[ExchangeRateDTO]:
         """List exchange rates."""
-        statement = select(ExchangeRateModel).order_by(ExchangeRateModel.rate_date.desc(), ExchangeRateModel.currency_code)
+        statement = select(ExchangeRateModel).order_by(
+            ExchangeRateModel.rate_date.desc(), ExchangeRateModel.currency_code
+        )
         if currency_code is not None:
-            statement = statement.where(ExchangeRateModel.currency_code == currency_code)
+            statement = statement.where(
+                ExchangeRateModel.currency_code == currency_code
+            )
 
         result = await self._session.execute(statement)
         return [
@@ -41,7 +51,9 @@ class SqlAlchemyMarketDataRepository:
             for row in result.scalars().all()
         ]
 
-    async def list_economic_indices(self, code: str | None = None) -> list[EconomicIndexDTO]:
+    async def list_economic_indices(
+        self, code: str | None = None
+    ) -> list[EconomicIndexDTO]:
         """List economic indices."""
         statement = select(EconomicIndexModel).order_by(
             EconomicIndexModel.code,
@@ -66,7 +78,9 @@ class SqlAlchemyMarketDataRepository:
             for row in result.scalars().all()
         ]
 
-    async def get_exchange_rate_value(self, currency_code: str, rate_date: date) -> Decimal | None:
+    async def get_exchange_rate_value(
+        self, currency_code: str, rate_date: date
+    ) -> Decimal | None:
         """Get exchange rate value."""
         result = await self._session.execute(
             select(ExchangeRateModel.value_clp).where(
@@ -76,7 +90,9 @@ class SqlAlchemyMarketDataRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_economic_index_value(self, code: str, period_year: int, period_month: int) -> Decimal | None:
+    async def get_economic_index_value(
+        self, code: str, period_year: int, period_month: int
+    ) -> Decimal | None:
         """Get economic index value."""
         result = await self._session.execute(
             select(EconomicIndexModel.index_value).where(
@@ -87,23 +103,34 @@ class SqlAlchemyMarketDataRepository:
         )
         return result.scalar_one_or_none()
 
-    async def refresh_rates(self, command: RefreshRatesCommandDTO) -> RefreshRatesResultDTO:
+    async def refresh_rates(
+        self, command: RefreshRatesCommandDTO
+    ) -> RefreshRatesResultDTO:
         """Refresh rates."""
         if command.exchange_rates:
             currency_result = await self._session.execute(
                 select(CurrencyModel.code).where(
-                    CurrencyModel.code.in_({entry.currency_code for entry in command.exchange_rates})
+                    CurrencyModel.code.in_(
+                        {entry.currency_code for entry in command.exchange_rates}
+                    )
                 )
             )
-            known_currencies = {code.strip() for code in currency_result.scalars().all()}
-            missing_currencies = sorted({entry.currency_code for entry in command.exchange_rates} - known_currencies)
+            known_currencies = {
+                code.strip() for code in currency_result.scalars().all()
+            }
+            missing_currencies = sorted(
+                {entry.currency_code for entry in command.exchange_rates}
+                - known_currencies
+            )
             if missing_currencies:
-                raise PayrollValidationError(f"Unknown currencies in exchange rates: {', '.join(missing_currencies)}")
+                raise PayrollValidationError(
+                    "Unknown currencies in exchange rates: "
+                    f"{', '.join(missing_currencies)}"
+                )
 
             exchange_rate_insert = insert(ExchangeRateModel)
             await self._session.execute(
-                exchange_rate_insert
-                .values(
+                exchange_rate_insert.values(
                     [
                         {
                             "currency_code": entry.currency_code,
@@ -113,9 +140,11 @@ class SqlAlchemyMarketDataRepository:
                         }
                         for entry in command.exchange_rates
                     ]
-                )
-                .on_conflict_do_update(
-                    index_elements=[ExchangeRateModel.currency_code, ExchangeRateModel.rate_date],
+                ).on_conflict_do_update(
+                    index_elements=[
+                        ExchangeRateModel.currency_code,
+                        ExchangeRateModel.rate_date,
+                    ],
                     set_={
                         "value_clp": exchange_rate_insert.excluded.value_clp,
                         "source": exchange_rate_insert.excluded.source,
@@ -126,8 +155,7 @@ class SqlAlchemyMarketDataRepository:
         if command.economic_indices:
             economic_index_insert = insert(EconomicIndexModel)
             await self._session.execute(
-                economic_index_insert
-                .values(
+                economic_index_insert.values(
                     [
                         {
                             "code": entry.code,
@@ -141,9 +169,12 @@ class SqlAlchemyMarketDataRepository:
                         }
                         for entry in command.economic_indices
                     ]
-                )
-                .on_conflict_do_update(
-                    index_elements=[EconomicIndexModel.code, EconomicIndexModel.period_year, EconomicIndexModel.period_month],
+                ).on_conflict_do_update(
+                    index_elements=[
+                        EconomicIndexModel.code,
+                        EconomicIndexModel.period_year,
+                        EconomicIndexModel.period_month,
+                    ],
                     set_={
                         "index_value": economic_index_insert.excluded.index_value,
                         "monthly_change": economic_index_insert.excluded.monthly_change,

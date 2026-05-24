@@ -269,7 +269,9 @@ def to_payroll_summary_read(summary: PayrollSummaryDTO) -> PayrollSummaryRead:
 
 def to_deflated_amount_read(amount: DeflatedAmountDTO) -> DeflatedAmountRead:
     """Convert to deflated amount read."""
-    return DeflatedAmountRead(nominal_clp=str(amount.nominal_clp), real_clp=str(amount.real_clp))
+    return DeflatedAmountRead(
+        nominal_clp=str(amount.nominal_clp), real_clp=str(amount.real_clp)
+    )
 
 
 def to_pdf_response(report: GeneratedPayrollReportDTO) -> Response:
@@ -298,7 +300,9 @@ async def import_payroll(
     return ImportPayrollResponse(
         imported_periods=result.imported_periods,
         imported_items=result.imported_items,
-        periods=[ImportedPayrollPeriodRead(**asdict(period)) for period in result.periods],
+        periods=[
+            ImportedPayrollPeriodRead(**asdict(period)) for period in result.periods
+        ],
     )
 
 
@@ -307,7 +311,9 @@ async def list_payroll_summaries(
     queries: PayrollQueries = Depends(get_payroll_queries),
 ) -> list[PayrollSummaryRead]:
     """List payroll summaries."""
-    return [to_payroll_summary_read(item) for item in await queries.list_period_summaries()]
+    return [
+        to_payroll_summary_read(item) for item in await queries.list_period_summaries()
+    ]
 
 
 @router.get("/{period_id}", response_model=PayrollPeriodDetailRead)
@@ -346,7 +352,9 @@ async def get_payroll_period(
             )
             for item in detail.items
         ],
-        summary=to_payroll_summary_read(detail.summary) if detail.summary is not None else None,
+        summary=to_payroll_summary_read(detail.summary)
+        if detail.summary is not None
+        else None,
     )
 
 
@@ -398,7 +406,9 @@ async def review_payroll_period(
 ) -> ReviewPayrollPeriodResponse:
     """Review payroll period."""
     try:
-        result = await use_case.execute(ReviewPayrollPeriodCommandDTO(period_id=period_id))
+        result = await use_case.execute(
+            ReviewPayrollPeriodCommandDTO(period_id=period_id)
+        )
     except PayrollError as exc:
         raise to_http_exception(exc, default_status=400) from exc
 
@@ -435,7 +445,9 @@ async def compute_income_tax(
         taxable_base_utm=str(result.tax.taxable_base_utm),
         bracket_lower_bound_utm=str(result.tax.bracket_lower_bound_utm),
         bracket_upper_bound_utm=(
-            str(result.tax.bracket_upper_bound_utm) if result.tax.bracket_upper_bound_utm is not None else None
+            str(result.tax.bracket_upper_bound_utm)
+            if result.tax.bracket_upper_bound_utm is not None
+            else None
         ),
         marginal_rate=str(result.tax.marginal_rate),
         rebate_utm=str(result.tax.rebate_utm),
@@ -479,7 +491,9 @@ async def deflate_amounts(
     )
 
 
-@router.post("/{period_id}/compute-contributions", response_model=ComputeContributionsResponse)
+@router.post(
+    "/{period_id}/compute-contributions", response_model=ComputeContributionsResponse
+)
 async def compute_contributions(
     payload: ComputeContributionsRequest,
     period_id: int = Path(..., gt=0),

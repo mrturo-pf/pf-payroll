@@ -36,7 +36,9 @@ class SqlAlchemyReferenceDataRepository:
 
     async def list_currencies(self) -> list[CurrencyDTO]:
         """List currencies."""
-        result = await self._session.execute(select(CurrencyModel).order_by(CurrencyModel.code))
+        result = await self._session.execute(
+            select(CurrencyModel).order_by(CurrencyModel.code)
+        )
         return [
             CurrencyDTO(
                 code=row.code.strip(),
@@ -82,7 +84,10 @@ class SqlAlchemyReferenceDataRepository:
         """List pension plans."""
         result = await self._session.execute(
             select(PensionPlanModel, PensionInstitutionModel)
-            .join(PensionInstitutionModel, PensionPlanModel.institution_id == PensionInstitutionModel.id)
+            .join(
+                PensionInstitutionModel,
+                PensionPlanModel.institution_id == PensionInstitutionModel.id,
+            )
             .order_by(PensionInstitutionModel.name, PensionPlanModel.valid_from)
         )
         return [
@@ -101,7 +106,10 @@ class SqlAlchemyReferenceDataRepository:
         """List health plans."""
         result = await self._session.execute(
             select(HealthPlanModel, HealthInstitutionModel)
-            .join(HealthInstitutionModel, HealthPlanModel.institution_id == HealthInstitutionModel.id)
+            .join(
+                HealthInstitutionModel,
+                HealthPlanModel.institution_id == HealthInstitutionModel.id,
+            )
             .order_by(HealthInstitutionModel.name, HealthPlanModel.valid_from)
         )
         return [
@@ -121,7 +129,9 @@ class SqlAlchemyReferenceDataRepository:
     async def list_contribution_caps(self) -> list[ContributionCapDTO]:
         """List contribution caps."""
         result = await self._session.execute(
-            select(ContributionCapModel).order_by(ContributionCapModel.cap_type, ContributionCapModel.valid_from)
+            select(ContributionCapModel).order_by(
+                ContributionCapModel.cap_type, ContributionCapModel.valid_from
+            )
         )
         return [
             ContributionCapDTO(
@@ -135,7 +145,9 @@ class SqlAlchemyReferenceDataRepository:
 
     async def list_payroll_concepts(self) -> list[PayrollConceptDTO]:
         """List payroll concepts."""
-        result = await self._session.execute(select(PayrollConceptModel).order_by(PayrollConceptModel.code))
+        result = await self._session.execute(
+            select(PayrollConceptModel).order_by(PayrollConceptModel.code)
+        )
         return [
             PayrollConceptDTO(
                 code=row.code,
@@ -166,7 +178,9 @@ class SqlAlchemyReferenceDataRepository:
             for row in result.scalars().all()
         ]
 
-    async def upsert_income_tax_brackets(self, brackets: list[IncomeTaxBracketWriteDTO]) -> int:
+    async def upsert_income_tax_brackets(
+        self, brackets: list[IncomeTaxBracketWriteDTO]
+    ) -> int:
         """Handle upsert income tax brackets."""
         if not brackets:
             return 0
@@ -186,7 +200,10 @@ class SqlAlchemyReferenceDataRepository:
         )
         await self._session.execute(
             statement.on_conflict_do_update(
-                index_elements=[IncomeTaxBracketModel.valid_from, IncomeTaxBracketModel.lower_bound_utm],
+                index_elements=[
+                    IncomeTaxBracketModel.valid_from,
+                    IncomeTaxBracketModel.lower_bound_utm,
+                ],
                 set_={
                     "valid_to": statement.excluded.valid_to,
                     "upper_bound_utm": statement.excluded.upper_bound_utm,

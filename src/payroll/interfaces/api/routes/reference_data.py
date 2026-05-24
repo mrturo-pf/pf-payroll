@@ -8,10 +8,15 @@ from pydantic import BaseModel, Field
 
 from payroll.application.errors import PayrollError
 from payroll.application.dto import RefreshIncomeTaxBracketsCommandDTO
-from payroll.application.use_cases.refresh_income_tax_brackets import RefreshIncomeTaxBrackets
+from payroll.application.use_cases.refresh_income_tax_brackets import (
+    RefreshIncomeTaxBrackets,
+)
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.interfaces.api.errors import to_http_exception
-from payroll.interfaces.api.dependencies import get_reference_data_queries, get_refresh_income_tax_brackets_use_case
+from payroll.interfaces.api.dependencies import (
+    get_reference_data_queries,
+    get_refresh_income_tax_brackets_use_case,
+)
 
 router = APIRouter(prefix="/reference-data", tags=["reference-data"])
 
@@ -211,7 +216,10 @@ async def list_payroll_concepts(
     queries: ReferenceDataQueries = Depends(get_reference_data_queries),
 ) -> list[PayrollConceptRead]:
     """List payroll concepts."""
-    return [PayrollConceptRead(**asdict(item)) for item in await queries.list_payroll_concepts()]
+    return [
+        PayrollConceptRead(**asdict(item))
+        for item in await queries.list_payroll_concepts()
+    ]
 
 
 @router.get("/income-tax-brackets", response_model=list[IncomeTaxBracketRead])
@@ -224,7 +232,9 @@ async def list_income_tax_brackets(
             valid_from=item.valid_from,
             valid_to=item.valid_to,
             lower_bound_utm=str(item.lower_bound_utm),
-            upper_bound_utm=str(item.upper_bound_utm) if item.upper_bound_utm is not None else None,
+            upper_bound_utm=str(item.upper_bound_utm)
+            if item.upper_bound_utm is not None
+            else None,
             marginal_rate=str(item.marginal_rate),
             rebate_utm=str(item.rebate_utm),
         )
@@ -232,14 +242,20 @@ async def list_income_tax_brackets(
     ]
 
 
-@router.post("/income-tax-brackets/refresh", response_model=RefreshIncomeTaxBracketsResponse)
+@router.post(
+    "/income-tax-brackets/refresh", response_model=RefreshIncomeTaxBracketsResponse
+)
 async def refresh_income_tax_brackets(
     payload: RefreshIncomeTaxBracketsRequest,
-    use_case: RefreshIncomeTaxBrackets = Depends(get_refresh_income_tax_brackets_use_case),
+    use_case: RefreshIncomeTaxBrackets = Depends(
+        get_refresh_income_tax_brackets_use_case
+    ),
 ) -> RefreshIncomeTaxBracketsResponse:
     """Refresh income tax brackets."""
     try:
-        result = await use_case.execute(RefreshIncomeTaxBracketsCommandDTO(year=payload.year))
+        result = await use_case.execute(
+            RefreshIncomeTaxBracketsCommandDTO(year=payload.year)
+        )
     except PayrollError as exc:
         raise to_http_exception(exc, default_status=400) from exc
 

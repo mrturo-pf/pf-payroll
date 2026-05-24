@@ -71,7 +71,9 @@ class SqlAlchemyPayrollRepositoryBase:
     async def _refresh_summary_view(self) -> None:
         """Handle refresh summary view."""
         await self._session.commit()
-        await self._session.execute(text("REFRESH MATERIALIZED VIEW mv_payroll_summary"))
+        await self._session.execute(
+            text("REFRESH MATERIALIZED VIEW mv_payroll_summary")
+        )
         await self._session.commit()
 
     async def _get_latest_contribution_cap(
@@ -106,7 +108,9 @@ class SqlAlchemyPayrollRepositoryBase:
         )
         period = period_result.scalar_one_or_none()
         if period is None:
-            raise PayrollPeriodNotFoundError(f"Payroll period {period_id} was not found.")
+            raise PayrollPeriodNotFoundError(
+                f"Payroll period {period_id} was not found."
+            )
         return period
 
     async def _get_pension_plan(
@@ -117,7 +121,10 @@ class SqlAlchemyPayrollRepositoryBase:
         """Handle get pension plan."""
         pension_result = await self._session.execute(
             select(PensionPlanModel, PensionInstitutionModel)
-            .join(PensionInstitutionModel, PensionPlanModel.institution_id == PensionInstitutionModel.id)
+            .join(
+                PensionInstitutionModel,
+                PensionPlanModel.institution_id == PensionInstitutionModel.id,
+            )
             .where(PensionPlanModel.id == plan_id)
         )
         pension_row = pension_result.first()
@@ -126,9 +133,12 @@ class SqlAlchemyPayrollRepositoryBase:
 
         pension_plan_model, pension_institution_model = pension_row
         if pension_plan_model.valid_from > payment_date or (
-            pension_plan_model.valid_to is not None and pension_plan_model.valid_to < payment_date
+            pension_plan_model.valid_to is not None
+            and pension_plan_model.valid_to < payment_date
         ):
-            raise PayrollConflictError(f"Pension plan {plan_id} is not valid for {payment_date.isoformat()}.")
+            raise PayrollConflictError(
+                f"Pension plan {plan_id} is not valid for {payment_date.isoformat()}."
+            )
 
         return pension_plan_model, pension_institution_model
 
@@ -140,7 +150,10 @@ class SqlAlchemyPayrollRepositoryBase:
         """Handle get health plan."""
         health_result = await self._session.execute(
             select(HealthPlanModel, HealthInstitutionModel)
-            .join(HealthInstitutionModel, HealthPlanModel.institution_id == HealthInstitutionModel.id)
+            .join(
+                HealthInstitutionModel,
+                HealthPlanModel.institution_id == HealthInstitutionModel.id,
+            )
             .where(HealthPlanModel.id == plan_id)
         )
         health_row = health_result.first()
@@ -149,8 +162,11 @@ class SqlAlchemyPayrollRepositoryBase:
 
         health_plan_model, health_institution_model = health_row
         if health_plan_model.valid_from > payment_date or (
-            health_plan_model.valid_to is not None and health_plan_model.valid_to < payment_date
+            health_plan_model.valid_to is not None
+            and health_plan_model.valid_to < payment_date
         ):
-            raise PayrollConflictError(f"Health plan {plan_id} is not valid for {payment_date.isoformat()}.")
+            raise PayrollConflictError(
+                f"Health plan {plan_id} is not valid for {payment_date.isoformat()}."
+            )
 
         return health_plan_model, health_institution_model

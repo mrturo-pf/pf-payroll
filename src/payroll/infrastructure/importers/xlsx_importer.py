@@ -79,16 +79,21 @@ def parse_contract_kind(raw_value: object) -> EmploymentContractKind:
     """Parse contract kind."""
     normalized = str(raw_value or "").strip().lower()
     if not normalized:
-        raise PayrollValidationError("Every imported payroll row must include employment_contract_kind.")
+        raise PayrollValidationError(
+            "Every imported payroll row must include employment_contract_kind."
+        )
     try:
         return CONTRACT_KIND_ALIASES[normalized]
     except KeyError as exc:
         raise PayrollValidationError(
-            "Unsupported employment_contract_kind. Use one of: indefinite, fixed_term, indefinido, plazo_fijo."
+            "Unsupported employment_contract_kind. "
+            "Use one of: indefinite, fixed_term, indefinido, plazo_fijo."
         ) from exc
 
 
-def extract_net_pay_validations(wide_df: pd.DataFrame) -> dict[tuple[str, int, int], NetPayValidation]:
+def extract_net_pay_validations(
+    wide_df: pd.DataFrame,
+) -> dict[tuple[str, int, int], NetPayValidation]:
     """Extract net pay validations."""
     validations: dict[tuple[str, int, int], NetPayValidation] = {}
 
@@ -148,11 +153,15 @@ def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:
         m_str, y_str = period_str.split("/")
         payment_dt = parse_payment_date(row.get("payment_date"))
         if pd.isna(payment_dt):
-            raise PayrollValidationError("Every imported payroll row must include a valid payment_date.")
+            raise PayrollValidationError(
+                "Every imported payroll row must include a valid payment_date."
+            )
 
         employer = str(row.get("employer", "")).strip()
         if not employer:
-            raise PayrollValidationError("Every imported payroll row must include an employer.")
+            raise PayrollValidationError(
+                "Every imported payroll row must include an employer."
+            )
 
         base_meta = {
             "employer": employer,
@@ -160,7 +169,9 @@ def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:
             "month": pd.to_datetime(m_str, format="%b").month,
             "payment_date": payment_dt.date(),
             "status": "actual" if pd.notna(row.get("net_pay")) else "projected",
-            "employment_contract_kind": parse_contract_kind(row.get("employment_contract_kind")),
+            "employment_contract_kind": parse_contract_kind(
+                row.get("employment_contract_kind")
+            ),
         }
 
         for col, (code, kind, is_tax) in CONCEPT_MAP.items():
@@ -191,7 +202,9 @@ class XlsxPayrollImporter(PayrollImporter):
 
         rows: list[ImportPayrollRowDTO] = []
         for row in normalized.to_dict(orient="records"):
-            validation = validations.get((str(row["employer"]), int(row["year"]), int(row["month"])))
+            validation = validations.get(
+                (str(row["employer"]), int(row["year"]), int(row["month"]))
+            )
             rows.append(
                 ImportPayrollRowDTO(
                     employer=str(row["employer"]),
@@ -202,9 +215,15 @@ class XlsxPayrollImporter(PayrollImporter):
                     employment_contract_kind=row["employment_contract_kind"],
                     concept_code=str(row["concept_code"]),
                     amount_clp=row["amount_clp"],
-                    declared_net_pay_clp=None if validation is None else validation.declared_net_pay_clp,
-                    expected_net_pay_clp=None if validation is None else validation.expected_net_pay_clp,
-                    net_pay_difference_clp=None if validation is None else validation.net_pay_difference_clp,
+                    declared_net_pay_clp=None
+                    if validation is None
+                    else validation.declared_net_pay_clp,
+                    expected_net_pay_clp=None
+                    if validation is None
+                    else validation.expected_net_pay_clp,
+                    net_pay_difference_clp=None
+                    if validation is None
+                    else validation.net_pay_difference_clp,
                 )
             )
         return rows

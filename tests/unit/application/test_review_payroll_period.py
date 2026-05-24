@@ -4,7 +4,10 @@ from datetime import date
 
 import pytest
 
-from payroll.application.dto import ReviewPayrollPeriodCommandDTO, ReviewPayrollPeriodResultDTO
+from payroll.application.dto import (
+    ReviewPayrollPeriodCommandDTO,
+    ReviewPayrollPeriodResultDTO,
+)
 from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
 
 
@@ -15,7 +18,9 @@ class StubPayrollRepository:
         """Initialize the instance."""
         self.command: ReviewPayrollPeriodCommandDTO | None = None
 
-    async def review_period(self, command: ReviewPayrollPeriodCommandDTO) -> ReviewPayrollPeriodResultDTO:
+    async def review_period(
+        self, command: ReviewPayrollPeriodCommandDTO
+    ) -> ReviewPayrollPeriodResultDTO:
         """Review period."""
         self.command = command
         return ReviewPayrollPeriodResultDTO(
@@ -30,7 +35,9 @@ async def test_review_payroll_period_returns_repository_result() -> None:
     """Test review payroll period returns repository result."""
     repository = StubPayrollRepository()
 
-    result = await ReviewPayrollPeriod(repository).execute(ReviewPayrollPeriodCommandDTO(period_id=10))
+    result = await ReviewPayrollPeriod(repository).execute(
+        ReviewPayrollPeriodCommandDTO(period_id=10)
+    )
 
     assert repository.command == ReviewPayrollPeriodCommandDTO(period_id=10)
     assert result == ReviewPayrollPeriodResultDTO(

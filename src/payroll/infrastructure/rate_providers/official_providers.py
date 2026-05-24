@@ -14,7 +14,11 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-from payroll.application.dto import EconomicIndexWriteDTO, ExchangeRateWriteDTO, IncomeTaxBracketWriteDTO
+from payroll.application.dto import (
+    EconomicIndexWriteDTO,
+    ExchangeRateWriteDTO,
+    IncomeTaxBracketWriteDTO,
+)
 
 _MONTHS = {
     "ENERO": 1,
@@ -37,7 +41,9 @@ _BRACKET_UTM_QUANT = Decimal("0.0001")
 def _fetch_url(url: str, timeout_seconds: int) -> str:
     """Handle fetch url."""
     with urlopen(url, timeout=timeout_seconds) as response:  # noqa: S310
-        return response.read().decode(response.headers.get_content_charset() or "utf-8", errors="replace")
+        return response.read().decode(
+            response.headers.get_content_charset() or "utf-8", errors="replace"
+        )
 
 
 def _parse_json_document(raw: str) -> dict[str, object]:
@@ -66,7 +72,13 @@ def _strip_html(raw: str) -> str:
 
 def _parse_chilean_amount(raw: str) -> Decimal | None:
     """Handle parse chilean amount."""
-    cleaned = raw.replace("$", "").replace("-.-", "").replace("Y MÁS", "").replace("Y MAS", "").strip()
+    cleaned = (
+        raw.replace("$", "")
+        .replace("-.-", "")
+        .replace("Y MÁS", "")
+        .replace("Y MAS", "")
+        .strip()
+    )
     if not cleaned:
         return None
     return _parse_chilean_decimal(cleaned)
@@ -75,8 +87,15 @@ def _parse_chilean_amount(raw: str) -> Decimal | None:
 def _extract_sii_rows(html: str) -> dict[int, list[str]]:
     """Handle extract sii rows."""
     rows_by_month: dict[int, list[str]] = {}
-    for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, flags=re.IGNORECASE | re.DOTALL):
-        cells = [_strip_html(cell) for cell in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, flags=re.IGNORECASE | re.DOTALL)]
+    for row in re.findall(
+        r"<tr[^>]*>(.*?)</tr>", html, flags=re.IGNORECASE | re.DOTALL
+    ):
+        cells = [
+            _strip_html(cell)
+            for cell in re.findall(
+                r"<t[dh][^>]*>(.*?)</t[dh]>", row, flags=re.IGNORECASE | re.DOTALL
+            )
+        ]
         if not cells:
             continue
         month = _MONTHS.get(cells[0].upper())
@@ -100,7 +119,10 @@ def _extract_income_tax_month_rows(html: str) -> dict[date, list[list[str]]]:
     """Handle extract income tax month rows."""
     rows_by_month: dict[date, list[list[str]]] = {}
     for section in re.finditer(
-        r"<h3>(.*?)</h3>\s*<div class=['\"]table-responsive['\"][^>]*>.*?<tbody>(.*?)</tbody>",
+        (
+            r"<h3>(.*?)</h3>\s*<div class=['\"]table-responsive['\"][^>]*>"
+            r".*?<tbody>(.*?)</tbody>"
+        ),
         html,
         flags=re.IGNORECASE | re.DOTALL,
     ):
@@ -108,9 +130,20 @@ def _extract_income_tax_month_rows(html: str) -> dict[date, list[list[str]]]:
         if month_start is None:
             continue
         rows_by_month[month_start] = [
-            [_strip_html(cell) for cell in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, flags=re.IGNORECASE | re.DOTALL)]
-            for row in re.findall(r"<tr[^>]*>(.*?)</tr>", section.group(2), flags=re.IGNORECASE | re.DOTALL)
-            if re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, flags=re.IGNORECASE | re.DOTALL)
+            [
+                _strip_html(cell)
+                for cell in re.findall(
+                    r"<t[dh][^>]*>(.*?)</t[dh]>", row, flags=re.IGNORECASE | re.DOTALL
+                )
+            ]
+            for row in re.findall(
+                r"<tr[^>]*>(.*?)</tr>",
+                section.group(2),
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if re.findall(
+                r"<t[dh][^>]*>(.*?)</t[dh]>", row, flags=re.IGNORECASE | re.DOTALL
+            )
         ]
     return rows_by_month
 
@@ -142,12 +175,18 @@ def _build_monthly_income_tax_brackets(
     if not monthly_rows:
         return []
 
-    first_upper_clp = _parse_chilean_amount(monthly_rows[0][2]) if len(monthly_rows[0]) > 2 else None
+    first_upper_clp = (
+        _parse_chilean_amount(monthly_rows[0][2]) if len(monthly_rows[0]) > 2 else None
+    )
     if first_upper_clp is None or first_upper_clp <= 0:
         return []
 
     utm_value = first_upper_clp / _MONTHLY_EXEMPT_LIMIT_UTM
-    valid_to = date(valid_from.year, valid_from.month, monthrange(valid_from.year, valid_from.month)[1])
+    valid_to = date(
+        valid_from.year,
+        valid_from.month,
+        monthrange(valid_from.year, valid_from.month)[1],
+    )
     lower_bound_utm = Decimal("0.0000")
     brackets: list[IncomeTaxBracketWriteDTO] = []
 
@@ -155,11 +194,19 @@ def _build_monthly_income_tax_brackets(
         if len(row) < 5:
             continue
         upper_clp = _parse_chilean_amount(row[2])
-        factor = Decimal("0") if row[3].upper() == "EXENTO" else _parse_chilean_decimal(row[3])
+        factor = (
+            Decimal("0")
+            if row[3].upper() == "EXENTO"
+            else _parse_chilean_decimal(row[3])
+        )
         if factor is None:
             continue
         rebate_clp = _parse_chilean_amount(row[4]) or Decimal("0")
-        upper_bound_utm = _quantize_bracket_utm(upper_clp / utm_value) if upper_clp is not None else None
+        upper_bound_utm = (
+            _quantize_bracket_utm(upper_clp / utm_value)
+            if upper_clp is not None
+            else None
+        )
         brackets.append(
             IncomeTaxBracketWriteDTO(
                 valid_from=valid_from,
@@ -201,7 +248,9 @@ class MindicadorRateProvider:
 
         url = f"{self._base_url}/{indicator}/{on.year}"
         try:
-            payload = _parse_json_document(await asyncio.to_thread(self._fetcher, url, self._timeout_seconds))
+            payload = _parse_json_document(
+                await asyncio.to_thread(self._fetcher, url, self._timeout_seconds)
+            )
         except (HTTPError, URLError, json.JSONDecodeError):
             return None
 
@@ -220,12 +269,19 @@ class MindicadorRateProvider:
         ]
         return matching_values[0] if matching_values else None
 
-    async def fetch_rate_entry(self, currency_code: str, on: date) -> ExchangeRateWriteDTO | None:
+    async def fetch_rate_entry(
+        self, currency_code: str, on: date
+    ) -> ExchangeRateWriteDTO | None:
         """Handle fetch rate entry."""
         value = await self.fetch_rate(currency_code, on)
         if value is None:
             return None
-        return ExchangeRateWriteDTO(currency_code=currency_code.upper(), rate_date=on, value_clp=value, source=self.name)
+        return ExchangeRateWriteDTO(
+            currency_code=currency_code.upper(),
+            rate_date=on,
+            value_clp=value,
+            source=self.name,
+        )
 
 
 class SiiIndicatorsProvider:
@@ -262,14 +318,23 @@ class SiiIndicatorsProvider:
             return None
         return _parse_chilean_decimal(row[1])
 
-    async def fetch_rate_entry(self, currency_code: str, on: date) -> ExchangeRateWriteDTO | None:
+    async def fetch_rate_entry(
+        self, currency_code: str, on: date
+    ) -> ExchangeRateWriteDTO | None:
         """Handle fetch rate entry."""
         value = await self.fetch_rate(currency_code, on)
         if value is None:
             return None
-        return ExchangeRateWriteDTO(currency_code=currency_code.upper(), rate_date=on, value_clp=value, source=self.name)
+        return ExchangeRateWriteDTO(
+            currency_code=currency_code.upper(),
+            rate_date=on,
+            value_clp=value,
+            source=self.name,
+        )
 
-    async def fetch_index(self, code: str, period_year: int, period_month: int) -> EconomicIndexWriteDTO | None:
+    async def fetch_index(
+        self, code: str, period_year: int, period_month: int
+    ) -> EconomicIndexWriteDTO | None:
         """Handle fetch index."""
         if code.upper() != "IPC_CL":
             return None
@@ -309,9 +374,14 @@ class SiiIncomeTaxBracketProvider:
         self._timeout_seconds = timeout_seconds
         self._fetcher = fetcher or _fetch_url
 
-    async def fetch_income_tax_brackets(self, year: int) -> list[IncomeTaxBracketWriteDTO]:
+    async def fetch_income_tax_brackets(
+        self, year: int
+    ) -> list[IncomeTaxBracketWriteDTO]:
         """Handle fetch income tax brackets."""
-        url = f"{self._base_url}/valores_y_fechas/impuesto_2da_categoria/impuesto{year}.htm"
+        url = (
+            f"{self._base_url}/valores_y_fechas/"
+            f"impuesto_2da_categoria/impuesto{year}.htm"
+        )
         try:
             html = await asyncio.to_thread(self._fetcher, url, self._timeout_seconds)
         except (HTTPError, URLError):
@@ -345,7 +415,9 @@ class BcchSeriesProvider:
         self._timeout_seconds = timeout_seconds
         self._fetcher = fetcher or _fetch_url
 
-    async def _fetch_series(self, code: str, start: date, end: date) -> list[dict[str, object]]:
+    async def _fetch_series(
+        self, code: str, start: date, end: date
+    ) -> list[dict[str, object]]:
         """Handle fetch series."""
         series_code = self._series_codes.get(code.upper())
         if not self._user or not self._password or not series_code:
@@ -363,14 +435,21 @@ class BcchSeriesProvider:
         )
         url = f"{self._base_url}?{query}"
         try:
-            payload = _parse_json_document(await asyncio.to_thread(self._fetcher, url, self._timeout_seconds))
+            payload = _parse_json_document(
+                await asyncio.to_thread(self._fetcher, url, self._timeout_seconds)
+            )
         except (HTTPError, URLError, json.JSONDecodeError):
             return []
 
         series = payload.get("Series")
         if isinstance(series, dict) and isinstance(series.get("Obs"), list):
             return [entry for entry in series["Obs"] if isinstance(entry, dict)]
-        if isinstance(series, list) and series and isinstance(series[0], dict) and isinstance(series[0].get("Obs"), list):
+        if (
+            isinstance(series, list)
+            and series
+            and isinstance(series[0], dict)
+            and isinstance(series[0].get("Obs"), list)
+        ):
             return [entry for entry in series[0]["Obs"] if isinstance(entry, dict)]
         return []
 
@@ -378,25 +457,42 @@ class BcchSeriesProvider:
         """Handle fetch rate."""
         observations = await self._fetch_series(currency_code, on, on)
         for observation in observations:
-            raw_value = observation.get("value") or observation.get("Valor") or observation.get("obs_value")
+            raw_value = (
+                observation.get("value")
+                or observation.get("Valor")
+                or observation.get("obs_value")
+            )
             if raw_value is None:
                 continue
             return Decimal(str(raw_value).replace(",", "."))
         return None
 
-    async def fetch_rate_entry(self, currency_code: str, on: date) -> ExchangeRateWriteDTO | None:
+    async def fetch_rate_entry(
+        self, currency_code: str, on: date
+    ) -> ExchangeRateWriteDTO | None:
         """Handle fetch rate entry."""
         value = await self.fetch_rate(currency_code, on)
         if value is None:
             return None
-        return ExchangeRateWriteDTO(currency_code=currency_code.upper(), rate_date=on, value_clp=value, source=self.name)
+        return ExchangeRateWriteDTO(
+            currency_code=currency_code.upper(),
+            rate_date=on,
+            value_clp=value,
+            source=self.name,
+        )
 
-    async def fetch_index(self, code: str, period_year: int, period_month: int) -> EconomicIndexWriteDTO | None:
+    async def fetch_index(
+        self, code: str, period_year: int, period_month: int
+    ) -> EconomicIndexWriteDTO | None:
         """Handle fetch index."""
         month_date = date(period_year, period_month, 1)
         observations = await self._fetch_series(code, month_date, month_date)
         for observation in observations:
-            raw_value = observation.get("value") or observation.get("Valor") or observation.get("obs_value")
+            raw_value = (
+                observation.get("value")
+                or observation.get("Valor")
+                or observation.get("obs_value")
+            )
             if raw_value is None:
                 continue
             return EconomicIndexWriteDTO(

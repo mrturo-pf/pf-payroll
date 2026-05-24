@@ -32,7 +32,11 @@ def _build_pdf(lines: list[str]) -> bytes:
     objects = [
         b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
         b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
-        b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj",
+        (
+            b"3 0 obj << /Type /Page /Parent 2 0 R "
+            b"/MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R "
+            b">> >> /Contents 5 0 R >> endobj"
+        ),
         b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj",
         b"5 0 obj << /Length "
         + str(len(content)).encode()
@@ -67,7 +71,9 @@ class WeasyPrintPayrollReportRenderer:
         """Render payroll period."""
         summary = detail.summary
         if summary is None:
-            raise PayrollSummaryNotFoundError(f"Payroll summary for period {detail.id} was not found.")
+            raise PayrollSummaryNotFoundError(
+                f"Payroll summary for period {detail.id} was not found."
+            )
 
         rows = "".join(
             (
@@ -98,7 +104,11 @@ class WeasyPrintPayrollReportRenderer:
       .label {{ color: #6b7280; font-size: 11px; text-transform: uppercase; }}
       .value {{ font-size: 14px; font-weight: bold; margin-top: 4px; }}
       table.items {{ width: 100%; border-collapse: collapse; margin-top: 8px; }}
-      table.items th, table.items td {{ border: 1px solid #d1d5db; padding: 6px; text-align: left; }}
+      table.items th, table.items td {{
+        border: 1px solid #d1d5db;
+        padding: 6px;
+        text-align: left;
+      }}
       table.items th {{ background: #f3f4f6; }}
       .amount {{ text-align: right; }}
     </style>
@@ -107,23 +117,47 @@ class WeasyPrintPayrollReportRenderer:
     <h1>Payroll Period Report</h1>
     <table class="meta">
       <tr>
-        <td><span class="label">Employer</span><div>{escape(detail.employer_name)}</div></td>
-        <td><span class="label">Period</span><div>{detail.period_month:02d}/{detail.period_year}</div></td>
-        <td><span class="label">Payment date</span><div>{detail.payment_date.isoformat()}</div></td>
+        <td>
+          <span class="label">Employer</span>
+          <div>{escape(detail.employer_name)}</div>
+        </td>
+        <td>
+          <span class="label">Period</span>
+          <div>{detail.period_month:02d}/{detail.period_year}</div>
+        </td>
+        <td>
+          <span class="label">Payment date</span>
+          <div>{detail.payment_date.isoformat()}</div>
+        </td>
       </tr>
       <tr>
         <td><span class="label">Status</span><div>{escape(detail.status)}</div></td>
-        <td><span class="label">Contract kind</span><div>{escape(detail.employment_contract_kind.value)}</div></td>
+        <td>
+          <span class="label">Contract kind</span>
+          <div>{escape(detail.employment_contract_kind.value)}</div>
+        </td>
         <td><span class="label">Worked days</span><div>{detail.worked_days}</div></td>
       </tr>
     </table>
     <h2>Summary</h2>
     <table class="summary-grid">
       <tr>
-        <td><div class="label">Taxable income</div><div class="value">{_format_clp(summary.taxable_income_clp)}</div></td>
-        <td><div class="label">Gross income</div><div class="value">{_format_clp(summary.gross_income_clp)}</div></td>
-        <td><div class="label">Discounts</div><div class="value">{_format_clp(summary.total_discounts_clp)}</div></td>
-        <td><div class="label">Net pay</div><div class="value">{_format_clp(summary.net_pay_clp)}</div></td>
+        <td>
+          <div class="label">Taxable income</div>
+          <div class="value">{_format_clp(summary.taxable_income_clp)}</div>
+        </td>
+        <td>
+          <div class="label">Gross income</div>
+          <div class="value">{_format_clp(summary.gross_income_clp)}</div>
+        </td>
+        <td>
+          <div class="label">Discounts</div>
+          <div class="value">{_format_clp(summary.total_discounts_clp)}</div>
+        </td>
+        <td>
+          <div class="label">Net pay</div>
+          <div class="value">{_format_clp(summary.net_pay_clp)}</div>
+        </td>
       </tr>
     </table>
     <h2>Items</h2>
@@ -159,7 +193,10 @@ class WeasyPrintPayrollReportRenderer:
             f"Net pay: {_format_clp(summary.net_pay_clp)}",
             "Items:",
             *[
-                f"- {item.concept_code} | {item.concept_name} | {_format_clp(item.amount_clp)}"
+                (
+                    f"- {item.concept_code} | {item.concept_name} | "
+                    f"{_format_clp(item.amount_clp)}"
+                )
                 for item in detail.items
             ],
         ]

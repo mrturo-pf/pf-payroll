@@ -24,7 +24,9 @@ from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
-from payroll.application.use_cases.refresh_income_tax_brackets import RefreshIncomeTaxBrackets
+from payroll.application.use_cases.refresh_income_tax_brackets import (
+    RefreshIncomeTaxBrackets,
+)
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.application.use_cases.refresh_rates import RefreshRates
 from payroll.config import Settings
@@ -42,9 +44,15 @@ from payroll.domain.tax_calculator import ChileanTaxCalculator
 from payroll.domain.taxes import IncomeTaxBracket
 from payroll.domain.entities import PayrollPeriod
 from payroll.domain.value_objects import Money
-from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter, read_payroll_dataframe, to_long_format
+from payroll.infrastructure.importers.xlsx_importer import (
+    XlsxPayrollImporter,
+    read_payroll_dataframe,
+    to_long_format,
+)
 from payroll.infrastructure.logging.logger import logger
-from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import WeasyPrintPayrollReportRenderer
+from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import (
+    WeasyPrintPayrollReportRenderer,
+)
 from payroll.infrastructure.rate_providers.chained_provider import ChainedFxProvider
 from payroll.interfaces.cli.main import app as cli_app
 from payroll.interfaces.dashboard.app import main as dashboard_main
@@ -83,7 +91,9 @@ def test_domain_dataclasses_and_constants() -> None:
     )
     health_plan = HealthPlan(
         id=2,
-        institution=HealthInstitution("FONASA", "Fonasa", HealthInstitutionKind.FONASA, Decimal("0.07")),
+        institution=HealthInstitution(
+            "FONASA", "Fonasa", HealthInstitutionKind.FONASA, Decimal("0.07")
+        ),
         valid_from=date(2026, 1, 1),
         valid_to=None,
         plan_name="Base",
@@ -116,13 +126,18 @@ def test_contribution_calculator_quantizes_and_honors_lower_taxable_amount() -> 
     cap = ContributionCap("pension_health", date(2026, 1, 1), None, Decimal("90.0600"))
 
     assert quantize_clp(Decimal("10.6")) == Decimal("11")
-    assert calculator.pension_base(Decimal("1000"), cap, Decimal("10000")) == Decimal("1000")
+    assert calculator.pension_base(Decimal("1000"), cap, Decimal("10000")) == Decimal(
+        "1000"
+    )
     assert ChileanTaxCalculator() is not None
-    assert DeflationCalculator().deflate_amount(Decimal("100"), Decimal("100"), Decimal("110")) == Decimal("110")
+    assert DeflationCalculator().deflate_amount(
+        Decimal("100"), Decimal("100"), Decimal("110")
+    ) == Decimal("110")
 
 
 def test_use_case_placeholders_are_instantiable() -> None:
     """Test use case placeholders are instantiable."""
+
     class StubRepository:
         """Test double for Repository."""
 
@@ -146,7 +161,9 @@ def test_use_case_placeholders_are_instantiable() -> None:
             """Save computed contributions."""
             return result
 
-        async def list_exchange_rates(self, currency_code: str | None = None) -> list[object]:
+        async def list_exchange_rates(
+            self, currency_code: str | None = None
+        ) -> list[object]:
             """List exchange rates."""
             return []
 
@@ -154,11 +171,15 @@ def test_use_case_placeholders_are_instantiable() -> None:
             """List economic indices."""
             return []
 
-        async def get_exchange_rate_value(self, currency_code: str, rate_date: date) -> Decimal | None:
+        async def get_exchange_rate_value(
+            self, currency_code: str, rate_date: date
+        ) -> Decimal | None:
             """Get exchange rate value."""
             return Decimal("1")
 
-        async def get_economic_index_value(self, code: str, period_year: int, period_month: int) -> Decimal | None:
+        async def get_economic_index_value(
+            self, code: str, period_year: int, period_month: int
+        ) -> Decimal | None:
             """Get economic index value."""
             return Decimal("100")
 
@@ -182,7 +203,9 @@ def test_use_case_placeholders_are_instantiable() -> None:
             """Get income tax context."""
             return command
 
-        async def get_income_tax_bracket(self, payment_date: date, taxable_base_utm: Decimal) -> object:
+        async def get_income_tax_bracket(
+            self, payment_date: date, taxable_base_utm: Decimal
+        ) -> object:
             """Get income tax bracket."""
             return object()
 
@@ -190,18 +213,31 @@ def test_use_case_placeholders_are_instantiable() -> None:
             """Save computed income tax."""
             return result
 
-    assert isinstance(ImportPayroll(StubRepository(), XlsxPayrollImporter()), ImportPayroll)
+    assert isinstance(
+        ImportPayroll(StubRepository(), XlsxPayrollImporter()), ImportPayroll
+    )
     assert isinstance(PayrollQueries(StubRepository()), PayrollQueries)
     assert isinstance(AssignPlans(StubRepository()), AssignPlans)
-    assert isinstance(GeneratePayrollReport(StubRepository(), WeasyPrintPayrollReportRenderer()), GeneratePayrollReport)
+    assert isinstance(
+        GeneratePayrollReport(StubRepository(), WeasyPrintPayrollReportRenderer()),
+        GeneratePayrollReport,
+    )
     assert isinstance(ReviewPayrollPeriod(StubRepository()), ReviewPayrollPeriod)
     assert isinstance(ReferenceDataQueries(object()), ReferenceDataQueries)
     assert isinstance(MarketDataQueries(StubRepository()), MarketDataQueries)
-    assert isinstance(ComputeContributions(StubRepository(), StubRepository()), ComputeContributions)
-    assert isinstance(DeflateAmounts(StubRepository(), StubRepository()), DeflateAmounts)
-    assert isinstance(ComputeIncomeTax(StubRepository(), StubRepository()), ComputeIncomeTax)
+    assert isinstance(
+        ComputeContributions(StubRepository(), StubRepository()), ComputeContributions
+    )
+    assert isinstance(
+        DeflateAmounts(StubRepository(), StubRepository()), DeflateAmounts
+    )
+    assert isinstance(
+        ComputeIncomeTax(StubRepository(), StubRepository()), ComputeIncomeTax
+    )
     assert isinstance(RefreshRates(StubRepository()), RefreshRates)
-    assert isinstance(RefreshIncomeTaxBrackets(StubRepository(), object()), RefreshIncomeTaxBrackets)
+    assert isinstance(
+        RefreshIncomeTaxBrackets(StubRepository(), object()), RefreshIncomeTaxBrackets
+    )
 
 
 def test_dashboard_main_prints_rendered_html(
@@ -209,11 +245,15 @@ def test_dashboard_main_prints_rendered_html(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test dashboard main prints rendered html."""
+
     async def fake_build_dashboard_html() -> str:
         """Handle fake build dashboard html."""
         return "<html>dashboard</html>"
 
-    monkeypatch.setattr("payroll.interfaces.dashboard.app.build_dashboard_html", fake_build_dashboard_html)
+    monkeypatch.setattr(
+        "payroll.interfaces.dashboard.app.build_dashboard_html",
+        fake_build_dashboard_html,
+    )
 
     dashboard_main()
 
@@ -244,13 +284,17 @@ def test_xlsx_importer_transforms_and_reads_files() -> None:
     )
 
     assert result.to_dict(orient="records")[0]["concept_code"] == "SALARY_BASE"
-    assert result.to_dict(orient="records")[0]["employment_contract_kind"].value == "indefinite"
+    assert (
+        result.to_dict(orient="records")[0]["employment_contract_kind"].value
+        == "indefinite"
+    )
     assert dataframe.iloc[0]["employer"] == "ACME"
 
 
 @pytest.mark.asyncio
 async def test_chained_provider_returns_first_available_rate() -> None:
     """Test chained provider returns first available rate."""
+
     class Provider:
         """Provide provider."""
 
@@ -264,7 +308,9 @@ async def test_chained_provider_returns_first_available_rate() -> None:
             assert on == date(2026, 5, 1)
             return self.value
 
-    provider = ChainedFxProvider([Provider(None), Provider(Decimal("950.12")), Provider(Decimal("999.99"))])
+    provider = ChainedFxProvider(
+        [Provider(None), Provider(Decimal("950.12")), Provider(Decimal("999.99"))]
+    )
 
     result = await provider.fetch_rate("USD", date(2026, 5, 1))
 
@@ -274,6 +320,7 @@ async def test_chained_provider_returns_first_available_rate() -> None:
 @pytest.mark.asyncio
 async def test_chained_provider_returns_none_when_all_providers_miss() -> None:
     """Test chained provider returns none when all providers miss."""
+
     class Provider:
         """Provide provider."""
 
@@ -361,6 +408,7 @@ def test_dashboard_module_runs_as_main(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Test dashboard module runs as main."""
+
     def fake_run(coro: object) -> str:
         """Handle fake run."""
         getattr(coro, "close")()

@@ -10,6 +10,7 @@ This repository follows a modular monolith with **DDD** and **hexagonal architec
 ## Engineering standards
 
 - Apply **DRY, SOLID, Clean Code, and DDD** consistently in every change.
+- Follow **PEP 8** for Python style and formatting so code stays compatible with the repository lint rules.
 - Follow **PEP 257** docstring conventions for every Python artifact. Module, package, class, function, method, and script docstrings must all be present; no Python artifact should be left undocumented.
 - Keep use cases decoupled from infrastructure. Application code should depend on **ports**, not concrete adapters.
 - Prefer small, focused classes and helpers. Avoid growing repository or service "god objects".

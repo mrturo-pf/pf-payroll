@@ -15,7 +15,9 @@ class StubPayrollRepository:
         """Initialize the instance."""
         self.command: AssignPlansCommandDTO | None = None
 
-    async def assign_plans(self, command: AssignPlansCommandDTO) -> AssignPlansResultDTO:
+    async def assign_plans(
+        self, command: AssignPlansCommandDTO
+    ) -> AssignPlansResultDTO:
         """Assign plans."""
         self.command = command
         return AssignPlansResultDTO(
@@ -35,7 +37,9 @@ async def test_assign_plans_returns_repository_result() -> None:
         AssignPlansCommandDTO(period_id=10, pension_plan_id=1, health_plan_id=2)
     )
 
-    assert repository.command == AssignPlansCommandDTO(period_id=10, pension_plan_id=1, health_plan_id=2)
+    assert repository.command == AssignPlansCommandDTO(
+        period_id=10, pension_plan_id=1, health_plan_id=2
+    )
     assert result == AssignPlansResultDTO(
         period_id=10,
         payment_date=date(2026, 1, 31),

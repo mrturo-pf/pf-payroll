@@ -97,7 +97,9 @@ def sample_health_plan() -> HealthPlanDTO:
 
 def test_json_default_serializes_supported_values() -> None:
     """Test json default serializes supported values."""
-    assert cli_main._json_default(SamplePayload(amount=Decimal("1.5"), when=date(2026, 4, 30))) == {
+    assert cli_main._json_default(
+        SamplePayload(amount=Decimal("1.5"), when=date(2026, 4, 30))
+    ) == {
         "amount": Decimal("1.5"),
         "when": date(2026, 4, 30),
     }
@@ -121,6 +123,7 @@ def test_emit_json_prints_sorted_json(capsys: pytest.CaptureFixture[str]) -> Non
 
 def test_run_command_returns_result() -> None:
     """Test run command returns result."""
+
     async def coro() -> str:
         """Handle coro."""
         return "ok"
@@ -128,8 +131,11 @@ def test_run_command_returns_result() -> None:
     assert cli_main._run_command(coro()) == "ok"
 
 
-def test_run_command_converts_value_error_into_exit(capsys: pytest.CaptureFixture[str]) -> None:
+def test_run_command_converts_value_error_into_exit(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test run command converts value error into exit."""
+
     async def coro() -> str:
         """Handle coro."""
         raise ValueError("boom")
@@ -140,8 +146,11 @@ def test_run_command_converts_value_error_into_exit(capsys: pytest.CaptureFixtur
     assert capsys.readouterr().err == "boom\n"
 
 
-def test_run_command_converts_os_error_into_exit(capsys: pytest.CaptureFixture[str]) -> None:
+def test_run_command_converts_os_error_into_exit(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test run command converts os error into exit."""
+
     async def coro() -> str:
         """Handle coro."""
         raise OSError("disk error")
@@ -152,10 +161,14 @@ def test_run_command_converts_os_error_into_exit(capsys: pytest.CaptureFixture[s
     assert capsys.readouterr().err == "disk error\n"
 
 
-def test_parse_optional_decimal_supports_valid_none_and_invalid_values(capsys: pytest.CaptureFixture[str]) -> None:
+def test_parse_optional_decimal_supports_valid_none_and_invalid_values(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Test parse optional decimal supports valid none and invalid values."""
     assert cli_main._parse_optional_decimal("uf_value_clp", None) is None
-    assert cli_main._parse_optional_decimal("uf_value_clp", "39000.5") == Decimal("39000.5")
+    assert cli_main._parse_optional_decimal("uf_value_clp", "39000.5") == Decimal(
+        "39000.5"
+    )
 
     with pytest.raises(click.exceptions.Exit):
         cli_main._parse_optional_decimal("uf_value_clp", "invalid")
@@ -238,7 +251,9 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     class FakeComputeContributions:
         """Test double for Compute Contributions."""
 
-        def __init__(self, payroll_repository: object, market_data_repository: object) -> None:
+        def __init__(
+            self, payroll_repository: object, market_data_repository: object
+        ) -> None:
             """Initialize the instance."""
             assert payroll_repository == "payroll-repo"
             assert market_data_repository == "market-repo"
@@ -250,7 +265,9 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     class FakeComputeIncomeTax:
         """Test double for Compute Income Tax."""
 
-        def __init__(self, payroll_repository: object, market_data_repository: object) -> None:
+        def __init__(
+            self, payroll_repository: object, market_data_repository: object
+        ) -> None:
             """Initialize the instance."""
             assert payroll_repository == "payroll-repo"
             assert market_data_repository == "market-repo"
@@ -281,12 +298,20 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
         async def execute(self, period_id: int) -> GeneratedPayrollReportDTO:
             """Handle execute."""
             assert period_id == 7
-            return GeneratedPayrollReportDTO(period_id=7, filename="payroll-period-7.pdf", content=b"%PDF")
+            return GeneratedPayrollReportDTO(
+                period_id=7, filename="payroll-period-7.pdf", content=b"%PDF"
+            )
 
     monkeypatch.setattr(cli_main, "SessionLocal", lambda: FakeSessionContext())
-    monkeypatch.setattr(cli_main, "SqlAlchemyPayrollRepository", lambda session: "payroll-repo")
-    monkeypatch.setattr(cli_main, "SqlAlchemyReferenceDataRepository", lambda session: "reference-repo")
-    monkeypatch.setattr(cli_main, "SqlAlchemyMarketDataRepository", lambda session: "market-repo")
+    monkeypatch.setattr(
+        cli_main, "SqlAlchemyPayrollRepository", lambda session: "payroll-repo"
+    )
+    monkeypatch.setattr(
+        cli_main, "SqlAlchemyReferenceDataRepository", lambda session: "reference-repo"
+    )
+    monkeypatch.setattr(
+        cli_main, "SqlAlchemyMarketDataRepository", lambda session: "market-repo"
+    )
     monkeypatch.setattr(cli_main, "WeasyPrintPayrollReportRenderer", lambda: "renderer")
     monkeypatch.setattr(cli_main, "XlsxPayrollImporter", lambda: "importer")
     monkeypatch.setattr(cli_main, "ImportPayroll", FakeImportPayroll)
@@ -298,15 +323,26 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     monkeypatch.setattr(cli_main, "ReviewPayrollPeriod", FakeReviewPayrollPeriod)
     monkeypatch.setattr(cli_main, "GeneratePayrollReport", FakeGeneratePayrollReport)
 
-    assert asyncio.run(cli_main._import_payroll_async(sample_file)) == {"imported": True}
+    assert asyncio.run(cli_main._import_payroll_async(sample_file)) == {
+        "imported": True
+    }
     assert asyncio.run(cli_main._list_period_summaries_async())[0].period_id == 7
     assert asyncio.run(cli_main._get_period_detail_async(7)).id == 7
-    assert asyncio.run(cli_main._list_plan_snapshots_async())["pension_plans"][0].id == 1
+    assert (
+        asyncio.run(cli_main._list_plan_snapshots_async())["pension_plans"][0].id == 1
+    )
     assert asyncio.run(cli_main._assign_plans_async(7, 11, 22)).pension_plan_id == 11
-    assert asyncio.run(cli_main._compute_contributions_async(7, 11, 22, Decimal("39000"))).uf_value_clp == Decimal("39000")
-    assert asyncio.run(cli_main._compute_income_tax_async(7, Decimal("68000"))).utm_value_clp == Decimal("68000")
+    assert asyncio.run(
+        cli_main._compute_contributions_async(7, 11, 22, Decimal("39000"))
+    ).uf_value_clp == Decimal("39000")
+    assert asyncio.run(
+        cli_main._compute_income_tax_async(7, Decimal("68000"))
+    ).utm_value_clp == Decimal("68000")
     assert asyncio.run(cli_main._review_period_async(7)).period_id == 7
-    assert asyncio.run(cli_main._generate_payroll_report_async(7)).filename == "payroll-period-7.pdf"
+    assert (
+        asyncio.run(cli_main._generate_payroll_report_async(7)).filename
+        == "payroll-period-7.pdf"
+    )
 
 
 def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -336,7 +372,9 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
             "health_plans": [sample_health_plan()],
         }
 
-    async def fake_assign_plans_async(period_id: int, pension_plan_id: int, health_plan_id: int) -> object:
+    async def fake_assign_plans_async(
+        period_id: int, pension_plan_id: int, health_plan_id: int
+    ) -> object:
         """Handle fake assign plans async."""
         return {
             "period_id": period_id,
@@ -358,7 +396,9 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
             "uf_value_clp": uf_value_clp,
         }
 
-    async def fake_compute_income_tax_async(period_id: int, utm_value_clp: Decimal | None) -> object:
+    async def fake_compute_income_tax_async(
+        period_id: int, utm_value_clp: Decimal | None
+    ) -> object:
         """Handle fake compute income tax async."""
         return {"period_id": period_id, "utm_value_clp": utm_value_clp}
 
@@ -366,7 +406,9 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         """Handle fake review period async."""
         return {"period_id": period_id, "status": "reviewed"}
 
-    async def fake_generate_payroll_report_async(period_id: int) -> GeneratedPayrollReportDTO:
+    async def fake_generate_payroll_report_async(
+        period_id: int,
+    ) -> GeneratedPayrollReportDTO:
         """Handle fake generate payroll report async."""
         assert period_id == 7
         return GeneratedPayrollReportDTO(
@@ -376,14 +418,26 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         )
 
     monkeypatch.setattr(cli_main, "_import_payroll_async", fake_import_payroll_async)
-    monkeypatch.setattr(cli_main, "_list_period_summaries_async", fake_list_period_summaries_async)
-    monkeypatch.setattr(cli_main, "_get_period_detail_async", fake_get_period_detail_async)
-    monkeypatch.setattr(cli_main, "_list_plan_snapshots_async", fake_list_plan_snapshots_async)
+    monkeypatch.setattr(
+        cli_main, "_list_period_summaries_async", fake_list_period_summaries_async
+    )
+    monkeypatch.setattr(
+        cli_main, "_get_period_detail_async", fake_get_period_detail_async
+    )
+    monkeypatch.setattr(
+        cli_main, "_list_plan_snapshots_async", fake_list_plan_snapshots_async
+    )
     monkeypatch.setattr(cli_main, "_assign_plans_async", fake_assign_plans_async)
-    monkeypatch.setattr(cli_main, "_compute_contributions_async", fake_compute_contributions_async)
-    monkeypatch.setattr(cli_main, "_compute_income_tax_async", fake_compute_income_tax_async)
+    monkeypatch.setattr(
+        cli_main, "_compute_contributions_async", fake_compute_contributions_async
+    )
+    monkeypatch.setattr(
+        cli_main, "_compute_income_tax_async", fake_compute_income_tax_async
+    )
     monkeypatch.setattr(cli_main, "_review_period_async", fake_review_period_async)
-    monkeypatch.setattr(cli_main, "_generate_payroll_report_async", fake_generate_payroll_report_async)
+    monkeypatch.setattr(
+        cli_main, "_generate_payroll_report_async", fake_generate_payroll_report_async
+    )
 
     runner = CliRunner()
 
@@ -420,7 +474,9 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert result.exit_code == 0
     assert json.loads(result.stdout)["uf_value_clp"] == "39000"
 
-    result = runner.invoke(cli_main.app, ["compute-tax", "7", "--utm-value-clp", "68000"])
+    result = runner.invoke(
+        cli_main.app, ["compute-tax", "7", "--utm-value-clp", "68000"]
+    )
     assert result.exit_code == 0
     assert json.loads(result.stdout)["utm_value_clp"] == "68000"
 
@@ -428,7 +484,9 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert result.exit_code == 0
     assert json.loads(result.stdout)["status"] == "reviewed"
 
-    result = runner.invoke(cli_main.app, ["report-pdf", "7", "--output", str(report_path)])
+    result = runner.invoke(
+        cli_main.app, ["report-pdf", "7", "--output", str(report_path)]
+    )
     assert result.exit_code == 0
     assert report_path.read_bytes() == b"%PDF-test"
     assert json.loads(result.stdout) == {
@@ -439,14 +497,23 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     }
 
 
-def test_report_pdf_uses_default_output_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_report_pdf_uses_default_output_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test report pdf uses default output path."""
-    async def fake_generate_payroll_report_async(period_id: int) -> GeneratedPayrollReportDTO:
+
+    async def fake_generate_payroll_report_async(
+        period_id: int,
+    ) -> GeneratedPayrollReportDTO:
         """Handle fake generate payroll report async."""
         assert period_id == 9
-        return GeneratedPayrollReportDTO(period_id=9, filename="payroll-period-9.pdf", content=b"%PDF")
+        return GeneratedPayrollReportDTO(
+            period_id=9, filename="payroll-period-9.pdf", content=b"%PDF"
+        )
 
-    monkeypatch.setattr(cli_main, "_generate_payroll_report_async", fake_generate_payroll_report_async)
+    monkeypatch.setattr(
+        cli_main, "_generate_payroll_report_async", fake_generate_payroll_report_async
+    )
     monkeypatch.chdir(tmp_path)
 
     result = CliRunner().invoke(cli_main.app, ["report-pdf", "9"])

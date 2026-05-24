@@ -97,7 +97,9 @@ class StubMarketDataRepository:
         self.uf_value = uf_value
         self.lookups: list[tuple[str, date]] = []
 
-    async def list_exchange_rates(self, currency_code: str | None = None) -> list[object]:
+    async def list_exchange_rates(
+        self, currency_code: str | None = None
+    ) -> list[object]:
         """List exchange rates."""
         raise AssertionError("not used")
 
@@ -105,7 +107,9 @@ class StubMarketDataRepository:
         """List economic indices."""
         raise AssertionError("not used")
 
-    async def get_exchange_rate_value(self, currency_code: str, rate_date: date) -> Decimal | None:
+    async def get_exchange_rate_value(
+        self, currency_code: str, rate_date: date
+    ) -> Decimal | None:
         """Get exchange rate value."""
         self.lookups.append((currency_code, rate_date))
         return self.uf_value
@@ -116,7 +120,9 @@ class StubMarketDataRepository:
 
 
 @pytest.mark.asyncio
-async def test_compute_contributions_uses_domain_calculator_and_persists_result() -> None:
+async def test_compute_contributions_uses_domain_calculator_and_persists_result() -> (
+    None
+):
     """Test compute contributions uses domain calculator and persists result."""
     repository = StubPayrollRepository()
     use_case = ComputeContributions(repository, StubMarketDataRepository())  # type: ignore[arg-type]
@@ -142,7 +148,9 @@ async def test_compute_contributions_uses_domain_calculator_and_persists_result(
 
 
 @pytest.mark.asyncio
-async def test_compute_contributions_uses_stored_uf_when_request_value_is_missing() -> None:
+async def test_compute_contributions_uses_stored_uf_when_request_value_is_missing() -> (
+    None
+):
     """Test compute contributions uses stored uf when request value is missing."""
     repository = StubPayrollRepository()
     market_data_repository = StubMarketDataRepository(Decimal("40000"))
@@ -164,7 +172,9 @@ async def test_compute_contributions_uses_stored_uf_when_request_value_is_missin
 @pytest.mark.asyncio
 async def test_compute_contributions_requires_stored_uf_when_not_provided() -> None:
     """Test compute contributions requires stored uf when not provided."""
-    with pytest.raises(ValueError, match="UF exchange rate for 2026-01-31 was not found."):
+    with pytest.raises(
+        ValueError, match="UF exchange rate for 2026-01-31 was not found."
+    ):
         await ComputeContributions(
             StubPayrollRepository(),
             StubMarketDataRepository(None),  # type: ignore[arg-type]

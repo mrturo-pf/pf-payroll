@@ -7,7 +7,11 @@ from decimal import Decimal
 
 import pytest
 
-from payroll.application.dto import PayrollItemDetailDTO, PayrollPeriodDetailDTO, PayrollSummaryDTO
+from payroll.application.dto import (
+    PayrollItemDetailDTO,
+    PayrollPeriodDetailDTO,
+    PayrollSummaryDTO,
+)
 from payroll.domain.contributions import EmploymentContractKind
 from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import (
     WeasyPrintPayrollReportRenderer,
@@ -81,15 +85,20 @@ def test_build_pdf_returns_pdf_bytes() -> None:
     assert _build_pdf(["hello"]).startswith(b"%PDF")
 
 
-def test_weasyprint_payroll_report_renderer_returns_pdf_bytes_without_native_libs() -> None:
+def test_weasyprint_payroll_report_renderer_returns_pdf_bytes_without_native_libs() -> (
+    None
+):
     """Test weasyprint payroll report renderer returns pdf bytes without native libs."""
     pdf = WeasyPrintPayrollReportRenderer().render_payroll_period(sample_detail())
 
     assert pdf.startswith(b"%PDF")
 
 
-def test_weasyprint_payroll_report_renderer_uses_weasyprint_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_weasyprint_payroll_report_renderer_uses_weasyprint_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test weasyprint payroll report renderer uses weasyprint when available."""
+
     class FakeHTML:
         """Test double for HTML."""
 
@@ -112,5 +121,9 @@ def test_weasyprint_payroll_report_renderer_uses_weasyprint_when_available(monke
 
 def test_weasyprint_payroll_report_renderer_requires_summary() -> None:
     """Test weasyprint payroll report renderer requires summary."""
-    with pytest.raises(ValueError, match="Payroll summary for period 10 was not found."):
-        WeasyPrintPayrollReportRenderer().render_payroll_period(replace(sample_detail(), summary=None))
+    with pytest.raises(
+        ValueError, match="Payroll summary for period 10 was not found."
+    ):
+        WeasyPrintPayrollReportRenderer().render_payroll_period(
+            replace(sample_detail(), summary=None)
+        )

@@ -10,6 +10,8 @@ from payroll.domain.contribution_calculator import quantize_clp
 class DeflationCalculator:
     """Provide deflation calculator."""
 
-    def deflate_amount(self, nominal_clp: Decimal, source_index: Decimal, target_index: Decimal) -> Decimal:
+    def deflate_amount(
+        self, nominal_clp: Decimal, source_index: Decimal, target_index: Decimal
+    ) -> Decimal:
         """Deflate amount."""
         return quantize_clp(nominal_clp * target_index / source_index)

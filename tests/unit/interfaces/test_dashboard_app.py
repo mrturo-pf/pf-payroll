@@ -5,7 +5,13 @@ from datetime import date
 from decimal import Decimal
 
 import payroll.interfaces.dashboard.app as dashboard_app
-from payroll.application.dto import HealthPlanDTO, PayrollItemDetailDTO, PayrollPeriodDetailDTO, PayrollSummaryDTO, PensionPlanDTO
+from payroll.application.dto import (
+    HealthPlanDTO,
+    PayrollItemDetailDTO,
+    PayrollPeriodDetailDTO,
+    PayrollSummaryDTO,
+    PensionPlanDTO,
+)
 from payroll.domain.contributions import EmploymentContractKind, HealthInstitutionKind
 from payroll.interfaces.dashboard.app import (
     _assigned_plans_label,
@@ -255,7 +261,10 @@ def test_render_dashboard_html_handles_empty_and_populated_states() -> None:
 
     assert "Payroll operations dashboard" in html
     assert "Business flow: import -&gt; assign plans" not in html
-    assert "Business flow: import -> assign plans -> compute contributions -> compute tax -> review -> PDF." in html
+    assert (
+        "Business flow: import -> assign plans -> compute contributions "
+        "-> compute tax -> review -> PDF." in html
+    )
     assert "<th>Next action</th>" not in html
     assert "<th>Check</th>" in html
     assert "GET /payroll/7/report.pdf" not in html
@@ -292,7 +301,10 @@ def test_dashboard_renders_mismatch_and_missing_net_pay_states() -> None:
         net_pay_difference_clp=Decimal("-20000"),
     )
     mismatch_row = _build_period_row(mismatch_summary, sample_detail())
-    assert mismatch_row.net_pay_check == "Mismatch by $20.000 (declared $1.050.000 vs expected $1.070.000)"
+    assert (
+        mismatch_row.net_pay_check
+        == "Mismatch by $20.000 (declared $1.050.000 vs expected $1.070.000)"
+    )
 
     missing_summary = PayrollSummaryDTO(
         period_id=9,
@@ -312,6 +324,7 @@ def test_dashboard_renders_mismatch_and_missing_net_pay_states() -> None:
 
 def test_build_dashboard_html_uses_queries_and_renders_result(monkeypatch) -> None:
     """Test build dashboard html uses queries and renders result."""
+
     class FakeSessionContext:
         """Test double for Session Context."""
 
@@ -370,8 +383,14 @@ def test_build_dashboard_html_uses_queries_and_renders_result(monkeypatch) -> No
             return [sample_health_plan()]
 
     monkeypatch.setattr(dashboard_app, "SessionLocal", lambda: FakeSessionContext())
-    monkeypatch.setattr(dashboard_app, "SqlAlchemyPayrollRepository", lambda session: "payroll-repo")
-    monkeypatch.setattr(dashboard_app, "SqlAlchemyReferenceDataRepository", lambda session: "reference-repo")
+    monkeypatch.setattr(
+        dashboard_app, "SqlAlchemyPayrollRepository", lambda session: "payroll-repo"
+    )
+    monkeypatch.setattr(
+        dashboard_app,
+        "SqlAlchemyReferenceDataRepository",
+        lambda session: "reference-repo",
+    )
     monkeypatch.setattr(dashboard_app, "PayrollQueries", FakePayrollQueries)
     monkeypatch.setattr(dashboard_app, "ReferenceDataQueries", FakeReferenceDataQueries)
 

@@ -23,7 +23,9 @@ class StubMarketDataRepository:
         """Initialize the instance."""
         self.command: RefreshRatesCommandDTO | None = None
 
-    async def list_exchange_rates(self, currency_code: str | None = None) -> list[object]:
+    async def list_exchange_rates(
+        self, currency_code: str | None = None
+    ) -> list[object]:
         """List exchange rates."""
         raise AssertionError("not used")
 
@@ -31,11 +33,15 @@ class StubMarketDataRepository:
         """List economic indices."""
         raise AssertionError("not used")
 
-    async def get_exchange_rate_value(self, currency_code: str, rate_date: date) -> Decimal | None:
+    async def get_exchange_rate_value(
+        self, currency_code: str, rate_date: date
+    ) -> Decimal | None:
         """Get exchange rate value."""
         raise AssertionError("not used")
 
-    async def refresh_rates(self, command: RefreshRatesCommandDTO) -> RefreshRatesResultDTO:
+    async def refresh_rates(
+        self, command: RefreshRatesCommandDTO
+    ) -> RefreshRatesResultDTO:
         """Refresh rates."""
         self.command = command
         return RefreshRatesResultDTO(
@@ -47,17 +53,26 @@ class StubMarketDataRepository:
 class StubFxProvider:
     """Test double for Fx Provider."""
 
-    async def fetch_rate_entry(self, currency_code: str, rate_date: date) -> ExchangeRateWriteDTO | None:
+    async def fetch_rate_entry(
+        self, currency_code: str, rate_date: date
+    ) -> ExchangeRateWriteDTO | None:
         """Handle fetch rate entry."""
         if currency_code == "UF":
-            return ExchangeRateWriteDTO(currency_code="UF", rate_date=rate_date, value_clp=Decimal("38000"), source="mindicador")
+            return ExchangeRateWriteDTO(
+                currency_code="UF",
+                rate_date=rate_date,
+                value_clp=Decimal("38000"),
+                source="mindicador",
+            )
         return None
 
 
 class StubEconomicIndexProvider:
     """Test double for Economic Index Provider."""
 
-    async def fetch_index(self, code: str, period_year: int, period_month: int) -> EconomicIndexWriteDTO | None:
+    async def fetch_index(
+        self, code: str, period_year: int, period_month: int
+    ) -> EconomicIndexWriteDTO | None:
         """Handle fetch index."""
         if code == "IPC_CL":
             return EconomicIndexWriteDTO(
@@ -76,7 +91,10 @@ class StubEconomicIndexProvider:
 @pytest.mark.asyncio
 async def test_refresh_rates_requires_non_empty_payload() -> None:
     """Test refresh rates requires non empty payload."""
-    with pytest.raises(ValueError, match="At least one exchange rate or economic index entry is required."):
+    with pytest.raises(
+        ValueError,
+        match="At least one exchange rate or economic index entry is required.",
+    ):
         await RefreshRates(StubMarketDataRepository()).execute(
             RefreshRatesCommandDTO(exchange_rates=[], economic_indices=[])
         )
@@ -113,7 +131,9 @@ async def test_refresh_rates_normalizes_codes_and_delegates() -> None:
         )
     )
 
-    assert result == RefreshRatesResultDTO(upserted_exchange_rates=1, upserted_economic_indices=1)
+    assert result == RefreshRatesResultDTO(
+        upserted_exchange_rates=1, upserted_economic_indices=1
+    )
     assert repository.command is not None
     assert repository.command.exchange_rates[0].currency_code == "UF"
     assert repository.command.exchange_rates[0].source == "manual"
@@ -123,7 +143,7 @@ async def test_refresh_rates_normalizes_codes_and_delegates() -> None:
 
 
 @pytest.mark.asyncio
-async def test_refresh_rates_fetches_provider_backed_entries_and_manual_values_override() -> None:
+async def test_refresh_rates_fetches_provider_entries_and_keeps_manual_values() -> None:
     """Test refresh rates fetches provider backed entries and manual values override."""
     repository = StubMarketDataRepository()
     result = await RefreshRates(
@@ -133,17 +153,37 @@ async def test_refresh_rates_fetches_provider_backed_entries_and_manual_values_o
     ).execute(
         RefreshRatesCommandDTO(
             exchange_rates=[
-                ExchangeRateWriteDTO(currency_code="uf", rate_date=date(2026, 1, 31), value_clp=Decimal("38100"), source="manual")
+                ExchangeRateWriteDTO(
+                    currency_code="uf",
+                    rate_date=date(2026, 1, 31),
+                    value_clp=Decimal("38100"),
+                    source="manual",
+                )
             ],
-            provider_exchange_rates=[ProviderExchangeRateRequestDTO(currency_code=" uf ", rate_date=date(2026, 1, 31))],
-            provider_economic_indices=[ProviderEconomicIndexRequestDTO(code=" ipc_cl ", period_year=2026, period_month=1)],
+            provider_exchange_rates=[
+                ProviderExchangeRateRequestDTO(
+                    currency_code=" uf ", rate_date=date(2026, 1, 31)
+                )
+            ],
+            provider_economic_indices=[
+                ProviderEconomicIndexRequestDTO(
+                    code=" ipc_cl ", period_year=2026, period_month=1
+                )
+            ],
         )
     )
 
-    assert result == RefreshRatesResultDTO(upserted_exchange_rates=1, upserted_economic_indices=1)
+    assert result == RefreshRatesResultDTO(
+        upserted_exchange_rates=1, upserted_economic_indices=1
+    )
     assert repository.command is not None
     assert repository.command.exchange_rates == [
-        ExchangeRateWriteDTO(currency_code="UF", rate_date=date(2026, 1, 31), value_clp=Decimal("38100"), source="manual")
+        ExchangeRateWriteDTO(
+            currency_code="UF",
+            rate_date=date(2026, 1, 31),
+            value_clp=Decimal("38100"),
+            source="manual",
+        )
     ]
     assert repository.command.economic_indices == [
         EconomicIndexWriteDTO(
@@ -160,40 +200,68 @@ async def test_refresh_rates_fetches_provider_backed_entries_and_manual_values_o
 
 
 @pytest.mark.asyncio
-async def test_refresh_rates_rejects_missing_provider_configuration_and_fetch_misses() -> None:
+async def test_refresh_rates_rejects_missing_provider_configuration_and_misses() -> (
+    None
+):
     """Test refresh rates rejects missing provider configuration and fetch misses."""
-    with pytest.raises(ValueError, match="Exchange-rate provider chain is not configured."):
+    with pytest.raises(
+        ValueError, match="Exchange-rate provider chain is not configured."
+    ):
         await RefreshRates(StubMarketDataRepository()).execute(
             RefreshRatesCommandDTO(
-                provider_exchange_rates=[ProviderExchangeRateRequestDTO(currency_code="UF", rate_date=date(2026, 1, 31))]
+                provider_exchange_rates=[
+                    ProviderExchangeRateRequestDTO(
+                        currency_code="UF", rate_date=date(2026, 1, 31)
+                    )
+                ]
             )
         )
 
-    with pytest.raises(ValueError, match="Exchange rate USD for 2026-01-31 could not be fetched"):
+    with pytest.raises(
+        ValueError, match="Exchange rate USD for 2026-01-31 could not be fetched"
+    ):
         await RefreshRates(
             StubMarketDataRepository(),
             fx_provider=StubFxProvider(),  # type: ignore[arg-type]
             economic_index_provider=StubEconomicIndexProvider(),  # type: ignore[arg-type]
         ).execute(
             RefreshRatesCommandDTO(
-                provider_exchange_rates=[ProviderExchangeRateRequestDTO(currency_code="USD", rate_date=date(2026, 1, 31))]
+                provider_exchange_rates=[
+                    ProviderExchangeRateRequestDTO(
+                        currency_code="USD", rate_date=date(2026, 1, 31)
+                    )
+                ]
             )
         )
 
-    with pytest.raises(ValueError, match="Economic-index provider chain is not configured."):
-        await RefreshRates(StubMarketDataRepository(), fx_provider=StubFxProvider()).execute(
+    with pytest.raises(
+        ValueError, match="Economic-index provider chain is not configured."
+    ):
+        await RefreshRates(
+            StubMarketDataRepository(), fx_provider=StubFxProvider()
+        ).execute(
             RefreshRatesCommandDTO(
-                provider_economic_indices=[ProviderEconomicIndexRequestDTO(code="IPC_CL", period_year=2026, period_month=1)]
+                provider_economic_indices=[
+                    ProviderEconomicIndexRequestDTO(
+                        code="IPC_CL", period_year=2026, period_month=1
+                    )
+                ]
             )
         )
 
-    with pytest.raises(ValueError, match="Economic index UF_CL for 2026-01 could not be fetched"):
+    with pytest.raises(
+        ValueError, match="Economic index UF_CL for 2026-01 could not be fetched"
+    ):
         await RefreshRates(
             StubMarketDataRepository(),
             fx_provider=StubFxProvider(),  # type: ignore[arg-type]
             economic_index_provider=StubEconomicIndexProvider(),  # type: ignore[arg-type]
         ).execute(
             RefreshRatesCommandDTO(
-                provider_economic_indices=[ProviderEconomicIndexRequestDTO(code="UF_CL", period_year=2026, period_month=1)]
+                provider_economic_indices=[
+                    ProviderEconomicIndexRequestDTO(
+                        code="UF_CL", period_year=2026, period_month=1
+                    )
+                ]
             )
         )

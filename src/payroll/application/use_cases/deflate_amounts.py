@@ -1,8 +1,18 @@
 """Use case for deflating payroll summary amounts with IPC."""
 
-from payroll.application.errors import EconomicIndexNotFoundError, PayrollSummaryNotFoundError
-from payroll.application.dto import DeflateAmountsCommandDTO, DeflateAmountsResultDTO, DeflatedAmountDTO
-from payroll.application.ports.repositories import MarketDataRepository, PayrollRepository
+from payroll.application.errors import (
+    EconomicIndexNotFoundError,
+    PayrollSummaryNotFoundError,
+)
+from payroll.application.dto import (
+    DeflateAmountsCommandDTO,
+    DeflateAmountsResultDTO,
+    DeflatedAmountDTO,
+)
+from payroll.application.ports.repositories import (
+    MarketDataRepository,
+    PayrollRepository,
+)
 from payroll.domain.deflation import DeflationCalculator
 
 
@@ -20,11 +30,15 @@ class DeflateAmounts:
         self._market_data_repository = market_data_repository
         self._calculator = calculator or DeflationCalculator()
 
-    async def execute(self, command: DeflateAmountsCommandDTO) -> DeflateAmountsResultDTO:
+    async def execute(
+        self, command: DeflateAmountsCommandDTO
+    ) -> DeflateAmountsResultDTO:
         """Handle execute."""
         detail = await self._payroll_repository.get_period_detail(command.period_id)
         if detail is None or detail.summary is None:
-            raise PayrollSummaryNotFoundError(f"Payroll summary for period {command.period_id} was not found.")
+            raise PayrollSummaryNotFoundError(
+                f"Payroll summary for period {command.period_id} was not found."
+            )
 
         source_index = await self._market_data_repository.get_economic_index_value(
             command.index_code,
@@ -33,7 +47,10 @@ class DeflateAmounts:
         )
         if source_index is None:
             raise EconomicIndexNotFoundError(
-                f"Economic index {command.index_code} for {detail.period_year:04d}-{detail.period_month:02d} was not found."
+                "Economic index "
+                f"{command.index_code} for "
+                f"{detail.period_year:04d}-{detail.period_month:02d} "
+                "was not found."
             )
 
         target_index = await self._market_data_repository.get_economic_index_value(
@@ -43,7 +60,10 @@ class DeflateAmounts:
         )
         if target_index is None:
             raise EconomicIndexNotFoundError(
-                f"Economic index {command.index_code} for {command.target_year:04d}-{command.target_month:02d} was not found."
+                "Economic index "
+                f"{command.index_code} for "
+                f"{command.target_year:04d}-{command.target_month:02d} "
+                "was not found."
             )
 
         summary = detail.summary
@@ -58,18 +78,26 @@ class DeflateAmounts:
             target_index_value=target_index,
             taxable_income=DeflatedAmountDTO(
                 nominal_clp=summary.taxable_income_clp,
-                real_clp=self._calculator.deflate_amount(summary.taxable_income_clp, source_index, target_index),
+                real_clp=self._calculator.deflate_amount(
+                    summary.taxable_income_clp, source_index, target_index
+                ),
             ),
             gross_income=DeflatedAmountDTO(
                 nominal_clp=summary.gross_income_clp,
-                real_clp=self._calculator.deflate_amount(summary.gross_income_clp, source_index, target_index),
+                real_clp=self._calculator.deflate_amount(
+                    summary.gross_income_clp, source_index, target_index
+                ),
             ),
             total_discounts=DeflatedAmountDTO(
                 nominal_clp=summary.total_discounts_clp,
-                real_clp=self._calculator.deflate_amount(summary.total_discounts_clp, source_index, target_index),
+                real_clp=self._calculator.deflate_amount(
+                    summary.total_discounts_clp, source_index, target_index
+                ),
             ),
             net_pay=DeflatedAmountDTO(
                 nominal_clp=summary.net_pay_clp,
-                real_clp=self._calculator.deflate_amount(summary.net_pay_clp, source_index, target_index),
+                real_clp=self._calculator.deflate_amount(
+                    summary.net_pay_clp, source_index, target_index
+                ),
             ),
         )

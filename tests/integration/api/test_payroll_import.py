@@ -78,7 +78,10 @@ class FakeImportPayroll:
                     declared_net_pay_clp=Decimal("950000"),
                     expected_net_pay_clp=Decimal("900000"),
                     net_pay_difference_clp=Decimal("50000"),
-                    net_pay_warning="Declared net_pay does not match the imported concept totals. Difference: 50000 CLP.",
+                    net_pay_warning=(
+                        "Declared net_pay does not match the imported concept "
+                        "totals. Difference: 50000 CLP."
+                    ),
                 )
             ],
         )
@@ -207,10 +210,18 @@ class FakeDeflateAmounts:
             target_month=3,
             source_index_value=Decimal("100.000000"),
             target_index_value=Decimal("112.340000"),
-            taxable_income=DeflatedAmountDTO(nominal_clp=Decimal("1000000"), real_clp=Decimal("1123400")),
-            gross_income=DeflatedAmountDTO(nominal_clp=Decimal("1000000"), real_clp=Decimal("1123400")),
-            total_discounts=DeflatedAmountDTO(nominal_clp=Decimal("170000"), real_clp=Decimal("190978")),
-            net_pay=DeflatedAmountDTO(nominal_clp=Decimal("830000"), real_clp=Decimal("932422")),
+            taxable_income=DeflatedAmountDTO(
+                nominal_clp=Decimal("1000000"), real_clp=Decimal("1123400")
+            ),
+            gross_income=DeflatedAmountDTO(
+                nominal_clp=Decimal("1000000"), real_clp=Decimal("1123400")
+            ),
+            total_discounts=DeflatedAmountDTO(
+                nominal_clp=Decimal("170000"), real_clp=Decimal("190978")
+            ),
+            net_pay=DeflatedAmountDTO(
+                nominal_clp=Decimal("830000"), real_clp=Decimal("932422")
+            ),
         )
 
 
@@ -251,7 +262,10 @@ def test_payroll_import_endpoint() -> None:
                 "declared_net_pay_clp": "950000",
                 "expected_net_pay_clp": "900000",
                 "net_pay_difference_clp": "50000",
-                "net_pay_warning": "Declared net_pay does not match the imported concept totals. Difference: 50000 CLP.",
+                "net_pay_warning": (
+                    "Declared net_pay does not match the imported concept "
+                    "totals. Difference: 50000 CLP."
+                ),
             }
         ],
     }
@@ -259,10 +273,13 @@ def test_payroll_import_endpoint() -> None:
 
 def test_payroll_import_endpoint_requires_filename_and_surfaces_value_errors() -> None:
     """Test payroll import endpoint requires filename and surfaces value errors."""
+
     class ErrorImportPayroll:
         """Represent the error import payroll."""
 
-        async def from_bytes(self, filename: str, content: bytes) -> ImportPayrollResultDTO:
+        async def from_bytes(
+            self, filename: str, content: bytes
+        ) -> ImportPayrollResultDTO:
             """Create from bytes."""
             raise PayrollValidationError("bad payroll file")
 
@@ -270,8 +287,12 @@ def test_payroll_import_endpoint_requires_filename_and_surfaces_value_errors() -
     client = TestClient(app)
 
     try:
-        missing_name = client.post("/payroll/import", files={"file": ("", b"noop", "text/csv")})
-        invalid_file = client.post("/payroll/import", files={"file": ("bad.csv", b"noop", "text/csv")})
+        missing_name = client.post(
+            "/payroll/import", files={"file": ("", b"noop", "text/csv")}
+        )
+        invalid_file = client.post(
+            "/payroll/import", files={"file": ("bad.csv", b"noop", "text/csv")}
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -284,12 +305,16 @@ def test_payroll_import_endpoint_requires_filename_and_surfaces_value_errors() -
 async def test_payroll_import_endpoint_rejects_empty_filename_in_handler() -> None:
     """Test payroll import endpoint rejects empty filename in handler."""
     with pytest.raises(HTTPException, match="A payroll file name is required."):
-        await import_payroll(UploadFile(file=BytesIO(b"noop"), filename=""), FakeImportPayroll())
+        await import_payroll(
+            UploadFile(file=BytesIO(b"noop"), filename=""), FakeImportPayroll()
+        )
 
 
 def test_compute_contributions_endpoint() -> None:
     """Test compute contributions endpoint."""
-    app.dependency_overrides[get_compute_contributions_use_case] = lambda: FakeComputeContributions()
+    app.dependency_overrides[get_compute_contributions_use_case] = lambda: (
+        FakeComputeContributions()
+    )
     client = TestClient(app)
 
     try:
@@ -345,7 +370,9 @@ def test_assign_plans_endpoint() -> None:
     client = TestClient(app)
 
     try:
-        response = client.post("/payroll/5/assign-plans", json={"pension_plan_id": 1, "health_plan_id": 2})
+        response = client.post(
+            "/payroll/5/assign-plans", json={"pension_plan_id": 1, "health_plan_id": 2}
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -360,7 +387,9 @@ def test_assign_plans_endpoint() -> None:
 
 def test_review_payroll_period_endpoint() -> None:
     """Test review payroll period endpoint."""
-    app.dependency_overrides[get_review_payroll_period_use_case] = lambda: FakeReviewPayrollPeriod()
+    app.dependency_overrides[get_review_payroll_period_use_case] = lambda: (
+        FakeReviewPayrollPeriod()
+    )
     client = TestClient(app)
 
     try:
@@ -378,7 +407,9 @@ def test_review_payroll_period_endpoint() -> None:
 
 def test_payroll_report_endpoint_returns_pdf() -> None:
     """Test payroll report endpoint returns pdf."""
-    app.dependency_overrides[get_generate_payroll_report_use_case] = lambda: FakeGeneratePayrollReport()
+    app.dependency_overrides[get_generate_payroll_report_use_case] = lambda: (
+        FakeGeneratePayrollReport()
+    )
     client = TestClient(app)
 
     try:
@@ -388,12 +419,16 @@ def test_payroll_report_endpoint_returns_pdf() -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
-    assert response.headers["content-disposition"] == 'attachment; filename="payroll-period-5.pdf"'
+    assert (
+        response.headers["content-disposition"]
+        == 'attachment; filename="payroll-period-5.pdf"'
+    )
     assert response.content == b"%PDF-fake"
 
 
 def test_assign_plans_endpoint_surfaces_domain_errors() -> None:
     """Test assign plans endpoint surfaces domain errors."""
+
     class ErrorAssignPlans:
         """Represent the error assign plans."""
 
@@ -405,7 +440,9 @@ def test_assign_plans_endpoint_surfaces_domain_errors() -> None:
     client = TestClient(app)
 
     try:
-        response = client.post("/payroll/5/assign-plans", json={"pension_plan_id": 1, "health_plan_id": 2})
+        response = client.post(
+            "/payroll/5/assign-plans", json={"pension_plan_id": 1, "health_plan_id": 2}
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -415,6 +452,7 @@ def test_assign_plans_endpoint_surfaces_domain_errors() -> None:
 
 def test_review_payroll_period_endpoint_surfaces_domain_errors() -> None:
     """Test review payroll period endpoint surfaces domain errors."""
+
     class ErrorReviewPayrollPeriod:
         """Represent the error review payroll period."""
 
@@ -422,7 +460,9 @@ def test_review_payroll_period_endpoint_surfaces_domain_errors() -> None:
             """Handle execute."""
             raise PayrollConflictError("period must have computed items before review")
 
-    app.dependency_overrides[get_review_payroll_period_use_case] = lambda: ErrorReviewPayrollPeriod()
+    app.dependency_overrides[get_review_payroll_period_use_case] = lambda: (
+        ErrorReviewPayrollPeriod()
+    )
     client = TestClient(app)
 
     try:
@@ -431,19 +471,26 @@ def test_review_payroll_period_endpoint_surfaces_domain_errors() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 409
-    assert response.json() == {"detail": "period must have computed items before review"}
+    assert response.json() == {
+        "detail": "period must have computed items before review"
+    }
 
 
 def test_payroll_report_endpoint_surfaces_domain_errors() -> None:
     """Test payroll report endpoint surfaces domain errors."""
+
     class ErrorGeneratePayrollReport:
         """Represent the error generate payroll report."""
 
         async def execute(self, period_id: int) -> GeneratedPayrollReportDTO:
             """Handle execute."""
-            raise PayrollConflictError("period must be reviewed before generating a report")
+            raise PayrollConflictError(
+                "period must be reviewed before generating a report"
+            )
 
-    app.dependency_overrides[get_generate_payroll_report_use_case] = lambda: ErrorGeneratePayrollReport()
+    app.dependency_overrides[get_generate_payroll_report_use_case] = lambda: (
+        ErrorGeneratePayrollReport()
+    )
     client = TestClient(app)
 
     try:
@@ -452,11 +499,14 @@ def test_payroll_report_endpoint_surfaces_domain_errors() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 409
-    assert response.json() == {"detail": "period must be reviewed before generating a report"}
+    assert response.json() == {
+        "detail": "period must be reviewed before generating a report"
+    }
 
 
 def test_compute_contributions_endpoint_surfaces_domain_errors() -> None:
     """Test compute contributions endpoint surfaces domain errors."""
+
     class ErrorComputeContributions:
         """Represent the error compute contributions."""
 
@@ -464,7 +514,9 @@ def test_compute_contributions_endpoint_surfaces_domain_errors() -> None:
             """Handle execute."""
             raise PayrollPeriodNotFoundError("period not found")
 
-    app.dependency_overrides[get_compute_contributions_use_case] = lambda: ErrorComputeContributions()
+    app.dependency_overrides[get_compute_contributions_use_case] = lambda: (
+        ErrorComputeContributions()
+    )
     client = TestClient(app)
 
     try:
@@ -481,7 +533,9 @@ def test_compute_contributions_endpoint_surfaces_domain_errors() -> None:
 
 def test_compute_income_tax_endpoint() -> None:
     """Test compute income tax endpoint."""
-    app.dependency_overrides[get_compute_income_tax_use_case] = lambda: FakeComputeIncomeTax()
+    app.dependency_overrides[get_compute_income_tax_use_case] = lambda: (
+        FakeComputeIncomeTax()
+    )
     client = TestClient(app)
 
     try:
@@ -508,6 +562,7 @@ def test_compute_income_tax_endpoint() -> None:
 
 def test_compute_income_tax_endpoint_surfaces_domain_errors() -> None:
     """Test compute income tax endpoint surfaces domain errors."""
+
     class ErrorComputeIncomeTax:
         """Represent the error compute income tax."""
 
@@ -515,7 +570,9 @@ def test_compute_income_tax_endpoint_surfaces_domain_errors() -> None:
             """Handle execute."""
             raise PayrollPeriodNotFoundError("tax data not found")
 
-    app.dependency_overrides[get_compute_income_tax_use_case] = lambda: ErrorComputeIncomeTax()
+    app.dependency_overrides[get_compute_income_tax_use_case] = lambda: (
+        ErrorComputeIncomeTax()
+    )
     client = TestClient(app)
 
     try:
@@ -529,11 +586,15 @@ def test_compute_income_tax_endpoint_surfaces_domain_errors() -> None:
 
 def test_deflate_amounts_endpoint() -> None:
     """Test deflate amounts endpoint."""
-    app.dependency_overrides[get_deflate_amounts_use_case] = lambda: FakeDeflateAmounts()
+    app.dependency_overrides[get_deflate_amounts_use_case] = lambda: (
+        FakeDeflateAmounts()
+    )
     client = TestClient(app)
 
     try:
-        response = client.post("/payroll/5/deflate", json={"target_year": 2026, "target_month": 3})
+        response = client.post(
+            "/payroll/5/deflate", json={"target_year": 2026, "target_month": 3}
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -556,6 +617,7 @@ def test_deflate_amounts_endpoint() -> None:
 
 def test_deflate_amounts_endpoint_surfaces_domain_errors() -> None:
     """Test deflate amounts endpoint surfaces domain errors."""
+
     class ErrorDeflateAmounts:
         """Represent the error deflate amounts."""
 
@@ -563,11 +625,15 @@ def test_deflate_amounts_endpoint_surfaces_domain_errors() -> None:
             """Handle execute."""
             raise EconomicIndexNotFoundError("missing IPC data")
 
-    app.dependency_overrides[get_deflate_amounts_use_case] = lambda: ErrorDeflateAmounts()
+    app.dependency_overrides[get_deflate_amounts_use_case] = lambda: (
+        ErrorDeflateAmounts()
+    )
     client = TestClient(app)
 
     try:
-        response = client.post("/payroll/5/deflate", json={"target_year": 2026, "target_month": 3})
+        response = client.post(
+            "/payroll/5/deflate", json={"target_year": 2026, "target_month": 3}
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -578,6 +644,7 @@ def test_deflate_amounts_endpoint_surfaces_domain_errors() -> None:
 @pytest.mark.asyncio
 async def test_compute_income_tax_endpoint_maps_value_errors_in_handler() -> None:
     """Test compute income tax endpoint maps value errors in handler."""
+
     class ErrorComputeIncomeTax:
         """Represent the error compute income tax."""
 
@@ -596,6 +663,7 @@ async def test_compute_income_tax_endpoint_maps_value_errors_in_handler() -> Non
 @pytest.mark.asyncio
 async def test_deflate_amounts_endpoint_maps_value_errors_in_handler() -> None:
     """Test deflate amounts endpoint maps value errors in handler."""
+
     class ErrorDeflateAmounts:
         """Represent the error deflate amounts."""
 
@@ -605,7 +673,11 @@ async def test_deflate_amounts_endpoint_maps_value_errors_in_handler() -> None:
 
     with pytest.raises(HTTPException, match="bad deflation payload"):
         await deflate_amounts(
-            payload=type("Payload", (), {"target_year": 2026, "target_month": 3, "index_code": "IPC_CL"})(),
+            payload=type(
+                "Payload",
+                (),
+                {"target_year": 2026, "target_month": 3, "index_code": "IPC_CL"},
+            )(),
             period_id=1,
             use_case=ErrorDeflateAmounts(),
         )
@@ -614,6 +686,7 @@ async def test_deflate_amounts_endpoint_maps_value_errors_in_handler() -> None:
 @pytest.mark.asyncio
 async def test_assign_plans_endpoint_maps_value_errors_in_handler() -> None:
     """Test assign plans endpoint maps value errors in handler."""
+
     class ErrorAssignPlans:
         """Represent the error assign plans."""
 
@@ -632,6 +705,7 @@ async def test_assign_plans_endpoint_maps_value_errors_in_handler() -> None:
 @pytest.mark.asyncio
 async def test_review_payroll_period_endpoint_maps_value_errors_in_handler() -> None:
     """Test review payroll period endpoint maps value errors in handler."""
+
     class ErrorReviewPayrollPeriod:
         """Represent the error review payroll period."""
 
@@ -649,6 +723,7 @@ async def test_review_payroll_period_endpoint_maps_value_errors_in_handler() -> 
 @pytest.mark.asyncio
 async def test_payroll_report_endpoint_maps_value_errors_in_handler() -> None:
     """Test payroll report endpoint maps value errors in handler."""
+
     class ErrorGeneratePayrollReport:
         """Represent the error generate payroll report."""
 
@@ -666,6 +741,7 @@ async def test_payroll_report_endpoint_maps_value_errors_in_handler() -> None:
 @pytest.mark.asyncio
 async def test_compute_contributions_endpoint_maps_value_errors_in_handler() -> None:
     """Test compute contributions endpoint maps value errors in handler."""
+
     class ErrorComputeContributions:
         """Represent the error compute contributions."""
 
@@ -675,7 +751,15 @@ async def test_compute_contributions_endpoint_maps_value_errors_in_handler() -> 
 
     with pytest.raises(HTTPException, match="bad payload"):
         await compute_contributions(
-            payload=type("Payload", (), {"pension_plan_id": 1, "health_plan_id": 2, "uf_value_clp": Decimal("1")})(),
+            payload=type(
+                "Payload",
+                (),
+                {
+                    "pension_plan_id": 1,
+                    "health_plan_id": 2,
+                    "uf_value_clp": Decimal("1"),
+                },
+            )(),
             period_id=1,
             use_case=ErrorComputeContributions(),
         )

@@ -15,7 +15,10 @@ from payroll.application.dto import (
     RefreshRatesCommandDTO,
     RefreshRatesResultDTO,
 )
-from payroll.application.ports.rate_provider import EconomicIndexProvider, FxRateProvider
+from payroll.application.ports.rate_provider import (
+    EconomicIndexProvider,
+    FxRateProvider,
+)
 from payroll.application.ports.repositories import MarketDataRepository
 
 
@@ -35,7 +38,9 @@ class RefreshRates:
             and not command.provider_exchange_rates
             and not command.provider_economic_indices
         ):
-            raise PayrollValidationError("At least one exchange rate or economic index entry is required.")
+            raise PayrollValidationError(
+                "At least one exchange rate or economic index entry is required."
+            )
 
         exchange_rates: list[ExchangeRateWriteDTO] = [
             ExchangeRateWriteDTO(
@@ -79,12 +84,19 @@ class RefreshRates:
         if provider_exchange_rates:
             fx_provider = self.fx_provider
             if fx_provider is None:
-                raise PayrollDependencyConfigurationError("Exchange-rate provider chain is not configured.")
+                raise PayrollDependencyConfigurationError(
+                    "Exchange-rate provider chain is not configured."
+                )
             for rate_request in provider_exchange_rates:
-                rate_entry = await fx_provider.fetch_rate_entry(rate_request.currency_code, rate_request.rate_date)
+                rate_entry = await fx_provider.fetch_rate_entry(
+                    rate_request.currency_code, rate_request.rate_date
+                )
                 if rate_entry is None:
                     raise PayrollDependencyError(
-                        f"Exchange rate {rate_request.currency_code} for {rate_request.rate_date.isoformat()} could not be fetched from configured providers."
+                        "Exchange rate "
+                        f"{rate_request.currency_code} for "
+                        f"{rate_request.rate_date.isoformat()} "
+                        "could not be fetched from configured providers."
                     )
                 fetched_exchange_rates.append(rate_entry)
 
@@ -92,7 +104,9 @@ class RefreshRates:
         if provider_economic_indices:
             economic_index_provider = self.economic_index_provider
             if economic_index_provider is None:
-                raise PayrollDependencyConfigurationError("Economic-index provider chain is not configured.")
+                raise PayrollDependencyConfigurationError(
+                    "Economic-index provider chain is not configured."
+                )
             for index_request in provider_economic_indices:
                 index_entry = await economic_index_provider.fetch_index(
                     index_request.code,
@@ -101,7 +115,11 @@ class RefreshRates:
                 )
                 if index_entry is None:
                     raise PayrollDependencyError(
-                        f"Economic index {index_request.code} for {index_request.period_year:04d}-{index_request.period_month:02d} could not be fetched from configured providers."
+                        "Economic index "
+                        f"{index_request.code} for "
+                        f"{index_request.period_year:04d}-"
+                        f"{index_request.period_month:02d} "
+                        "could not be fetched from configured providers."
                     )
                 fetched_economic_indices.append(index_entry)
 
@@ -114,7 +132,11 @@ class RefreshRates:
             ),
             economic_indices=list(
                 {
-                    (index_item.code, index_item.period_year, index_item.period_month): index_item
+                    (
+                        index_item.code,
+                        index_item.period_year,
+                        index_item.period_month,
+                    ): index_item
                     for index_item in [*fetched_economic_indices, *economic_indices]
                 }.values()
             ),

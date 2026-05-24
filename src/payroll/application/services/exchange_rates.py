@@ -18,7 +18,11 @@ async def resolve_required_exchange_rate(
     if provided_value is not None:
         return provided_value
 
-    resolved_value = await market_data_repository.get_exchange_rate_value(currency_code, rate_date)
+    resolved_value = await market_data_repository.get_exchange_rate_value(
+        currency_code, rate_date
+    )
     if resolved_value is None:
-        raise ExchangeRateNotFoundError(f"{currency_code} exchange rate for {rate_date.isoformat()} was not found.")
+        raise ExchangeRateNotFoundError(
+            f"{currency_code} exchange rate for {rate_date.isoformat()} was not found."
+        )
     return resolved_value

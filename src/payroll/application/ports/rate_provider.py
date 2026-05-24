@@ -4,7 +4,11 @@ from datetime import date
 from decimal import Decimal
 from typing import Protocol
 
-from payroll.application.dto import EconomicIndexWriteDTO, ExchangeRateWriteDTO, IncomeTaxBracketWriteDTO
+from payroll.application.dto import (
+    EconomicIndexWriteDTO,
+    ExchangeRateWriteDTO,
+    IncomeTaxBracketWriteDTO,
+)
 
 
 class FxRateProvider(Protocol):
@@ -14,7 +18,9 @@ class FxRateProvider(Protocol):
         """Handle fetch rate."""
         ...
 
-    async def fetch_rate_entry(self, currency_code: str, on: date) -> ExchangeRateWriteDTO | None:
+    async def fetch_rate_entry(
+        self, currency_code: str, on: date
+    ) -> ExchangeRateWriteDTO | None:
         """Handle fetch rate entry."""
         ...
 
@@ -22,7 +28,9 @@ class FxRateProvider(Protocol):
 class EconomicIndexProvider(Protocol):
     """Provide economic index provider."""
 
-    async def fetch_index(self, code: str, period_year: int, period_month: int) -> EconomicIndexWriteDTO | None:
+    async def fetch_index(
+        self, code: str, period_year: int, period_month: int
+    ) -> EconomicIndexWriteDTO | None:
         """Handle fetch index."""
         ...
 
@@ -30,6 +38,8 @@ class EconomicIndexProvider(Protocol):
 class IncomeTaxBracketProvider(Protocol):
     """Provide income tax bracket provider."""
 
-    async def fetch_income_tax_brackets(self, year: int) -> list[IncomeTaxBracketWriteDTO]:
+    async def fetch_income_tax_brackets(
+        self, year: int
+    ) -> list[IncomeTaxBracketWriteDTO]:
         """Handle fetch income tax brackets."""
         ...

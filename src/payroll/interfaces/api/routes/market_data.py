@@ -17,7 +17,10 @@ from payroll.application.dto import (
 from payroll.interfaces.api.errors import to_http_exception
 from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.refresh_rates import RefreshRates
-from payroll.interfaces.api.dependencies import get_market_data_queries, get_refresh_rates_use_case
+from payroll.interfaces.api.dependencies import (
+    get_market_data_queries,
+    get_refresh_rates_use_case,
+)
 
 router = APIRouter(prefix="/market-data", tags=["market-data"])
 
@@ -86,8 +89,12 @@ class RefreshRatesRequest(BaseModel):
 
     exchange_rates: list[ExchangeRateWrite] = Field(default_factory=list)
     economic_indices: list[EconomicIndexWrite] = Field(default_factory=list)
-    fetch_exchange_rates: list[ProviderExchangeRateRequest] = Field(default_factory=list)
-    fetch_economic_indices: list[ProviderEconomicIndexRequest] = Field(default_factory=list)
+    fetch_exchange_rates: list[ProviderExchangeRateRequest] = Field(
+        default_factory=list
+    )
+    fetch_economic_indices: list[ProviderEconomicIndexRequest] = Field(
+        default_factory=list
+    )
 
 
 class RefreshRatesResponse(BaseModel):
@@ -126,8 +133,12 @@ async def list_economic_indices(
             period_year=item.period_year,
             period_month=item.period_month,
             index_value=str(item.index_value),
-            monthly_change=str(item.monthly_change) if item.monthly_change is not None else None,
-            yearly_change=str(item.yearly_change) if item.yearly_change is not None else None,
+            monthly_change=str(item.monthly_change)
+            if item.monthly_change is not None
+            else None,
+            yearly_change=str(item.yearly_change)
+            if item.yearly_change is not None
+            else None,
             base_period=item.base_period,
             source=item.source,
         )
@@ -167,7 +178,9 @@ async def refresh_rates(
                     for item in getattr(payload, "economic_indices", [])
                 ],
                 provider_exchange_rates=[
-                    ProviderExchangeRateRequestDTO(currency_code=item.currency_code, rate_date=item.rate_date)
+                    ProviderExchangeRateRequestDTO(
+                        currency_code=item.currency_code, rate_date=item.rate_date
+                    )
                     for item in getattr(payload, "fetch_exchange_rates", [])
                 ],
                 provider_economic_indices=[

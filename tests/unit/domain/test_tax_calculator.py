@@ -31,7 +31,9 @@ def test_income_tax_calculator_applies_progressive_bracket() -> None:
     assert result.tax_clp == Decimal("0")
 
 
-def test_income_tax_calculator_generates_positive_tax_when_base_exceeds_threshold() -> None:
+def test_income_tax_calculator_generates_positive_tax_when_base_exceeds_threshold() -> (
+    None
+):
     """Test income tax calculator generates positive tax when base exceeds threshold."""
     calculator = ChileanTaxCalculator()
     result = calculator.income_tax(

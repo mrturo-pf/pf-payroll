@@ -1,7 +1,13 @@
 """Use case for computing contributions."""
 
-from payroll.application.dto import ComputeContributionsCommandDTO, ComputeContributionsResultDTO
-from payroll.application.ports.repositories import MarketDataRepository, PayrollRepository
+from payroll.application.dto import (
+    ComputeContributionsCommandDTO,
+    ComputeContributionsResultDTO,
+)
+from payroll.application.ports.repositories import (
+    MarketDataRepository,
+    PayrollRepository,
+)
 from payroll.application.services.exchange_rates import resolve_required_exchange_rate
 from payroll.domain.contribution_calculator import ContributionCalculator
 
@@ -20,7 +26,9 @@ class ComputeContributions:
         self._market_data_repository = market_data_repository
         self._calculator = calculator or ContributionCalculator()
 
-    async def execute(self, command: ComputeContributionsCommandDTO) -> ComputeContributionsResultDTO:
+    async def execute(
+        self, command: ComputeContributionsCommandDTO
+    ) -> ComputeContributionsResultDTO:
         """Handle execute."""
         context = await self._repository.get_contribution_context(command)
         uf_value_clp = await resolve_required_exchange_rate(

@@ -18,7 +18,10 @@ from payroll.application.dto import (
     RefreshIncomeTaxBracketsResultDTO,
 )
 from payroll.domain.contributions import HealthInstitutionKind
-from payroll.interfaces.api.dependencies import get_reference_data_queries, get_refresh_income_tax_brackets_use_case
+from payroll.interfaces.api.dependencies import (
+    get_reference_data_queries,
+    get_refresh_income_tax_brackets_use_case,
+)
 from payroll.interfaces.api.main import app
 
 
@@ -27,7 +30,11 @@ class FakeReferenceDataQueries:
 
     async def list_currencies(self) -> list[CurrencyDTO]:
         """List currencies."""
-        return [CurrencyDTO(code="CLP", name="Peso chileno", is_fiat=True, unit_kind="currency")]
+        return [
+            CurrencyDTO(
+                code="CLP", name="Peso chileno", is_fiat=True, unit_kind="currency"
+            )
+        ]
 
     async def list_pension_institutions(self) -> list[PensionInstitutionDTO]:
         """List pension institutions."""
@@ -122,17 +129,26 @@ class FakeRefreshIncomeTaxBrackets:
     async def execute(self, command: object) -> RefreshIncomeTaxBracketsResultDTO:
         """Handle execute."""
         assert getattr(command, "year") == 2026
-        return RefreshIncomeTaxBracketsResultDTO(year=2026, refreshed_months=6, upserted_brackets=48)
+        return RefreshIncomeTaxBracketsResultDTO(
+            year=2026, refreshed_months=6, upserted_brackets=48
+        )
 
 
 def test_reference_data_endpoints() -> None:
     """Test reference data endpoints."""
-    app.dependency_overrides[get_reference_data_queries] = lambda: FakeReferenceDataQueries()
+    app.dependency_overrides[get_reference_data_queries] = lambda: (
+        FakeReferenceDataQueries()
+    )
     client = TestClient(app)
 
     try:
         assert client.get("/reference-data/currencies").json() == [
-            {"code": "CLP", "name": "Peso chileno", "is_fiat": True, "unit_kind": "currency"}
+            {
+                "code": "CLP",
+                "name": "Peso chileno",
+                "is_fiat": True,
+                "unit_kind": "currency",
+            }
         ]
         assert client.get("/reference-data/pension-institutions").json() == [
             {
@@ -205,11 +221,15 @@ def test_reference_data_endpoints() -> None:
 
 def test_reference_data_refresh_income_tax_brackets_endpoint() -> None:
     """Test reference data refresh income tax brackets endpoint."""
-    app.dependency_overrides[get_refresh_income_tax_brackets_use_case] = lambda: FakeRefreshIncomeTaxBrackets()
+    app.dependency_overrides[get_refresh_income_tax_brackets_use_case] = lambda: (
+        FakeRefreshIncomeTaxBrackets()
+    )
     client = TestClient(app)
 
     try:
-        response = client.post("/reference-data/income-tax-brackets/refresh", json={"year": 2026})
+        response = client.post(
+            "/reference-data/income-tax-brackets/refresh", json={"year": 2026}
+        )
 
         assert response.status_code == 200
         assert response.json() == {
@@ -221,22 +241,33 @@ def test_reference_data_refresh_income_tax_brackets_endpoint() -> None:
         app.dependency_overrides.clear()
 
 
-def test_reference_data_refresh_income_tax_brackets_endpoint_returns_bad_request() -> None:
+def test_reference_data_refresh_income_tax_brackets_endpoint_returns_bad_request() -> (
+    None
+):
     """Test reference data refresh income tax brackets endpoint returns bad request."""
+
     class ErrorRefreshIncomeTaxBrackets:
         """Represent the error refresh income tax brackets."""
 
         async def execute(self, command: object) -> RefreshIncomeTaxBracketsResultDTO:
             """Handle execute."""
-            raise PayrollDependencyError("No official income tax brackets were found for 2026.")
+            raise PayrollDependencyError(
+                "No official income tax brackets were found for 2026."
+            )
 
-    app.dependency_overrides[get_refresh_income_tax_brackets_use_case] = lambda: ErrorRefreshIncomeTaxBrackets()
+    app.dependency_overrides[get_refresh_income_tax_brackets_use_case] = lambda: (
+        ErrorRefreshIncomeTaxBrackets()
+    )
     client = TestClient(app)
 
     try:
-        response = client.post("/reference-data/income-tax-brackets/refresh", json={"year": 2026})
+        response = client.post(
+            "/reference-data/income-tax-brackets/refresh", json={"year": 2026}
+        )
 
         assert response.status_code == 502
-        assert response.json() == {"detail": "No official income tax brackets were found for 2026."}
+        assert response.json() == {
+            "detail": "No official income tax brackets were found for 2026."
+        }
     finally:
         app.dependency_overrides.clear()

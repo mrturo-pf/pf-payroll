@@ -17,7 +17,9 @@ class PayrollQueries:
         """Get period detail."""
         detail = await self.repository.get_period_detail(period_id)
         if detail is None:
-            raise PayrollPeriodNotFoundError(f"Payroll period {period_id} was not found.")
+            raise PayrollPeriodNotFoundError(
+                f"Payroll period {period_id} was not found."
+            )
         return detail
 
     async def list_period_summaries(self) -> list[PayrollSummaryDTO]:

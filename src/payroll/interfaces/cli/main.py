@@ -28,12 +28,20 @@ from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
-from payroll.infrastructure.db.repositories.market_data_repository import SqlAlchemyMarketDataRepository
-from payroll.infrastructure.db.repositories.payroll_repository import SqlAlchemyPayrollRepository
-from payroll.infrastructure.db.repositories.reference_data_repository import SqlAlchemyReferenceDataRepository
+from payroll.infrastructure.db.repositories.market_data_repository import (
+    SqlAlchemyMarketDataRepository,
+)
+from payroll.infrastructure.db.repositories.payroll_repository import (
+    SqlAlchemyPayrollRepository,
+)
+from payroll.infrastructure.db.repositories.reference_data_repository import (
+    SqlAlchemyReferenceDataRepository,
+)
 from payroll.infrastructure.db.session import SessionLocal
 from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
-from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import WeasyPrintPayrollReportRenderer
+from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import (
+    WeasyPrintPayrollReportRenderer,
+)
 
 app = typer.Typer(help="Payroll CLI")
 
@@ -79,7 +87,9 @@ def _parse_optional_decimal(name: str, value: str | None) -> Decimal | None:
 async def _import_payroll_async(file_path: Path) -> object:
     """Handle import payroll async."""
     async with SessionLocal() as session:
-        use_case = ImportPayroll(SqlAlchemyPayrollRepository(session), XlsxPayrollImporter())
+        use_case = ImportPayroll(
+            SqlAlchemyPayrollRepository(session), XlsxPayrollImporter()
+        )
         return await use_case.from_bytes(file_path.name, file_path.read_bytes())
 
 
@@ -107,7 +117,9 @@ async def _list_plan_snapshots_async() -> dict[str, object]:
         }
 
 
-async def _assign_plans_async(period_id: int, pension_plan_id: int, health_plan_id: int) -> object:
+async def _assign_plans_async(
+    period_id: int, pension_plan_id: int, health_plan_id: int
+) -> object:
     """Handle assign plans async."""
     async with SessionLocal() as session:
         use_case = AssignPlans(SqlAlchemyPayrollRepository(session))
@@ -141,7 +153,9 @@ async def _compute_contributions_async(
         )
 
 
-async def _compute_income_tax_async(period_id: int, utm_value_clp: Decimal | None) -> object:
+async def _compute_income_tax_async(
+    period_id: int, utm_value_clp: Decimal | None
+) -> object:
     """Handle compute income tax async."""
     async with SessionLocal() as session:
         payroll_repository = SqlAlchemyPayrollRepository(session)
@@ -159,7 +173,9 @@ async def _review_period_async(period_id: int) -> object:
     """Handle review period async."""
     async with SessionLocal() as session:
         use_case = ReviewPayrollPeriod(SqlAlchemyPayrollRepository(session))
-        return await use_case.execute(ReviewPayrollPeriodCommandDTO(period_id=period_id))
+        return await use_case.execute(
+            ReviewPayrollPeriodCommandDTO(period_id=period_id)
+        )
 
 
 async def _generate_payroll_report_async(period_id: int) -> GeneratedPayrollReportDTO:
@@ -185,7 +201,9 @@ def health() -> None:
 
 @app.command("import-payroll")
 def import_payroll(
-    file_path: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
+    file_path: Annotated[
+        Path, typer.Argument(exists=True, dir_okay=False, readable=True)
+    ],
 ) -> None:
     """Import payroll."""
     _emit_json(_run_command(_import_payroll_async(file_path)))
@@ -212,7 +230,9 @@ def plan_snapshots() -> None:
 @app.command("assign-plans")
 def assign_plans(period_id: int, pension_plan_id: int, health_plan_id: int) -> None:
     """Assign plans."""
-    _emit_json(_run_command(_assign_plans_async(period_id, pension_plan_id, health_plan_id)))
+    _emit_json(
+        _run_command(_assign_plans_async(period_id, pension_plan_id, health_plan_id))
+    )
 
 
 @app.command("compute-contributions")
@@ -241,7 +261,13 @@ def compute_tax(
     utm_value_clp: Annotated[str | None, typer.Option("--utm-value-clp")] = None,
 ) -> None:
     """Compute tax."""
-    _emit_json(_run_command(_compute_income_tax_async(period_id, _parse_optional_decimal("utm_value_clp", utm_value_clp))))
+    _emit_json(
+        _run_command(
+            _compute_income_tax_async(
+                period_id, _parse_optional_decimal("utm_value_clp", utm_value_clp)
+            )
+        )
+    )
 
 
 @app.command("review")
@@ -253,10 +279,14 @@ def review(period_id: int) -> None:
 @app.command("report-pdf")
 def report_pdf(
     period_id: int,
-    output: Annotated[Path | None, typer.Option("--output", dir_okay=False, writable=True)] = None,
+    output: Annotated[
+        Path | None, typer.Option("--output", dir_okay=False, writable=True)
+    ] = None,
 ) -> None:
     """Handle report pdf."""
-    report: GeneratedPayrollReportDTO = _run_command(_generate_payroll_report_async(period_id))
+    report: GeneratedPayrollReportDTO = _run_command(
+        _generate_payroll_report_async(period_id)
+    )
     output_path = output or Path(report.filename)
     output_path.write_bytes(report.content)
     _emit_json(

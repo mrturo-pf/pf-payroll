@@ -69,15 +69,43 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
     assert result.empty
 
     with pytest.raises(ValueError, match="payment_date"):
-        to_long_format(pd.DataFrame([{"period": "Jan/2026", "employer": "ACME", "employment_contract_kind": "indefinite"}]))
+        to_long_format(
+            pd.DataFrame(
+                [
+                    {
+                        "period": "Jan/2026",
+                        "employer": "ACME",
+                        "employment_contract_kind": "indefinite",
+                    }
+                ]
+            )
+        )
 
     with pytest.raises(ValueError, match="employer"):
         to_long_format(
-            pd.DataFrame([{"period": "Jan/2026", "payment_date": "2026-01-31", "employment_contract_kind": "indefinite"}])
+            pd.DataFrame(
+                [
+                    {
+                        "period": "Jan/2026",
+                        "payment_date": "2026-01-31",
+                        "employment_contract_kind": "indefinite",
+                    }
+                ]
+            )
         )
 
     with pytest.raises(ValueError, match="employment_contract_kind"):
-        to_long_format(pd.DataFrame([{"period": "Jan/2026", "employer": "ACME", "payment_date": "2026-01-31"}]))
+        to_long_format(
+            pd.DataFrame(
+                [
+                    {
+                        "period": "Jan/2026",
+                        "employer": "ACME",
+                        "payment_date": "2026-01-31",
+                    }
+                ]
+            )
+        )
 
 
 def test_to_long_format_normalizes_contract_kind_aliases() -> None:
@@ -96,7 +124,10 @@ def test_to_long_format_normalizes_contract_kind_aliases() -> None:
         )
     )
 
-    assert result.to_dict(orient="records")[0]["employment_contract_kind"].value == "fixed_term"
+    assert (
+        result.to_dict(orient="records")[0]["employment_contract_kind"].value
+        == "fixed_term"
+    )
 
 
 def test_to_long_format_rejects_invalid_contract_kind() -> None:

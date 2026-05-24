@@ -40,7 +40,7 @@ dev = [
 testpaths = ["tests"]
 
 [tool.ruff.lint]
-extend-select = ["D"]
+extend-select = ["D", "E", "W"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "pep257"

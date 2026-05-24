@@ -61,4 +61,3 @@ class EconomicIndexNotFoundError(PayrollNotFoundError):
 
 class IncomeTaxBracketNotFoundError(PayrollNotFoundError):
     """Raised when no income tax bracket matches the requested period/base."""
-

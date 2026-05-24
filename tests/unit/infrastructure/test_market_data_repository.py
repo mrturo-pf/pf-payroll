@@ -10,8 +10,14 @@ import pytest
 from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.refresh_rates import RefreshRates
-from payroll.infrastructure.db.models import CurrencyModel, EconomicIndexModel, ExchangeRateModel
-from payroll.infrastructure.db.repositories.market_data_repository import SqlAlchemyMarketDataRepository
+from payroll.infrastructure.db.models import (
+    CurrencyModel,
+    EconomicIndexModel,
+    ExchangeRateModel,
+)
+from payroll.infrastructure.db.repositories.market_data_repository import (
+    SqlAlchemyMarketDataRepository,
+)
 from payroll.interfaces.api import dependencies
 
 
@@ -30,7 +36,9 @@ class FakeScalarResult:
 class FakeResult:
     """Test double for Result."""
 
-    def __init__(self, scalar_rows: list[object] | None = None, scalar_one: object | None = None) -> None:
+    def __init__(
+        self, scalar_rows: list[object] | None = None, scalar_one: object | None = None
+    ) -> None:
         """Initialize the instance."""
         self._scalar_rows = scalar_rows or []
         self._scalar_one = scalar_one
@@ -72,7 +80,12 @@ async def test_sqlalchemy_market_data_repository_lists_rates_and_indices() -> No
         [
             FakeResult(
                 scalar_rows=[
-                    SimpleNamespace(currency_code="UF", rate_date=date(2026, 1, 31), value_clp=Decimal("38000"), source="manual")
+                    SimpleNamespace(
+                        currency_code="UF",
+                        rate_date=date(2026, 1, 31),
+                        value_clp=Decimal("38000"),
+                        source="manual",
+                    )
                 ]
             ),
             FakeResult(
@@ -108,16 +121,28 @@ async def test_sqlalchemy_market_data_repository_lists_rates_and_indices() -> No
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_market_data_repository_refreshes_entries_and_validates_currencies() -> None:
-    """Test sqlalchemy market data repository refreshes entries and validates currencies."""
-    session = FakeSession([FakeResult(scalar_rows=["UF ", "USD"]), FakeResult(), FakeResult()])
+async def test_sa_market_data_repository_refreshes_and_validates_currencies() -> None:
+    """Test refreshing entries and validating unknown currencies."""
+    session = FakeSession(
+        [FakeResult(scalar_rows=["UF ", "USD"]), FakeResult(), FakeResult()]
+    )
     repository = SqlAlchemyMarketDataRepository(session)  # type: ignore[arg-type]
 
     result = await repository.refresh_rates(
         SimpleNamespace(
             exchange_rates=[
-                SimpleNamespace(currency_code="UF", rate_date=date(2026, 1, 31), value_clp=Decimal("38000"), source="manual"),
-                SimpleNamespace(currency_code="USD", rate_date=date(2026, 1, 31), value_clp=Decimal("980.5"), source="manual"),
+                SimpleNamespace(
+                    currency_code="UF",
+                    rate_date=date(2026, 1, 31),
+                    value_clp=Decimal("38000"),
+                    source="manual",
+                ),
+                SimpleNamespace(
+                    currency_code="USD",
+                    rate_date=date(2026, 1, 31),
+                    value_clp=Decimal("980.5"),
+                    source="manual",
+                ),
             ],
             economic_indices=[
                 SimpleNamespace(
@@ -143,14 +168,26 @@ async def test_sqlalchemy_market_data_repository_refreshes_entries_and_validates
 @pytest.mark.asyncio
 async def test_sqlalchemy_market_data_repository_rejects_unknown_currencies() -> None:
     """Test sqlalchemy market data repository rejects unknown currencies."""
-    repository = SqlAlchemyMarketDataRepository(FakeSession([FakeResult(scalar_rows=["UF"])]))  # type: ignore[arg-type]
+    repository = SqlAlchemyMarketDataRepository(
+        FakeSession([FakeResult(scalar_rows=["UF"])])
+    )  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="Unknown currencies in exchange rates: UTM"):
         await repository.refresh_rates(
             SimpleNamespace(
                 exchange_rates=[
-                    SimpleNamespace(currency_code="UF", rate_date=date(2026, 1, 31), value_clp=Decimal("38000"), source="manual"),
-                    SimpleNamespace(currency_code="UTM", rate_date=date(2026, 1, 31), value_clp=Decimal("67000"), source="manual"),
+                    SimpleNamespace(
+                        currency_code="UF",
+                        rate_date=date(2026, 1, 31),
+                        value_clp=Decimal("38000"),
+                        source="manual",
+                    ),
+                    SimpleNamespace(
+                        currency_code="UTM",
+                        rate_date=date(2026, 1, 31),
+                        value_clp=Decimal("67000"),
+                        source="manual",
+                    ),
                 ],
                 economic_indices=[],
             )
@@ -158,10 +195,10 @@ async def test_sqlalchemy_market_data_repository_rejects_unknown_currencies() ->
 
 
 @pytest.mark.asyncio
-async def test_api_dependencies_build_market_data_repository_queries_use_case_and_session(
+async def test_api_dependencies_build_market_data_queries_use_case_and_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test api dependencies build market data repository queries use case and session."""
+    """Test API dependencies build the market-data query use case."""
     fake_session = object()
     exited = False
 

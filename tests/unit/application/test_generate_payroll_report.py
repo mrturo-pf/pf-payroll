@@ -46,7 +46,9 @@ class StubRenderer:
         return self.content
 
 
-def reviewed_detail(summary: PayrollSummaryDTO | None | object = _DEFAULT_SUMMARY) -> PayrollPeriodDetailDTO:
+def reviewed_detail(
+    summary: PayrollSummaryDTO | None | object = _DEFAULT_SUMMARY,
+) -> PayrollPeriodDetailDTO:
     """Handle reviewed detail."""
     return PayrollPeriodDetailDTO(
         id=10,
@@ -97,7 +99,9 @@ async def test_generate_payroll_report_returns_filename_and_pdf_bytes() -> None:
     renderer = StubRenderer()
     detail = reviewed_detail()
 
-    result = await GeneratePayrollReport(StubPayrollRepository(detail), renderer).execute(10)
+    result = await GeneratePayrollReport(
+        StubPayrollRepository(detail), renderer
+    ).execute(10)
 
     assert result == GeneratedPayrollReportDTO(
         period_id=10,
@@ -111,7 +115,9 @@ async def test_generate_payroll_report_returns_filename_and_pdf_bytes() -> None:
 async def test_generate_payroll_report_rejects_missing_period() -> None:
     """Test generate payroll report rejects missing period."""
     with pytest.raises(ValueError, match="Payroll period 10 was not found."):
-        await GeneratePayrollReport(StubPayrollRepository(None), StubRenderer()).execute(10)
+        await GeneratePayrollReport(
+            StubPayrollRepository(None), StubRenderer()
+        ).execute(10)
 
 
 @pytest.mark.asyncio
@@ -120,11 +126,17 @@ async def test_generate_payroll_report_requires_reviewed_status() -> None:
     detail = replace(reviewed_detail(), status="actual")
 
     with pytest.raises(ValueError, match="must be reviewed before generating a report"):
-        await GeneratePayrollReport(StubPayrollRepository(detail), StubRenderer()).execute(10)
+        await GeneratePayrollReport(
+            StubPayrollRepository(detail), StubRenderer()
+        ).execute(10)
 
 
 @pytest.mark.asyncio
 async def test_generate_payroll_report_requires_summary() -> None:
     """Test generate payroll report requires summary."""
-    with pytest.raises(ValueError, match="Payroll summary for period 10 was not found."):
-        await GeneratePayrollReport(StubPayrollRepository(reviewed_detail(summary=None)), StubRenderer()).execute(10)
+    with pytest.raises(
+        ValueError, match="Payroll summary for period 10 was not found."
+    ):
+        await GeneratePayrollReport(
+            StubPayrollRepository(reviewed_detail(summary=None)), StubRenderer()
+        ).execute(10)

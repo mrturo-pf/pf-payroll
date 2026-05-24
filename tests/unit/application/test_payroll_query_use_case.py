@@ -5,7 +5,11 @@ from decimal import Decimal
 
 import pytest
 
-from payroll.application.dto import PayrollItemDetailDTO, PayrollPeriodDetailDTO, PayrollSummaryDTO
+from payroll.application.dto import (
+    PayrollItemDetailDTO,
+    PayrollPeriodDetailDTO,
+    PayrollSummaryDTO,
+)
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.domain.contributions import EmploymentContractKind
 

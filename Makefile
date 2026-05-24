@@ -47,6 +47,8 @@ test-cov:
 	pytest --cov=src/payroll --cov-report=term-missing --cov-fail-under=100
 
 lint:
+	ruff check --fix --exit-zero src tests
+	ruff format src tests
 	ruff check src tests
 
 typecheck:

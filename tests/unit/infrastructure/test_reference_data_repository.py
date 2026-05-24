@@ -8,7 +8,9 @@ from types import SimpleNamespace
 import pytest
 
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
-from payroll.application.use_cases.refresh_income_tax_brackets import RefreshIncomeTaxBrackets
+from payroll.application.use_cases.refresh_income_tax_brackets import (
+    RefreshIncomeTaxBrackets,
+)
 from payroll.domain.contributions import HealthInstitutionKind
 from payroll.infrastructure.db.models import (
     ContributionCapModel,
@@ -20,8 +22,13 @@ from payroll.infrastructure.db.models import (
     PensionInstitutionModel,
     PensionPlanModel,
 )
-from payroll.infrastructure.db.models.reference_data import ContributionCapType, PayrollConceptKind
-from payroll.infrastructure.db.repositories.reference_data_repository import SqlAlchemyReferenceDataRepository
+from payroll.infrastructure.db.models.reference_data import (
+    ContributionCapType,
+    PayrollConceptKind,
+)
+from payroll.infrastructure.db.repositories.reference_data_repository import (
+    SqlAlchemyReferenceDataRepository,
+)
 from payroll.interfaces.api import dependencies
 
 
@@ -40,7 +47,11 @@ class FakeScalarResult:
 class FakeResult:
     """Test double for Result."""
 
-    def __init__(self, scalar_rows: list[object] | None = None, joined_rows: list[tuple[object, object]] | None = None) -> None:
+    def __init__(
+        self,
+        scalar_rows: list[object] | None = None,
+        joined_rows: list[tuple[object, object]] | None = None,
+    ) -> None:
         """Initialize the instance."""
         self._scalar_rows = scalar_rows or []
         self._joined_rows = joined_rows or []
@@ -78,10 +89,24 @@ async def test_sqlalchemy_reference_data_repository_maps_all_catalogs() -> None:
     """Test sqlalchemy reference data repository maps all catalogs."""
     session = FakeSession(
         [
-            FakeResult(scalar_rows=[SimpleNamespace(code="CLP", name="Peso chileno", is_fiat=True, unit_kind="currency")]),
             FakeResult(
                 scalar_rows=[
-                    SimpleNamespace(code="AFP_UNO", name="AFP Uno", mandatory_rate=Decimal("0.10"), is_active=True)
+                    SimpleNamespace(
+                        code="CLP",
+                        name="Peso chileno",
+                        is_fiat=True,
+                        unit_kind="currency",
+                    )
+                ]
+            ),
+            FakeResult(
+                scalar_rows=[
+                    SimpleNamespace(
+                        code="AFP_UNO",
+                        name="AFP Uno",
+                        mandatory_rate=Decimal("0.10"),
+                        is_active=True,
+                    )
                 ]
             ),
             FakeResult(
@@ -138,7 +163,12 @@ async def test_sqlalchemy_reference_data_repository_maps_all_catalogs() -> None:
             ),
             FakeResult(
                 scalar_rows=[
-                    SimpleNamespace(code="SALARY_BASE", name="Base Salary", kind=SimpleNamespace(value="income"), is_taxable=True)
+                    SimpleNamespace(
+                        code="SALARY_BASE",
+                        name="Base Salary",
+                        kind=SimpleNamespace(value="income"),
+                        is_taxable=True,
+                    )
                 ]
             ),
             FakeResult(
@@ -158,18 +188,30 @@ async def test_sqlalchemy_reference_data_repository_maps_all_catalogs() -> None:
     repository = SqlAlchemyReferenceDataRepository(session)
 
     assert [item.code for item in await repository.list_currencies()] == ["CLP"]
-    assert [item.code for item in await repository.list_pension_institutions()] == ["AFP_UNO"]
-    assert [item.code for item in await repository.list_health_institutions()] == ["FONASA"]
+    assert [item.code for item in await repository.list_pension_institutions()] == [
+        "AFP_UNO"
+    ]
+    assert [item.code for item in await repository.list_health_institutions()] == [
+        "FONASA"
+    ]
     assert [item.id for item in await repository.list_pension_plans()] == [1]
     assert [item.id for item in await repository.list_health_plans()] == [2]
-    assert [item.cap_type for item in await repository.list_contribution_caps()] == ["pension_health"]
-    assert [item.code for item in await repository.list_payroll_concepts()] == ["SALARY_BASE"]
-    assert [item.lower_bound_utm for item in await repository.list_income_tax_brackets()] == [Decimal("0")]
+    assert [item.cap_type for item in await repository.list_contribution_caps()] == [
+        "pension_health"
+    ]
+    assert [item.code for item in await repository.list_payroll_concepts()] == [
+        "SALARY_BASE"
+    ]
+    assert [
+        item.lower_bound_utm for item in await repository.list_income_tax_brackets()
+    ] == [Decimal("0")]
     assert len(session.statements) == 8
 
 
 @pytest.mark.asyncio
-async def test_api_dependencies_build_repository_queries_and_session(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_api_dependencies_build_repository_queries_and_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test api dependencies build repository queries and session."""
     fake_session = object()
     exit_called = False
@@ -205,7 +247,9 @@ async def test_api_dependencies_build_repository_queries_and_session(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_reference_data_repository_upserts_income_tax_brackets() -> None:
+async def test_sqlalchemy_reference_data_repository_upserts_income_tax_brackets() -> (
+    None
+):
     """Test sqlalchemy reference data repository upserts income tax brackets."""
     session = FakeSession([FakeResult()])
     repository = SqlAlchemyReferenceDataRepository(session)
@@ -229,8 +273,10 @@ async def test_sqlalchemy_reference_data_repository_upserts_income_tax_brackets(
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_reference_data_repository_returns_zero_when_no_brackets_are_provided() -> None:
-    """Test sqlalchemy reference data repository returns zero when no brackets are provided."""
+async def test_sa_reference_data_repository_returns_zero_when_no_brackets_exist() -> (
+    None
+):
+    """Test returning zero when no income-tax brackets are provided."""
     session = FakeSession([])
     repository = SqlAlchemyReferenceDataRepository(session)
 

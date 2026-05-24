@@ -294,8 +294,12 @@ class RefreshRatesCommandDTO:
 
     exchange_rates: list[ExchangeRateWriteDTO] = field(default_factory=list)
     economic_indices: list[EconomicIndexWriteDTO] = field(default_factory=list)
-    provider_exchange_rates: list[ProviderExchangeRateRequestDTO] = field(default_factory=list)
-    provider_economic_indices: list[ProviderEconomicIndexRequestDTO] = field(default_factory=list)
+    provider_exchange_rates: list[ProviderExchangeRateRequestDTO] = field(
+        default_factory=list
+    )
+    provider_economic_indices: list[ProviderEconomicIndexRequestDTO] = field(
+        default_factory=list
+    )
 
 
 @dataclass(frozen=True, slots=True)

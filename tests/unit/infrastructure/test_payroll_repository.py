@@ -11,10 +11,22 @@ from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
 from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
-from payroll.domain.contributions import HealthContribution, HealthInstitutionKind, PensionContribution
-from payroll.domain.contributions import EmploymentContractKind, UnemploymentContribution
+from payroll.domain.contributions import (
+    HealthContribution,
+    HealthInstitutionKind,
+    PensionContribution,
+)
+from payroll.domain.contributions import (
+    EmploymentContractKind,
+    UnemploymentContribution,
+)
 from payroll.domain.taxes import IncomeTaxBracket
-from payroll.infrastructure.db.models import EmployerModel, PayrollItemModel, PayrollPeriodModel, PayrollSummaryModel
+from payroll.infrastructure.db.models import (
+    EmployerModel,
+    PayrollItemModel,
+    PayrollPeriodModel,
+    PayrollSummaryModel,
+)
 from payroll.infrastructure.db.models.payroll import PayrollStatus
 from payroll.infrastructure.db.models.reference_data import (
     ContributionCapModel,
@@ -25,7 +37,9 @@ from payroll.infrastructure.db.models.reference_data import (
     PensionInstitutionModel,
     PensionPlanModel,
 )
-from payroll.infrastructure.db.repositories.payroll_repository import SqlAlchemyPayrollRepository
+from payroll.infrastructure.db.repositories.payroll_repository import (
+    SqlAlchemyPayrollRepository,
+)
 from payroll.interfaces.api import dependencies
 
 
@@ -170,12 +184,15 @@ async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
     assert result.imported_items == 2
     assert result.periods[0].employer == "ACME"
     assert result.periods[0].status == "projected"
-    assert result.periods[0].employment_contract_kind is EmploymentContractKind.INDEFINITE
+    assert (
+        result.periods[0].employment_contract_kind is EmploymentContractKind.INDEFINITE
+    )
     assert result.periods[0].declared_net_pay_clp == Decimal("950000")
     assert result.periods[0].expected_net_pay_clp == Decimal("900000")
     assert result.periods[0].net_pay_difference_clp == Decimal("50000")
     assert result.periods[0].net_pay_warning == (
-        "Declared net_pay does not match the imported concept totals. Difference: 50000 CLP."
+        "Declared net_pay does not match the imported concept "
+        "totals. Difference: 50000 CLP."
     )
     assert session.flush_count == 1
     assert session.commit_count == 2
@@ -197,8 +214,10 @@ async def test_sqlalchemy_payroll_repository_returns_empty_result_for_no_rows() 
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_payroll_repository_creates_employer_and_replaces_existing_period_items() -> None:
-    """Test sqlalchemy payroll repository creates employer and replaces existing period items."""
+async def test_sa_payroll_repository_creates_employer_and_replaces_period_items() -> (
+    None
+):
+    """Test creating an employer and replacing existing period items."""
     existing_period = PayrollPeriodModel(
         id=50,
         employer_id=10,
@@ -236,13 +255,17 @@ async def test_sqlalchemy_payroll_repository_creates_employer_and_replaces_exist
         ]
     )
 
-    created_employers = [item for item in session.added if isinstance(item, EmployerModel)]
+    created_employers = [
+        item for item in session.added if isinstance(item, EmployerModel)
+    ]
     assert len(created_employers) == 1
     assert existing_period.payment_date == date(2026, 1, 31)
     assert existing_period.status is PayrollStatus.ACTUAL
     assert existing_period.employment_contract_kind is EmploymentContractKind.FIXED_TERM
     assert result.periods[0].status == "actual"
-    assert any("DELETE FROM payroll_items" in str(statement) for statement in session.executed)
+    assert any(
+        "DELETE FROM payroll_items" in str(statement) for statement in session.executed
+    )
 
 
 @pytest.mark.asyncio
@@ -405,7 +428,9 @@ async def test_sqlalchemy_payroll_repository_assigns_plans_to_period() -> None:
     )
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
-    result = await repository.assign_plans(SimpleNamespace(period_id=5, pension_plan_id=11, health_plan_id=22))
+    result = await repository.assign_plans(
+        SimpleNamespace(period_id=5, pension_plan_id=11, health_plan_id=22)
+    )
 
     assert result.period_id == 5
     assert result.payment_date == date(2026, 1, 31)
@@ -415,8 +440,10 @@ async def test_sqlalchemy_payroll_repository_assigns_plans_to_period() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_payroll_repository_rejects_missing_period_for_contribution_context() -> None:
-    """Test sqlalchemy payroll repository rejects missing period for contribution context."""
+async def test_sa_payroll_repository_rejects_missing_period_for_contribution_ctx() -> (
+    None
+):
+    """Test rejection when contribution context has no matching period."""
     repository = SqlAlchemyPayrollRepository(FakeSession([FakeResult(scalar_one=None)]))  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="Payroll period 9 was not found."):
@@ -762,7 +789,9 @@ async def test_sqlalchemy_payroll_repository_rejects_invalid_assign_plans_inputs
     repository = SqlAlchemyPayrollRepository(FakeSession(results))  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match=message):
-        await repository.assign_plans(SimpleNamespace(period_id=9, pension_plan_id=1, health_plan_id=2))
+        await repository.assign_plans(
+            SimpleNamespace(period_id=9, pension_plan_id=1, health_plan_id=2)
+        )
 
 
 @pytest.mark.asyncio
@@ -924,12 +953,16 @@ async def test_sqlalchemy_payroll_repository_saves_computed_contributions() -> N
     assert period.health_plan_id == 22
     assert sum(isinstance(item, PayrollItemModel) for item in session.added) == 5
     assert session.commit_count == 2
-    assert any("DELETE FROM payroll_items" in str(statement) for statement in session.executed)
+    assert any(
+        "DELETE FROM payroll_items" in str(statement) for statement in session.executed
+    )
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_payroll_repository_rejects_missing_period_when_saving_contributions() -> None:
-    """Test sqlalchemy payroll repository rejects missing period when saving contributions."""
+async def test_sa_payroll_repository_rejects_missing_period_when_saving_contribs() -> (
+    None
+):
+    """Test rejection when saving contributions for a missing period."""
     repository = SqlAlchemyPayrollRepository(FakeSession([FakeResult(scalar_one=None)]))  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="Payroll period 5 was not found."):
@@ -946,8 +979,8 @@ async def test_sqlalchemy_payroll_repository_rejects_missing_period_when_saving_
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_payroll_repository_rejects_missing_concepts_when_saving_contributions() -> None:
-    """Test sqlalchemy payroll repository rejects missing concepts when saving contributions."""
+async def test_sa_payroll_repository_rejects_missing_concepts_when_saving() -> None:
+    """Test rejection when contribution concepts are missing."""
     period = PayrollPeriodModel(
         id=5,
         employer_id=10,
@@ -965,7 +998,9 @@ async def test_sqlalchemy_payroll_repository_rejects_missing_concepts_when_savin
         )
     )  # type: ignore[arg-type]
 
-    with pytest.raises(ValueError, match="Missing payroll concepts for computed contributions"):
+    with pytest.raises(
+        ValueError, match="Missing payroll concepts for computed contributions"
+    ):
         await repository.save_computed_contributions(
             SimpleNamespace(
                 period_id=5,
@@ -979,7 +1014,9 @@ async def test_sqlalchemy_payroll_repository_rejects_missing_concepts_when_savin
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary() -> None:
+async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary() -> (
+    None
+):
     """Test sqlalchemy payroll repository returns period detail and summary."""
     period = PayrollPeriodModel(
         id=7,
@@ -1018,11 +1055,21 @@ async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary()
                 joined_rows=[
                     (
                         SimpleNamespace(amount_clp=Decimal("1000000"), notes=None),
-                        SimpleNamespace(code="SALARY_BASE", name="Base Salary", kind=SimpleNamespace(value="income"), is_taxable=True),
+                        SimpleNamespace(
+                            code="SALARY_BASE",
+                            name="Base Salary",
+                            kind=SimpleNamespace(value="income"),
+                            is_taxable=True,
+                        ),
                     ),
                     (
                         SimpleNamespace(amount_clp=Decimal("100000"), notes="computed"),
-                        SimpleNamespace(code="PENSION_BASE", name="Pension Base", kind=SimpleNamespace(value="discount"), is_taxable=False),
+                        SimpleNamespace(
+                            code="PENSION_BASE",
+                            name="Pension Base",
+                            kind=SimpleNamespace(value="discount"),
+                            is_taxable=False,
+                        ),
                     ),
                 ]
             ),
@@ -1042,7 +1089,7 @@ async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary()
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_payroll_repository_returns_none_for_missing_period_detail() -> None:
+async def test_sa_payroll_repository_returns_none_for_missing_period_detail() -> None:
     """Test sqlalchemy payroll repository returns none for missing period detail."""
     repository = SqlAlchemyPayrollRepository(FakeSession([FakeResult(first_row=None)]))  # type: ignore[arg-type]
 
@@ -1097,7 +1144,7 @@ async def test_sqlalchemy_payroll_repository_lists_period_summaries() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_payroll_repository_builds_income_tax_context_and_bracket() -> None:
+async def test_sa_payroll_repository_builds_income_tax_context_and_bracket() -> None:
     """Test sqlalchemy payroll repository builds income tax context and bracket."""
     period = PayrollPeriodModel(
         id=5,
@@ -1128,7 +1175,9 @@ async def test_sqlalchemy_payroll_repository_builds_income_tax_context_and_brack
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
     context = await repository.get_income_tax_context(SimpleNamespace(period_id=5))
-    bracket = await repository.get_income_tax_bracket(date(2026, 1, 31), Decimal("12.388060"))
+    bracket = await repository.get_income_tax_bracket(
+        date(2026, 1, 31), Decimal("12.388060")
+    )
 
     assert context.taxable_income_clp == Decimal("1000000")
     assert context.deductible_amount_clp == Decimal("176000")
@@ -1143,8 +1192,10 @@ async def test_sqlalchemy_payroll_repository_builds_income_tax_context_and_brack
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_payroll_repository_rejects_missing_period_for_income_tax_context() -> None:
-    """Test sqlalchemy payroll repository rejects missing period for income tax context."""
+async def test_sa_payroll_repository_rejects_missing_period_for_income_tax_ctx() -> (
+    None
+):
+    """Test rejection when income-tax context has no matching period."""
     repository = SqlAlchemyPayrollRepository(FakeSession([FakeResult(scalar_one=None)]))  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="Payroll period 5 was not found."):
@@ -1152,11 +1203,16 @@ async def test_sqlalchemy_payroll_repository_rejects_missing_period_for_income_t
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_payroll_repository_returns_none_for_missing_income_tax_bracket() -> None:
-    """Test sqlalchemy payroll repository returns none for missing income tax bracket."""
+async def test_sa_payroll_repository_returns_none_for_missing_income_tax_bracket() -> (
+    None
+):
+    """Test returning None when no income-tax bracket matches."""
     repository = SqlAlchemyPayrollRepository(FakeSession([FakeResult(scalar_one=None)]))  # type: ignore[arg-type]
 
-    assert await repository.get_income_tax_bracket(date(2026, 1, 31), Decimal("20")) is None
+    assert (
+        await repository.get_income_tax_bracket(date(2026, 1, 31), Decimal("20"))
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -1193,16 +1249,20 @@ async def test_sqlalchemy_payroll_repository_saves_computed_income_tax() -> None
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_payroll_repository_rejects_missing_period_when_saving_income_tax() -> None:
-    """Test sqlalchemy payroll repository rejects missing period when saving income tax."""
+async def test_sa_payroll_repository_rejects_missing_period_when_saving_tax() -> None:
+    """Test rejection when saving income tax for a missing period."""
     repository = SqlAlchemyPayrollRepository(FakeSession([FakeResult(scalar_one=None)]))  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="Payroll period 5 was not found."):
-        await repository.save_computed_income_tax(SimpleNamespace(period_id=5, tax=SimpleNamespace(tax_clp=Decimal("1"))))
+        await repository.save_computed_income_tax(
+            SimpleNamespace(period_id=5, tax=SimpleNamespace(tax_clp=Decimal("1")))
+        )
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_payroll_repository_rejects_missing_income_tax_concept() -> None:
+async def test_sqlalchemy_payroll_repository_rejects_missing_income_tax_concept() -> (
+    None
+):
     """Test sqlalchemy payroll repository rejects missing income tax concept."""
     period = PayrollPeriodModel(
         id=5,
@@ -1216,12 +1276,18 @@ async def test_sqlalchemy_payroll_repository_rejects_missing_income_tax_concept(
         FakeSession([FakeResult(scalar_one=period), FakeResult(scalar_one=None)])
     )  # type: ignore[arg-type]
 
-    with pytest.raises(ValueError, match="Missing payroll concept for computed income tax: INCOME_TAX"):
-        await repository.save_computed_income_tax(SimpleNamespace(period_id=5, tax=SimpleNamespace(tax_clp=Decimal("1"))))
+    with pytest.raises(
+        ValueError, match="Missing payroll concept for computed income tax: INCOME_TAX"
+    ):
+        await repository.save_computed_income_tax(
+            SimpleNamespace(period_id=5, tax=SimpleNamespace(tax_clp=Decimal("1")))
+        )
 
 
 @pytest.mark.asyncio
-async def test_api_dependencies_build_payroll_repository_and_use_case(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_api_dependencies_build_payroll_repository_and_use_case(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Test api dependencies build payroll repository and use case."""
     fake_session = object()
     exited = False
@@ -1253,7 +1319,9 @@ async def test_api_dependencies_build_payroll_repository_and_use_case(monkeypatc
     assign_use_case = dependencies.get_assign_plans_use_case(repository)
     review_use_case = dependencies.get_review_payroll_period_use_case(repository)
     compute_use_case = dependencies.get_compute_contributions_use_case(repository)
-    compute_tax_use_case = dependencies.get_compute_income_tax_use_case(repository, repository)  # type: ignore[arg-type]
+    compute_tax_use_case = dependencies.get_compute_income_tax_use_case(
+        repository, repository
+    )  # type: ignore[arg-type]
 
     assert isinstance(repository, SqlAlchemyPayrollRepository)
     assert isinstance(use_case, ImportPayroll)

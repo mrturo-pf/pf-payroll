@@ -8,7 +8,11 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from payroll.application.errors import PayrollPeriodNotFoundError
-from payroll.application.dto import PayrollItemDetailDTO, PayrollPeriodDetailDTO, PayrollSummaryDTO
+from payroll.application.dto import (
+    PayrollItemDetailDTO,
+    PayrollPeriodDetailDTO,
+    PayrollSummaryDTO,
+)
 from payroll.interfaces.api.dependencies import get_payroll_queries
 from payroll.interfaces.api.main import app
 from payroll.interfaces.api.routes.payroll import get_payroll_period
@@ -161,6 +165,7 @@ def test_payroll_query_endpoints() -> None:
 
 def test_payroll_detail_endpoint_surfaces_not_found() -> None:
     """Test payroll detail endpoint surfaces not found."""
+
     class ErrorPayrollQueries:
         """Represent the error payroll queries."""
 
@@ -187,6 +192,7 @@ def test_payroll_detail_endpoint_surfaces_not_found() -> None:
 @pytest.mark.asyncio
 async def test_payroll_detail_handler_maps_value_errors() -> None:
     """Test payroll detail handler maps value errors."""
+
     class ErrorPayrollQueries:
         """Represent the error payroll queries."""
 

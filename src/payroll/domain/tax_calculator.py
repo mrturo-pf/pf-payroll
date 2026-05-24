@@ -27,8 +27,17 @@ class ChileanTaxCalculator:
     ) -> IncomeTaxComputation:
         """Handle income tax."""
         taxable_base_clp = max(Decimal("0"), taxable_income_clp - deductible_amount_clp)
-        taxable_base_utm = quantize_utm(taxable_base_clp / utm_value_clp) if utm_value_clp > 0 else Decimal("0")
-        tax_utm = max(Decimal("0"), quantize_utm((taxable_base_utm * bracket.marginal_rate) - bracket.rebate_utm))
+        taxable_base_utm = (
+            quantize_utm(taxable_base_clp / utm_value_clp)
+            if utm_value_clp > 0
+            else Decimal("0")
+        )
+        tax_utm = max(
+            Decimal("0"),
+            quantize_utm(
+                (taxable_base_utm * bracket.marginal_rate) - bracket.rebate_utm
+            ),
+        )
         tax_clp = quantize_clp(tax_utm * utm_value_clp)
 
         return IncomeTaxComputation(

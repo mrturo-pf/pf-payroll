@@ -4,7 +4,16 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 
-from sqlalchemy import Boolean, Date, DateTime, Enum as SAEnum, ForeignKey, Numeric, String, func
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Enum as SAEnum,
+    ForeignKey,
+    Numeric,
+    String,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from payroll.domain.contributions import HealthInstitutionKind
@@ -51,7 +60,9 @@ class ExchangeRateModel(Base):
     rate_date: Mapped[date] = mapped_column(Date)
     value_clp: Mapped[Decimal] = mapped_column(Numeric(18, 6))
     source: Mapped[str] = mapped_column(String(40), default="manual")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class EconomicIndexModel(Base):
@@ -68,7 +79,9 @@ class EconomicIndexModel(Base):
     yearly_change: Mapped[Decimal | None] = mapped_column(Numeric(7, 4), nullable=True)
     base_period: Mapped[str] = mapped_column(String(10), default="DIC-2018")
     source: Mapped[str] = mapped_column(String(40), default="manual")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class IncomeTaxBracketModel(Base):
@@ -80,7 +93,9 @@ class IncomeTaxBracketModel(Base):
     valid_from: Mapped[date] = mapped_column(Date)
     valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
     lower_bound_utm: Mapped[Decimal] = mapped_column(Numeric(10, 4))
-    upper_bound_utm: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    upper_bound_utm: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 4), nullable=True
+    )
     marginal_rate: Mapped[Decimal] = mapped_column(Numeric(8, 6))
     rebate_utm: Mapped[Decimal] = mapped_column(Numeric(10, 4), default=Decimal("0"))
 
@@ -93,7 +108,9 @@ class PensionInstitutionModel(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(String(40), unique=True)
     name: Mapped[str] = mapped_column(String(120))
-    mandatory_rate: Mapped[Decimal] = mapped_column(Numeric(6, 4), default=Decimal("0.10"))
+    mandatory_rate: Mapped[Decimal] = mapped_column(
+        Numeric(6, 4), default=Decimal("0.10")
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     plans: Mapped[list["PensionPlanModel"]] = relationship(back_populates="institution")
@@ -108,9 +125,15 @@ class HealthInstitutionModel(Base):
     code: Mapped[str] = mapped_column(String(40), unique=True)
     name: Mapped[str] = mapped_column(String(120))
     kind: Mapped[HealthInstitutionKind] = mapped_column(
-        SAEnum(HealthInstitutionKind, name="health_institution_kind", values_callable=enum_values)
+        SAEnum(
+            HealthInstitutionKind,
+            name="health_institution_kind",
+            values_callable=enum_values,
+        )
     )
-    mandatory_rate: Mapped[Decimal] = mapped_column(Numeric(6, 4), default=Decimal("0.07"))
+    mandatory_rate: Mapped[Decimal] = mapped_column(
+        Numeric(6, 4), default=Decimal("0.07")
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     plans: Mapped[list["HealthPlanModel"]] = relationship(back_populates="institution")
@@ -125,7 +148,9 @@ class PensionPlanModel(Base):
     institution_id: Mapped[int] = mapped_column(ForeignKey("pension_institutions.id"))
     valid_from: Mapped[date] = mapped_column(Date)
     valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
-    additional_rate: Mapped[Decimal] = mapped_column(Numeric(6, 4), default=Decimal("0"))
+    additional_rate: Mapped[Decimal] = mapped_column(
+        Numeric(6, 4), default=Decimal("0")
+    )
 
     institution: Mapped[PensionInstitutionModel] = relationship(back_populates="plans")
 
@@ -152,7 +177,11 @@ class ContributionCapModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     cap_type: Mapped[ContributionCapType] = mapped_column(
-        SAEnum(ContributionCapType, name="contribution_cap_type", values_callable=enum_values)
+        SAEnum(
+            ContributionCapType,
+            name="contribution_cap_type",
+            values_callable=enum_values,
+        )
     )
     valid_from: Mapped[date] = mapped_column(Date)
     valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)

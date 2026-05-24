@@ -8,8 +8,15 @@ from urllib.error import URLError
 
 import pytest
 
-from payroll.application.dto import EconomicIndexWriteDTO, ExchangeRateWriteDTO, IncomeTaxBracketWriteDTO
-from payroll.infrastructure.rate_providers.chained_provider import ChainedEconomicIndexProvider, ChainedFxProvider
+from payroll.application.dto import (
+    EconomicIndexWriteDTO,
+    ExchangeRateWriteDTO,
+    IncomeTaxBracketWriteDTO,
+)
+from payroll.infrastructure.rate_providers.chained_provider import (
+    ChainedEconomicIndexProvider,
+    ChainedFxProvider,
+)
 from payroll.infrastructure.rate_providers.official_providers import (
     BcchSeriesProvider,
     MindicadorRateProvider,
@@ -26,15 +33,19 @@ from payroll.infrastructure.rate_providers.official_providers import (
 
 
 @pytest.mark.asyncio
-async def test_mindicador_rate_provider_parses_year_series_and_handles_unknown_indicator() -> None:
-    """Test mindicador rate provider parses year series and handles unknown indicator."""
+async def test_mindicador_rate_provider_parses_year_series_and_unknown_indicator() -> (
+    None
+):
+    """Test parsing a year series and ignoring unknown indicators."""
     provider = MindicadorRateProvider(
-        fetcher=lambda url, timeout: """
+        fetcher=lambda url, timeout: (
+            """
         {"serie":[
           {"fecha":"2026-01-31T03:00:00.000Z","valor":38000},
           {"fecha":"2026-01-30T03:00:00.000Z","valor":37900}
         ]}
-        """,
+        """
+        ),
     )
 
     result = await provider.fetch_rate("UF", date(2026, 1, 31))
@@ -68,7 +79,8 @@ async def test_sii_indicators_provider_parses_utm_and_ipc_rows() -> None:
     """Test sii indicators provider parses utm and ipc rows."""
     html = """
     <table>
-      <tr><th>Mes</th><th>UTM</th><th>UTA</th><th>IPC</th><th>Mensual</th><th>Acumulado</th><th>12 meses</th></tr>
+      <tr><th>Mes</th><th>UTM</th><th>UTA</th><th>IPC</th><th>Mensual</th>
+      <th>Acumulado</th><th>12 meses</th></tr>
       <tr><td>Enero</td><td>69.751</td><td>837.012</td><td>109,71</td><td>0,4</td><td>0,4</td><td>2,8</td></tr>
       <tr><td>Febrero</td><td>69.611</td><td>835.332</td><td>109,70</td><td>0,0</td><td>0,4</td><td>2,4</td></tr>
     </table>
@@ -105,9 +117,15 @@ async def test_sii_indicators_provider_parses_utm_and_ipc_rows() -> None:
 @pytest.mark.asyncio
 async def test_sii_indicators_provider_returns_none_for_blank_or_missing_rows() -> None:
     """Test sii indicators provider returns none for blank or missing rows."""
-    provider = SiiIndicatorsProvider(fetcher=lambda url, timeout: "<table><tr><td>Mayo</td><td>70.588</td><td></td><td></td></tr></table>")
+    provider = SiiIndicatorsProvider(
+        fetcher=lambda url, timeout: (
+            "<table><tr><td>Mayo</td><td>70.588</td><td></td><td></td></tr></table>"
+        )
+    )
     blank_ipc_provider = SiiIndicatorsProvider(
-        fetcher=lambda url, timeout: "<table><tr><td>Mayo</td><td>70.588</td><td>847.056</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr></table>"
+        fetcher=lambda url, timeout: (
+            "<table><tr><td>Mayo</td><td>70.588</td><td>847.056</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr></table>"
+        )
     )
 
     assert await provider.fetch_rate("UTM", date(2026, 1, 15)) is None
@@ -119,23 +137,29 @@ async def test_sii_indicators_provider_returns_none_for_blank_or_missing_rows() 
 @pytest.mark.asyncio
 async def test_sii_indicators_provider_handles_network_failures() -> None:
     """Test sii indicators provider handles network failures."""
-    provider = SiiIndicatorsProvider(fetcher=lambda url, timeout: (_ for _ in ()).throw(URLError("offline")))
+    provider = SiiIndicatorsProvider(
+        fetcher=lambda url, timeout: (_ for _ in ()).throw(URLError("offline"))
+    )
 
     assert await provider.fetch_rate("UTM", date(2026, 1, 15)) is None
 
 
 @pytest.mark.asyncio
-async def test_sii_income_tax_bracket_provider_parses_monthly_sections_into_utm_brackets() -> None:
-    """Test sii income tax bracket provider parses monthly sections into utm brackets."""
+async def test_sii_income_tax_bracket_provider_parses_monthly_sections() -> None:
+    """Test parsing SII monthly sections into UTM brackets."""
     html = """
     <div class='meses' id='mes_enero'>
       <h3>Enero 2026</h3>
       <div class='table-responsive'>
         <table><tbody>
-          <tr><td><strong>MENSUAL</strong></td><td>-.-</td><td>$ 941.638,50</td><td>Exento</td><td>-.-</td><td>Exento</td></tr>
-          <tr><td><strong></strong></td><td>$ 941.638,51</td><td>$ 2.092.530,00</td><td>0,04</td><td>$ 37.665,54</td><td>2,20%</td></tr>
-          <tr><td><strong></strong></td><td>$ 2.092.530,01</td><td>Y M&Aacute;S</td><td>0,4</td><td>$ 2.708.922,84</td><td>M&Aacute;S DE 27,48%</td></tr>
-          <tr><td><strong>QUINCENAL</strong></td><td>-.-</td><td>$ 470.819,25</td><td>Exento</td><td>-.-</td><td>Exento</td></tr>
+          <tr><td><strong>MENSUAL</strong></td><td>-.-</td><td>$ 941.638,50</td>
+          <td>Exento</td><td>-.-</td><td>Exento</td></tr>
+          <tr><td><strong></strong></td><td>$ 941.638,51</td><td>$ 2.092.530,00</td>
+          <td>0,04</td><td>$ 37.665,54</td><td>2,20%</td></tr>
+          <tr><td><strong></strong></td><td>$ 2.092.530,01</td><td>Y M&Aacute;S</td>
+          <td>0,4</td><td>$ 2.708.922,84</td><td>M&Aacute;S DE 27,48%</td></tr>
+          <tr><td><strong>QUINCENAL</strong></td><td>-.-</td><td>$ 470.819,25</td>
+          <td>Exento</td><td>-.-</td><td>Exento</td></tr>
         </tbody></table>
       </div>
     </div>
@@ -173,18 +197,29 @@ async def test_sii_income_tax_bracket_provider_parses_monthly_sections_into_utm_
 
 
 @pytest.mark.asyncio
-async def test_sii_income_tax_bracket_provider_handles_missing_monthly_rows_and_network_failures() -> None:
-    """Test sii income tax bracket provider handles missing monthly rows and network failures."""
-    provider = SiiIncomeTaxBracketProvider(fetcher=lambda url, timeout: "<h3>Enero 2026</h3><div class='table-responsive'><table><tbody></tbody></table></div>")
-    failing = SiiIncomeTaxBracketProvider(fetcher=lambda url, timeout: (_ for _ in ()).throw(URLError("offline")))
+async def test_sii_income_tax_bracket_provider_handles_missing_rows_and_failures() -> (
+    None
+):
+    """Test handling missing monthly rows and network failures."""
+    provider = SiiIncomeTaxBracketProvider(
+        fetcher=lambda url, timeout: (
+            "<h3>Enero 2026</h3><div class='table-responsive'>"
+            "<table><tbody></tbody></table></div>"
+        )
+    )
+    failing = SiiIncomeTaxBracketProvider(
+        fetcher=lambda url, timeout: (_ for _ in ()).throw(URLError("offline"))
+    )
 
     assert await provider.fetch_income_tax_brackets(2026) == []
     assert await failing.fetch_income_tax_brackets(2026) == []
 
 
 @pytest.mark.asyncio
-async def test_bcch_series_provider_parses_supported_shapes_and_handles_missing_configuration() -> None:
-    """Test bcch series provider parses supported shapes and handles missing configuration."""
+async def test_bcch_series_provider_parses_supported_shapes_and_missing_config() -> (
+    None
+):
+    """Test parsing supported BCCH responses and missing credentials."""
     provider = BcchSeriesProvider(
         user="user",
         password="pass",
@@ -197,10 +232,14 @@ async def test_bcch_series_provider_parses_supported_shapes_and_handles_missing_
         series_codes={"IPC_CL": "IPC_SERIES"},
         fetcher=lambda url, timeout: '{"Series":[{"Obs":[{"Valor":"112.340000"}]}]}',
     )
-    missing_provider = BcchSeriesProvider(user=None, password=None, series_codes={"UF": None})
+    missing_provider = BcchSeriesProvider(
+        user=None, password=None, series_codes={"UF": None}
+    )
 
     assert await provider.fetch_rate("UF", date(2026, 1, 31)) == Decimal("38000")
-    assert await provider.fetch_rate_entry("UF", date(2026, 1, 31)) == ExchangeRateWriteDTO(
+    assert await provider.fetch_rate_entry(
+        "UF", date(2026, 1, 31)
+    ) == ExchangeRateWriteDTO(
         currency_code="UF",
         rate_date=date(2026, 1, 31),
         value_clp=Decimal("38000"),
@@ -218,7 +257,7 @@ async def test_bcch_series_provider_parses_supported_shapes_and_handles_missing_
 
 
 @pytest.mark.asyncio
-async def test_bcch_series_provider_handles_fetch_failures_and_empty_observations() -> None:
+async def test_bcch_series_provider_handles_fetch_failures_and_empty_obs() -> None:
     """Test bcch series provider handles fetch failures and empty observations."""
     failing = BcchSeriesProvider(
         user="user",
@@ -246,8 +285,9 @@ async def test_bcch_series_provider_handles_fetch_failures_and_empty_observation
 
 
 @pytest.mark.asyncio
-async def test_chained_rate_and_index_providers_use_first_successful_source_and_swallow_failures() -> None:
-    """Test chained rate and index providers use first successful source and swallow failures."""
+async def test_chained_rate_and_index_providers_use_first_success() -> None:
+    """Test chained providers stop on first success and swallow failures."""
+
     class FailingFx:
         """Represent Failing Fx."""
 
@@ -271,7 +311,9 @@ async def test_chained_rate_and_index_providers_use_first_successful_source_and_
 
         name = "broken"
 
-        async def fetch_index(self, code: str, period_year: int, period_month: int) -> EconomicIndexWriteDTO | None:
+        async def fetch_index(
+            self, code: str, period_year: int, period_month: int
+        ) -> EconomicIndexWriteDTO | None:
             """Handle fetch index."""
             raise RuntimeError("boom")
 
@@ -280,7 +322,9 @@ async def test_chained_rate_and_index_providers_use_first_successful_source_and_
 
         name = "sii"
 
-        async def fetch_index(self, code: str, period_year: int, period_month: int) -> EconomicIndexWriteDTO | None:
+        async def fetch_index(
+            self, code: str, period_year: int, period_month: int
+        ) -> EconomicIndexWriteDTO | None:
             """Handle fetch index."""
             return EconomicIndexWriteDTO(
                 code=code,
@@ -294,7 +338,9 @@ async def test_chained_rate_and_index_providers_use_first_successful_source_and_
     index_chain = ChainedEconomicIndexProvider([FailingIndex(), WorkingIndex()])
 
     assert await fx_chain.fetch_rate("USD", date(2026, 1, 31)) == Decimal("950.12")
-    assert await fx_chain.fetch_rate_entry("USD", date(2026, 1, 31)) == ExchangeRateWriteDTO(
+    assert await fx_chain.fetch_rate_entry(
+        "USD", date(2026, 1, 31)
+    ) == ExchangeRateWriteDTO(
         currency_code="USD",
         rate_date=date(2026, 1, 31),
         value_clp=Decimal("950.12"),
@@ -310,19 +356,29 @@ async def test_chained_rate_and_index_providers_use_first_successful_source_and_
 
 
 @pytest.mark.asyncio
-async def test_chained_economic_index_provider_returns_none_when_all_providers_miss() -> None:
+async def test_chained_economic_index_provider_returns_none_when_all_miss() -> None:
     """Test chained economic index provider returns none when all providers miss."""
+
     class MissingIndex:
         """Represent Missing Index."""
 
-        async def fetch_index(self, code: str, period_year: int, period_month: int) -> EconomicIndexWriteDTO | None:
+        async def fetch_index(
+            self, code: str, period_year: int, period_month: int
+        ) -> EconomicIndexWriteDTO | None:
             """Handle fetch index."""
             return None
 
-    assert await ChainedEconomicIndexProvider([MissingIndex()]).fetch_index("IPC_CL", 2026, 1) is None
+    assert (
+        await ChainedEconomicIndexProvider([MissingIndex()]).fetch_index(
+            "IPC_CL", 2026, 1
+        )
+        is None
+    )
 
 
-def test_rate_provider_helpers_cover_local_fetch_and_edge_parsing(tmp_path: Path) -> None:
+def test_rate_provider_helpers_cover_local_fetch_and_edge_parsing(
+    tmp_path: Path,
+) -> None:
     """Test rate provider helpers cover local fetch and edge parsing."""
     sample = tmp_path / "sample.json"
     sample.write_text('{"ok": true}', encoding="utf-8")
@@ -333,13 +389,24 @@ def test_rate_provider_helpers_cover_local_fetch_and_edge_parsing(tmp_path: Path
     assert _parse_chilean_amount("Y MÁS") is None
     assert _parse_month_heading("Sin mes") is None
     assert _parse_month_heading("Foo 2026") is None
-    assert _extract_sii_rows("<table><tr></tr><tr><td>Enero</td><td>69.751</td></tr></table>") == {1: ["Enero", "69.751"]}
-    assert _extract_income_tax_month_rows("<h3>Marzo 2026</h3><div class='table-responsive'><table><tbody><tr><td>MENSUAL</td></tr></tbody></table></div>") == {
-        date(2026, 3, 1): [["MENSUAL"]]
-    }
-    assert _extract_income_tax_month_rows("<h3>Foo 2026</h3><div class='table-responsive'><table><tbody><tr><td>MENSUAL</td></tr></tbody></table></div>") == {}
+    assert _extract_sii_rows(
+        "<table><tr></tr><tr><td>Enero</td><td>69.751</td></tr></table>"
+    ) == {1: ["Enero", "69.751"]}
+    assert _extract_income_tax_month_rows(
+        "<h3>Marzo 2026</h3><div class='table-responsive'>"
+        "<table><tbody><tr><td>MENSUAL</td></tr></tbody></table></div>"
+    ) == {date(2026, 3, 1): [["MENSUAL"]]}
+    assert (
+        _extract_income_tax_month_rows(
+            "<h3>Foo 2026</h3><div class='table-responsive'>"
+            "<table><tbody><tr><td>MENSUAL</td></tr></tbody></table></div>"
+        )
+        == {}
+    )
     assert _build_monthly_income_tax_brackets(date(2026, 3, 1), [["QUINCENAL"]]) == []
-    assert _build_monthly_income_tax_brackets(date(2026, 3, 1), [["MENSUAL", "-.-"]]) == []
+    assert (
+        _build_monthly_income_tax_brackets(date(2026, 3, 1), [["MENSUAL", "-.-"]]) == []
+    )
     assert _build_monthly_income_tax_brackets(
         date(2026, 3, 1),
         [

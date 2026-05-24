@@ -209,6 +209,47 @@ async def test_sqlalchemy_reference_data_repository_maps_all_catalogs() -> None:
 
 
 @pytest.mark.asyncio
+async def test_reference_data_repository_can_include_inactive_health_catalogs() -> None:
+    """Test health catalogs can include inactive institutions and plans."""
+    inactive_institution = SimpleNamespace(
+        code="LEGACY",
+        name="Legacy",
+        kind=HealthInstitutionKind.ISAPRE,
+        mandatory_rate=Decimal("0.07"),
+        is_active=False,
+    )
+    inactive_plan = (
+        SimpleNamespace(
+            id=9,
+            valid_from=date(2024, 1, 1),
+            valid_to=None,
+            plan_name="Closed",
+            contracted_uf=Decimal("1.5"),
+        ),
+        SimpleNamespace(
+            code="LEGACY",
+            name="Legacy",
+            kind=HealthInstitutionKind.ISAPRE,
+        ),
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_rows=[inactive_institution]),
+            FakeResult(joined_rows=[inactive_plan]),
+        ]
+    )
+    repository = SqlAlchemyReferenceDataRepository(session)
+
+    health_institutions = await repository.list_health_institutions(
+        include_inactive=True
+    )
+    health_plans = await repository.list_health_plans(include_inactive=True)
+
+    assert [item.code for item in health_institutions] == ["LEGACY"]
+    assert [item.id for item in health_plans] == [9]
+
+
+@pytest.mark.asyncio
 async def test_api_dependencies_build_repository_queries_and_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

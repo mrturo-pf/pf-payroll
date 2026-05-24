@@ -54,7 +54,11 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
         """Assign plans."""
         period = await self._get_period(command.period_id)
         await self._get_pension_plan(command.pension_plan_id, period.payment_date)
-        await self._get_health_plan(command.health_plan_id, period.payment_date)
+        await self._get_health_plan(
+            command.health_plan_id,
+            period.payment_date,
+            require_active=True,
+        )
 
         period.pension_plan_id = command.pension_plan_id
         period.health_plan_id = command.health_plan_id

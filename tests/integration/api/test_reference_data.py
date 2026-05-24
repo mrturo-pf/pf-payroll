@@ -28,6 +28,11 @@ from payroll.interfaces.api.main import app
 class FakeReferenceDataQueries:
     """Test double for Reference Data Queries."""
 
+    def __init__(self) -> None:
+        """Initialize the instance."""
+        self.include_inactive_health_institutions = False
+        self.include_inactive_health_plans = False
+
     async def list_currencies(self) -> list[CurrencyDTO]:
         """List currencies."""
         return [
@@ -47,8 +52,11 @@ class FakeReferenceDataQueries:
             )
         ]
 
-    async def list_health_institutions(self) -> list[HealthInstitutionDTO]:
+    async def list_health_institutions(
+        self, *, include_inactive: bool = False
+    ) -> list[HealthInstitutionDTO]:
         """List health institutions."""
+        self.include_inactive_health_institutions = include_inactive
         return [
             HealthInstitutionDTO(
                 code="FONASA",
@@ -72,8 +80,11 @@ class FakeReferenceDataQueries:
             )
         ]
 
-    async def list_health_plans(self) -> list[HealthPlanDTO]:
+    async def list_health_plans(
+        self, *, include_inactive: bool = False
+    ) -> list[HealthPlanDTO]:
         """List health plans."""
+        self.include_inactive_health_plans = include_inactive
         return [
             HealthPlanDTO(
                 id=2,
@@ -136,9 +147,8 @@ class FakeRefreshIncomeTaxBrackets:
 
 def test_reference_data_endpoints() -> None:
     """Test reference data endpoints."""
-    app.dependency_overrides[get_reference_data_queries] = lambda: (
-        FakeReferenceDataQueries()
-    )
+    fake_queries = FakeReferenceDataQueries()
+    app.dependency_overrides[get_reference_data_queries] = lambda: fake_queries
     client = TestClient(app)
 
     try:
@@ -215,8 +225,32 @@ def test_reference_data_endpoints() -> None:
                 "rebate_utm": "0",
             }
         ]
+        assert fake_queries.include_inactive_health_institutions is False
+        assert fake_queries.include_inactive_health_plans is False
     finally:
         app.dependency_overrides.clear()
+
+
+def test_reference_data_endpoints_forward_include_inactive_query_param() -> None:
+    """Test reference data endpoints forward include_inactive query param."""
+    fake_queries = FakeReferenceDataQueries()
+    app.dependency_overrides[get_reference_data_queries] = lambda: fake_queries
+    client = TestClient(app)
+
+    try:
+        health_institutions_response = client.get(
+            "/reference-data/health-institutions?include_inactive=true"
+        )
+        health_plans_response = client.get(
+            "/reference-data/health-plans?include_inactive=true"
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert health_institutions_response.status_code == 200
+    assert health_plans_response.status_code == 200
+    assert fake_queries.include_inactive_health_institutions is True
+    assert fake_queries.include_inactive_health_plans is True
 
 
 def test_reference_data_refresh_income_tax_brackets_endpoint() -> None:

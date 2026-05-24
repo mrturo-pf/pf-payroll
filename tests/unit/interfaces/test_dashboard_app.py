@@ -51,6 +51,7 @@ def sample_detail(
     pension_plan_id: int | None = None,
     health_plan_id: int | None = None,
     item_codes: list[str] | None = None,
+    health_institution_is_active: bool | None = None,
 ) -> PayrollPeriodDetailDTO:
     """Sample detail."""
     codes = item_codes or ["SALARY_BASE"]
@@ -83,6 +84,7 @@ def sample_detail(
         health_plan_id=health_plan_id,
         items=items,
         summary=sample_summary(),
+        health_institution_is_active=health_institution_is_active,
     )
 
 
@@ -235,6 +237,20 @@ def test_assigned_plans_label_and_period_row() -> None:
     assert row.report_url == "http://127.0.0.1:8000/payroll/7/report.pdf"
     assert row.net_pay_clp == "$1.070.000"
     assert row.net_pay_check == "Matches declared net pay"
+
+
+def test_assigned_plans_label_marks_inactive_health_institution() -> None:
+    """Test assigned plans label surfaces inactive health institutions."""
+    detail = sample_detail(
+        pension_plan_id=1,
+        health_plan_id=2,
+        health_institution_is_active=False,
+    )
+
+    assert (
+        _assigned_plans_label(detail)
+        == "Pension #1 / Health #2 (Inactive health institution)"
+    )
 
 
 def test_render_dashboard_html_handles_empty_and_populated_states() -> None:

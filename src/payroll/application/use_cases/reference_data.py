@@ -29,17 +29,25 @@ class ReferenceDataQueries:
         """List pension institutions."""
         return await self.repository.list_pension_institutions()
 
-    async def list_health_institutions(self) -> list[HealthInstitutionDTO]:
+    async def list_health_institutions(
+        self, *, include_inactive: bool = False
+    ) -> list[HealthInstitutionDTO]:
         """List health institutions."""
-        return await self.repository.list_health_institutions()
+        return await self.repository.list_health_institutions(
+            include_inactive=include_inactive
+        )
 
     async def list_pension_plans(self) -> list[PensionPlanDTO]:
         """List pension plans."""
         return await self.repository.list_pension_plans()
 
-    async def list_health_plans(self) -> list[HealthPlanDTO]:
+    async def list_health_plans(
+        self, *, include_inactive: bool = False
+    ) -> list[HealthPlanDTO]:
         """List health plans."""
-        return await self.repository.list_health_plans()
+        return await self.repository.list_health_plans(
+            include_inactive=include_inactive
+        )
 
     async def list_contribution_caps(self) -> list[ContributionCapDTO]:
         """List contribution caps."""

@@ -570,6 +570,89 @@ async def test_sqlalchemy_payroll_repository_builds_contribution_context() -> No
 
 
 @pytest.mark.asyncio
+async def test_repository_allows_inactive_health_institution_for_history() -> None:
+    """Test contribution context keeps inactive institutions for existing history."""
+    period = PayrollPeriodModel(
+        id=5,
+        employer_id=10,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        status=PayrollStatus.PROJECTED,
+        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=period),
+            FakeResult(
+                first_row=(
+                    PensionPlanModel(
+                        id=11,
+                        institution_id=1,
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        additional_rate=Decimal("0.0127"),
+                    ),
+                    PensionInstitutionModel(
+                        id=1,
+                        code="AFP_UNO",
+                        name="AFP Uno",
+                        mandatory_rate=Decimal("0.10"),
+                        is_active=True,
+                    ),
+                )
+            ),
+            FakeResult(
+                first_row=(
+                    HealthPlanModel(
+                        id=22,
+                        institution_id=2,
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        plan_name="Base",
+                        contracted_uf=Decimal("0"),
+                    ),
+                    HealthInstitutionModel(
+                        id=2,
+                        code="LEGACY",
+                        name="Legacy",
+                        kind=HealthInstitutionKind.FONASA,
+                        mandatory_rate=Decimal("0.07"),
+                        is_active=False,
+                    ),
+                )
+            ),
+            FakeResult(
+                scalar_one=ContributionCapModel(
+                    id=33,
+                    cap_type=ContributionCapType.PENSION_HEALTH,
+                    valid_from=date(2026, 1, 1),
+                    valid_to=None,
+                    value_uf=Decimal("90.0000"),
+                )
+            ),
+            FakeResult(
+                scalar_one=ContributionCapModel(
+                    id=34,
+                    cap_type=ContributionCapType.UNEMPLOYMENT,
+                    valid_from=date(2026, 1, 1),
+                    valid_to=None,
+                    value_uf=Decimal("135.0000"),
+                )
+            ),
+            FakeResult(scalar_one=Decimal("1250000")),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.get_contribution_context(
+        SimpleNamespace(period_id=5, pension_plan_id=11, health_plan_id=22)
+    )
+
+    assert result.health_plan.institution.code == "LEGACY"
+
+
+@pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_assigns_plans_to_period() -> None:
     """Test sqlalchemy payroll repository assigns plans to period."""
     period = PayrollPeriodModel(
@@ -634,6 +717,71 @@ async def test_sqlalchemy_payroll_repository_assigns_plans_to_period() -> None:
     assert period.pension_plan_id == 11
     assert period.health_plan_id == 22
     assert session.commit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_repository_rejects_assigning_inactive_health_institution() -> None:
+    """Test assign plans rejects inactive health institutions."""
+    period = PayrollPeriodModel(
+        id=5,
+        employer_id=1,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        status=PayrollStatus.ACTUAL,
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=period),
+            FakeResult(
+                first_row=(
+                    PensionPlanModel(
+                        id=11,
+                        institution_id=1,
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        additional_rate=Decimal("0.0127"),
+                    ),
+                    PensionInstitutionModel(
+                        id=1,
+                        code="AFP_UNO",
+                        name="AFP Uno",
+                        mandatory_rate=Decimal("0.10"),
+                        is_active=True,
+                    ),
+                )
+            ),
+            FakeResult(
+                first_row=(
+                    HealthPlanModel(
+                        id=22,
+                        institution_id=2,
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        plan_name="Base",
+                        contracted_uf=Decimal("0"),
+                    ),
+                    HealthInstitutionModel(
+                        id=2,
+                        code="LEGACY",
+                        name="Legacy",
+                        kind=HealthInstitutionKind.FONASA,
+                        mandatory_rate=Decimal("0.07"),
+                        is_active=False,
+                    ),
+                )
+            ),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(
+        ValueError,
+        match="Health plan 22 belongs to inactive health institution LEGACY.",
+    ):
+        await repository.assign_plans(
+            SimpleNamespace(period_id=5, pension_plan_id=11, health_plan_id=22)
+        )
 
 
 @pytest.mark.asyncio
@@ -1250,6 +1398,7 @@ async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary()
         [
             FakeResult(first_row=(period, employer)),
             FakeResult(scalar_one=next_employer_started_at),
+            FakeResult(scalar_one=True),
             FakeResult(
                 joined_rows=[
                     (
@@ -1284,6 +1433,7 @@ async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary()
     assert result.employment_contract_kind is EmploymentContractKind.INDEFINITE
     assert result.employer_started_at == date(2020, 1, 1)
     assert result.employer_ended_at == date(2026, 1, 31)
+    assert result.health_institution_is_active is True
     assert result.items[0].concept_code == "SALARY_BASE"
     assert result.summary is not None
     assert result.summary.net_pay_clp == Decimal("830000")
@@ -1301,6 +1451,7 @@ async def test_repository_returns_period_detail_without_end_date() -> None:
         worked_days=30,
         status=PayrollStatus.ACTUAL,
         employment_contract_kind=EmploymentContractKind.INDEFINITE,
+        health_plan_id=2,
     )
     employer = EmployerModel(
         id=1,
@@ -1337,6 +1488,7 @@ async def test_repository_returns_explicit_period_detail_end_date() -> None:
         worked_days=30,
         status=PayrollStatus.ACTUAL,
         employment_contract_kind=EmploymentContractKind.INDEFINITE,
+        health_plan_id=2,
     )
     employer = EmployerModel(
         id=1,
@@ -1349,6 +1501,7 @@ async def test_repository_returns_explicit_period_detail_end_date() -> None:
     session = FakeSession(
         [
             FakeResult(first_row=(period, employer)),
+            FakeResult(scalar_one=False),
             FakeResult(joined_rows=[]),
             FakeResult(first_row=None),
         ]
@@ -1359,6 +1512,7 @@ async def test_repository_returns_explicit_period_detail_end_date() -> None:
 
     assert result is not None
     assert result.employer_ended_at == date(2026, 1, 15)
+    assert result.health_institution_is_active is False
 
 
 @pytest.mark.asyncio

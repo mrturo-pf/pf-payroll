@@ -180,6 +180,8 @@ class SqlAlchemyPayrollRepositoryBase:
         self,
         plan_id: int,
         payment_date: date,
+        *,
+        require_active: bool = False,
     ) -> tuple[HealthPlanModel, HealthInstitutionModel]:
         """Handle get health plan."""
         health_result = await self._session.execute(
@@ -195,6 +197,11 @@ class SqlAlchemyPayrollRepositoryBase:
             raise HealthPlanNotFoundError(f"Health plan {plan_id} was not found.")
 
         health_plan_model, health_institution_model = health_row
+        if require_active and not health_institution_model.is_active:
+            raise PayrollConflictError(
+                f"Health plan {plan_id} belongs to inactive health institution "
+                f"{health_institution_model.code}."
+            )
         if health_plan_model.valid_from > payment_date or (
             health_plan_model.valid_to is not None
             and health_plan_model.valid_to < payment_date

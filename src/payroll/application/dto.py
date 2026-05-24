@@ -384,6 +384,7 @@ class PayrollPeriodDetailDTO:
     health_plan_id: int | None
     items: list[PayrollItemDetailDTO]
     summary: PayrollSummaryDTO | None
+    health_institution_is_active: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -22,6 +22,11 @@ from payroll.domain.contributions import HealthInstitutionKind
 class StubReferenceDataRepository:
     """Test double for Reference Data Repository."""
 
+    def __init__(self) -> None:
+        """Initialize the instance."""
+        self.include_inactive_health_institutions = False
+        self.include_inactive_health_plans = False
+
     async def list_currencies(self) -> list[CurrencyDTO]:
         """List currencies."""
         return [
@@ -41,8 +46,11 @@ class StubReferenceDataRepository:
             )
         ]
 
-    async def list_health_institutions(self) -> list[HealthInstitutionDTO]:
+    async def list_health_institutions(
+        self, *, include_inactive: bool = False
+    ) -> list[HealthInstitutionDTO]:
         """List health institutions."""
+        self.include_inactive_health_institutions = include_inactive
         return [
             HealthInstitutionDTO(
                 code="FONASA",
@@ -66,8 +74,11 @@ class StubReferenceDataRepository:
             )
         ]
 
-    async def list_health_plans(self) -> list[HealthPlanDTO]:
+    async def list_health_plans(
+        self, *, include_inactive: bool = False
+    ) -> list[HealthPlanDTO]:
         """List health plans."""
+        self.include_inactive_health_plans = include_inactive
         return [
             HealthPlanDTO(
                 id=2,
@@ -117,7 +128,8 @@ class StubReferenceDataRepository:
 @pytest.mark.asyncio
 async def test_reference_data_queries_delegate_to_repository() -> None:
     """Test reference data queries delegate to repository."""
-    queries = ReferenceDataQueries(StubReferenceDataRepository())
+    repository = StubReferenceDataRepository()
+    queries = ReferenceDataQueries(repository)
 
     assert [item.code for item in await queries.list_currencies()] == ["CLP"]
     assert [item.code for item in await queries.list_pension_institutions()] == [
@@ -128,6 +140,7 @@ async def test_reference_data_queries_delegate_to_repository() -> None:
     ]
     assert [item.id for item in await queries.list_pension_plans()] == [1]
     assert [item.id for item in await queries.list_health_plans()] == [2]
+    assert repository.include_inactive_health_plans is False
     assert [item.cap_type for item in await queries.list_contribution_caps()] == [
         "pension_health"
     ]
@@ -137,3 +150,17 @@ async def test_reference_data_queries_delegate_to_repository() -> None:
     assert [
         item.lower_bound_utm for item in await queries.list_income_tax_brackets()
     ] == [Decimal("0")]
+    assert repository.include_inactive_health_institutions is False
+
+
+@pytest.mark.asyncio
+async def test_reference_data_queries_forward_include_inactive_flags() -> None:
+    """Test reference data queries forward include_inactive flags."""
+    repository = StubReferenceDataRepository()
+    queries = ReferenceDataQueries(repository)
+
+    await queries.list_health_institutions(include_inactive=True)
+    await queries.list_health_plans(include_inactive=True)
+
+    assert repository.include_inactive_health_institutions is True
+    assert repository.include_inactive_health_plans is True

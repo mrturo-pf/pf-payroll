@@ -71,6 +71,7 @@ class FakePayrollQueries:
                 total_discounts_clp=Decimal("170000"),
                 net_pay_clp=Decimal("830000"),
             ),
+            health_institution_is_active=False,
         )
 
     async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
@@ -164,6 +165,7 @@ def test_payroll_query_endpoints() -> None:
             "total_discounts_clp": "170000",
             "net_pay_clp": "830000",
         },
+        "health_institution_is_active": False,
     }
 
 

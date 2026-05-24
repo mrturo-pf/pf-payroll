@@ -252,6 +252,7 @@ class PayrollPeriodDetailRead(BaseModel):
     health_plan_id: int | None
     items: list[PayrollItemDetailRead]
     summary: PayrollSummaryRead | None
+    health_institution_is_active: bool | None = None
 
 
 def to_payroll_summary_read(summary: PayrollSummaryDTO) -> PayrollSummaryRead:
@@ -363,6 +364,7 @@ async def get_payroll_period(
         summary=to_payroll_summary_read(detail.summary)
         if detail.summary is not None
         else None,
+        health_institution_is_active=detail.health_institution_is_active,
     )
 
 

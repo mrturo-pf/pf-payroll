@@ -102,7 +102,10 @@ def _assigned_plans_label(detail: PayrollPeriodDetailDTO) -> str:
     """Handle assigned plans label."""
     if detail.pension_plan_id is None or detail.health_plan_id is None:
         return "Missing"
-    return f"Pension #{detail.pension_plan_id} / Health #{detail.health_plan_id}"
+    label = f"Pension #{detail.pension_plan_id} / Health #{detail.health_plan_id}"
+    if detail.health_institution_is_active is False:
+        return f"{label} (Inactive health institution)"
+    return label
 
 
 def _report_url(detail: PayrollPeriodDetailDTO) -> str | None:

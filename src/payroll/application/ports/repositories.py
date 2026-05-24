@@ -47,7 +47,9 @@ class ReferenceDataRepository(Protocol):
         """List pension institutions."""
         ...
 
-    async def list_health_institutions(self) -> list[HealthInstitutionDTO]:
+    async def list_health_institutions(
+        self, *, include_inactive: bool = False
+    ) -> list[HealthInstitutionDTO]:
         """List health institutions."""
         ...
 
@@ -55,7 +57,9 @@ class ReferenceDataRepository(Protocol):
         """List pension plans."""
         ...
 
-    async def list_health_plans(self) -> list[HealthPlanDTO]:
+    async def list_health_plans(
+        self, *, include_inactive: bool = False
+    ) -> list[HealthPlanDTO]:
         """List health plans."""
         ...
 

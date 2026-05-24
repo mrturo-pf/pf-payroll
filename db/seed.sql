@@ -58,8 +58,8 @@ SET
 -- 4. Contribution caps
 -- ============================================================
 INSERT INTO contribution_caps (cap_type, valid_from, valid_to, value_uf) VALUES
-    ('pension_health', DATE '2026-01-01', NULL, 90.0600),
-    ('unemployment', DATE '2026-01-01', NULL, 135.0900)
+    ('pension_health', DATE '2018-01-01', NULL, 90.0600),
+    ('unemployment', DATE '2018-01-01', NULL, 135.0900)
 ON CONFLICT (cap_type, valid_from) DO UPDATE
 SET
     valid_to = EXCLUDED.valid_to,

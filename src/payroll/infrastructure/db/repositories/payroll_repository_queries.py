@@ -9,6 +9,8 @@ from payroll.application.dto import (
 )
 from payroll.infrastructure.db.models import (
     EmployerModel,
+    HealthInstitutionModel,
+    HealthPlanModel,
     PayrollConceptModel,
     PayrollSummaryModel,
 )
@@ -37,6 +39,19 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             return None
         period, employer = period_row
         employer_ended_at = await self._get_effective_employer_ended_at(employer)
+        health_institution_is_active = None
+        if period.health_plan_id is not None:
+            health_institution_result = await self._session.execute(
+                select(HealthInstitutionModel.is_active)
+                .join(
+                    HealthPlanModel,
+                    HealthPlanModel.institution_id == HealthInstitutionModel.id,
+                )
+                .where(HealthPlanModel.id == period.health_plan_id)
+            )
+            health_institution_is_active = (
+                health_institution_result.scalar_one_or_none()
+            )
 
         items_result = await self._session.execute(
             select(PayrollItemModel, PayrollConceptModel)
@@ -92,6 +107,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             health_plan_id=period.health_plan_id,
             items=items,
             summary=summary,
+            health_institution_is_active=health_institution_is_active,
         )
 
     async def list_period_summaries(self) -> list[PayrollSummaryDTO]:

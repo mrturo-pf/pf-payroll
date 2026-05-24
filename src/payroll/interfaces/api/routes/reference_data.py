@@ -3,7 +3,7 @@
 from dataclasses import asdict
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from payroll.application.errors import PayrollError
@@ -142,6 +142,7 @@ async def list_pension_institutions(
 
 @router.get("/health-institutions", response_model=list[HealthInstitutionRead])
 async def list_health_institutions(
+    include_inactive: bool = Query(default=False),
     queries: ReferenceDataQueries = Depends(get_reference_data_queries),
 ) -> list[HealthInstitutionRead]:
     """List health institutions."""
@@ -153,7 +154,9 @@ async def list_health_institutions(
             mandatory_rate=str(item.mandatory_rate),
             is_active=item.is_active,
         )
-        for item in await queries.list_health_institutions()
+        for item in await queries.list_health_institutions(
+            include_inactive=include_inactive
+        )
     ]
 
 
@@ -177,6 +180,7 @@ async def list_pension_plans(
 
 @router.get("/health-plans", response_model=list[HealthPlanRead])
 async def list_health_plans(
+    include_inactive: bool = Query(default=False),
     queries: ReferenceDataQueries = Depends(get_reference_data_queries),
 ) -> list[HealthPlanRead]:
     """List health plans."""
@@ -191,7 +195,7 @@ async def list_health_plans(
             plan_name=item.plan_name,
             contracted_uf=str(item.contracted_uf),
         )
-        for item in await queries.list_health_plans()
+        for item in await queries.list_health_plans(include_inactive=include_inactive)
     ]
 
 

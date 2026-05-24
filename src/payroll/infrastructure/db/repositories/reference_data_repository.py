@@ -64,11 +64,14 @@ class SqlAlchemyReferenceDataRepository:
             for row in result.scalars().all()
         ]
 
-    async def list_health_institutions(self) -> list[HealthInstitutionDTO]:
+    async def list_health_institutions(
+        self, *, include_inactive: bool = False
+    ) -> list[HealthInstitutionDTO]:
         """List health institutions."""
-        result = await self._session.execute(
-            select(HealthInstitutionModel).order_by(HealthInstitutionModel.name)
-        )
+        statement = select(HealthInstitutionModel).order_by(HealthInstitutionModel.name)
+        if not include_inactive:
+            statement = statement.where(HealthInstitutionModel.is_active.is_(True))
+        result = await self._session.execute(statement)
         return [
             HealthInstitutionDTO(
                 code=row.code,
@@ -102,9 +105,11 @@ class SqlAlchemyReferenceDataRepository:
             for plan, institution in result.all()
         ]
 
-    async def list_health_plans(self) -> list[HealthPlanDTO]:
+    async def list_health_plans(
+        self, *, include_inactive: bool = False
+    ) -> list[HealthPlanDTO]:
         """List health plans."""
-        result = await self._session.execute(
+        statement = (
             select(HealthPlanModel, HealthInstitutionModel)
             .join(
                 HealthInstitutionModel,
@@ -112,6 +117,9 @@ class SqlAlchemyReferenceDataRepository:
             )
             .order_by(HealthInstitutionModel.name, HealthPlanModel.valid_from)
         )
+        if not include_inactive:
+            statement = statement.where(HealthInstitutionModel.is_active.is_(True))
+        result = await self._session.execute(statement)
         return [
             HealthPlanDTO(
                 id=plan.id,

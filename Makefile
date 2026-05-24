@@ -19,6 +19,15 @@ install:
 db-up:
 	NERDCTL_BIN="$(NERDCTL)" DB_CONTAINER="$(DB_CONTAINER)" DB_VOLUME="$(DB_VOLUME)" DB_NAME="$(DB_NAME)" DB_USER="$(DB_USER)" DB_PASSWORD="$(DB_PASSWORD)" DB_PORT="$(DB_PORT)" ./scripts/rancher_db.sh up
 
+db-up-test:
+	NERDCTL_BIN="$(NERDCTL)" DB_CONTAINER="$(DB_CONTAINER)" DB_VOLUME="$(DB_VOLUME)" DB_NAME="$(DB_NAME)" DB_USER="$(DB_USER)" DB_PASSWORD="$(DB_PASSWORD)" DB_PORT="$(DB_PORT)" APPLY_TEST_SEED=1 ./scripts/rancher_db.sh up
+
+db-reset-data:
+	NERDCTL_BIN="$(NERDCTL)" DB_CONTAINER="$(DB_CONTAINER)" DB_VOLUME="$(DB_VOLUME)" DB_NAME="$(DB_NAME)" DB_USER="$(DB_USER)" DB_PASSWORD="$(DB_PASSWORD)" DB_PORT="$(DB_PORT)" ./scripts/rancher_db.sh reset-data
+
+db-reset-data-test:
+	NERDCTL_BIN="$(NERDCTL)" DB_CONTAINER="$(DB_CONTAINER)" DB_VOLUME="$(DB_VOLUME)" DB_NAME="$(DB_NAME)" DB_USER="$(DB_USER)" DB_PASSWORD="$(DB_PASSWORD)" DB_PORT="$(DB_PORT)" APPLY_TEST_SEED=1 ./scripts/rancher_db.sh reset-data
+
 db-down:
 	NERDCTL_BIN="$(NERDCTL)" DB_CONTAINER="$(DB_CONTAINER)" ./scripts/rancher_db.sh down
 

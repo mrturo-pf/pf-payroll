@@ -9,11 +9,30 @@ The repository includes a Rancher Desktop flow that:
 - reuses the existing data volume if it already exists
 - applies the schema idempotently
 - seeds default catalog data idempotently
+- loads test-only seed data only when explicitly requested
 
 Start or reuse the local database:
 
 ```bash
 make db-up
+```
+
+Start or reuse the local database with test-only fixtures:
+
+```bash
+make db-up-test
+```
+
+Reset the local database data, reapply the schema, and reload the base seed data:
+
+```bash
+make db-reset-data
+```
+
+Reset the local database data and reload both base and test-only seed data:
+
+```bash
+make db-reset-data-test
 ```
 
 Open a `psql` session inside the running container:
@@ -40,7 +59,7 @@ Override defaults when needed:
 make db-up DB_CONTAINER=my-payroll-db DB_PORT=5433 DB_PASSWORD=secret
 ```
 
-The schema lives in `db/schema.sql` and the default catalog data in `db/seed.sql`.
+The schema lives in `db/schema.sql`, the default catalog data in `db/seed.sql`, and test-only fixtures in `db/seed_test.sql`. At the moment, all current inserts remain in `db/seed.sql` because they are production-safe reference or bootstrap data rather than test fixtures.
 
 ## Adminer
 

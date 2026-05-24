@@ -1,4 +1,9 @@
 -- ============================================================
+-- Base seed data shared by every environment
+-- ============================================================
+-- Keep only production-safe reference or operational bootstrap data here.
+-- Test-only fixtures belong in db/seed_test.sql.
+--
 -- 1. Currencies and index units
 -- ============================================================
 INSERT INTO currencies (code, name, is_fiat, unit_kind) VALUES
@@ -50,6 +55,7 @@ INSERT INTO health_institutions (code, name, kind, mandatory_rate, is_active) VA
     ('COLMENA', 'Colmena', 'isapre', 0.07, TRUE),
     ('CONSALUD', 'Consalud', 'isapre', 0.07, TRUE),
     ('CRUZBLANCA', 'CruzBlanca', 'isapre', 0.07, TRUE),
+    ('ESENCIAL', 'Esencial', 'isapre', 0.07, TRUE),
     ('NUEVA_MASVIDA', 'Nueva Masvida', 'isapre', 0.07, TRUE),
     ('VIDA_TRES', 'Vida Tres', 'isapre', 0.07, TRUE)
 ON CONFLICT (code) DO UPDATE

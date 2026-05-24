@@ -36,6 +36,18 @@ Start the local database:
 make db-up
 ```
 
+If you also want local test-only fixtures loaded:
+
+```bash
+make db-up-test
+```
+
+If you need to wipe local data and rebuild the database contents from scratch:
+
+```bash
+make db-reset-data
+```
+
 Run the API:
 
 ```bash

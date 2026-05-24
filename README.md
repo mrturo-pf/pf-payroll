@@ -34,6 +34,18 @@ import -> assign plans -> compute contributions -> compute tax -> review -> repo
    make db-up
    ```
 
+   To also load test-only fixtures into the local database:
+
+   ```bash
+   make db-up-test
+   ```
+
+   To wipe current data and rebuild schema plus seed data in the same local database:
+
+   ```bash
+   make db-reset-data
+   ```
+
 3. Run the API:
 
    ```bash
@@ -109,7 +121,7 @@ This repository adopts the following engineering standards and conventions:
 - `src/payroll/infrastructure`: database, importers, rate providers, reporting, logging
 - `src/payroll/interfaces`: FastAPI, Typer CLI, and dashboard entrypoints
 - `tests`: unit and integration coverage
-- `db`: SQL schema and seed data
+- `db`: SQL schema, default seed data, and test-only seed data
 
 ## Next reading
 

@@ -12,6 +12,8 @@ DB_PASSWORD="${DB_PASSWORD:-payroll}"
 DB_PORT="${DB_PORT:-5432}"
 SCHEMA_FILE="${SCHEMA_FILE:-db/schema.sql}"
 SEED_FILE="${SEED_FILE:-db/seed.sql}"
+TEST_SEED_FILE="${TEST_SEED_FILE:-db/seed_test.sql}"
+APPLY_TEST_SEED="${APPLY_TEST_SEED:-0}"
 
 log() {
   printf '[rancher-db] %s\n' "$1"
@@ -118,6 +120,30 @@ apply_seed() {
   "$CLI_BIN" exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" < "$SEED_FILE"
 }
 
+apply_test_seed() {
+  if [[ "$APPLY_TEST_SEED" != "1" ]]; then
+    return 0
+  fi
+
+  if [[ ! -f "$TEST_SEED_FILE" ]]; then
+    echo "Test seed file not found: $TEST_SEED_FILE" >&2
+    exit 1
+  fi
+
+  log "Applying test seed data from $TEST_SEED_FILE"
+  "$CLI_BIN" exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" < "$TEST_SEED_FILE"
+}
+
+reset_data() {
+  log "Resetting database data in $DB_NAME"
+  "$CLI_BIN" exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" <<SQL
+DROP SCHEMA IF EXISTS public CASCADE;
+CREATE SCHEMA public;
+GRANT ALL ON SCHEMA public TO "$DB_USER";
+GRANT ALL ON SCHEMA public TO public;
+SQL
+}
+
 open_psql() {
   exec "$CLI_BIN" exec -it "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME"
 }
@@ -139,7 +165,17 @@ case "$ACTION" in
     wait_for_postgres
     apply_schema
     apply_seed
+    apply_test_seed
     log "Database ready at postgresql://$DB_USER:*****@localhost:$DB_PORT/$DB_NAME"
+    ;;
+  reset-data)
+    ensure_container
+    wait_for_postgres
+    reset_data
+    apply_schema
+    apply_seed
+    apply_test_seed
+    log "Database data reset at postgresql://$DB_USER:*****@localhost:$DB_PORT/$DB_NAME"
     ;;
   down)
     stop_container
@@ -150,7 +186,7 @@ case "$ACTION" in
     open_psql
     ;;
   *)
-    echo "Usage: $0 {up|down|psql}" >&2
+    echo "Usage: $0 {up|reset-data|down|psql}" >&2
     exit 1
     ;;
 esac

@@ -33,3 +33,14 @@ WHERE NOT EXISTS (
       AND COALESCE(hp.plan_name, '') = 'Base'
       AND hp.contracted_uf = 0
 );
+
+-- ============================================================
+-- 3. Employers
+-- ============================================================
+INSERT INTO employers (name, tax_id, country_code, started_at)
+ VALUES ('DALT-CONSULTORES', '52.005.257-7', 'CL', DATE '2016-07-18');
+INSERT INTO employers (name, tax_id, country_code, started_at)
+ VALUES ('CLINICA-ALEMANA', '77.413.290-2', 'CL', DATE '2018-04-03');
+INSERT INTO employers (name, tax_id, country_code, started_at)
+ VALUES ('WALMART-CHILE', '76.042.014-K', 'CL', DATE '2024-11-18');
+ 

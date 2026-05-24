@@ -372,6 +372,8 @@ class PayrollPeriodDetailDTO:
     employer_name: str
     employer_tax_id: str | None
     employer_country_code: str
+    employer_started_at: date
+    employer_ended_at: date | None
     period_year: int
     period_month: int
     payment_date: date

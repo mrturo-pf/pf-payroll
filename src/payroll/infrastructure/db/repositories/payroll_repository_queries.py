@@ -36,6 +36,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
         if period_row is None:
             return None
         period, employer = period_row
+        employer_ended_at = await self._get_effective_employer_ended_at(employer)
 
         items_result = await self._session.execute(
             select(PayrollItemModel, PayrollConceptModel)
@@ -79,6 +80,8 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             employer_name=employer.name,
             employer_tax_id=employer.tax_id,
             employer_country_code=employer.country_code,
+            employer_started_at=employer.started_at,
+            employer_ended_at=employer_ended_at,
             period_year=period.period_year,
             period_month=period.period_month,
             payment_date=period.payment_date,

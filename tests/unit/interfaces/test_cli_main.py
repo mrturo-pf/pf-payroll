@@ -56,6 +56,8 @@ def sample_detail() -> PayrollPeriodDetailDTO:
         employer_name="ACME",
         employer_tax_id="76000000-1",
         employer_country_code="CL",
+        employer_started_at=date(2020, 1, 1),
+        employer_ended_at=None,
         period_year=2026,
         period_month=4,
         payment_date=date(2026, 4, 30),

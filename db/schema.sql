@@ -125,7 +125,8 @@ CREATE TABLE IF NOT EXISTS employers (
     name         VARCHAR(120) NOT NULL UNIQUE,
     tax_id       VARCHAR(32),
     country_code CHAR(2)      NOT NULL DEFAULT 'CL',
-    started_at   DATE         NOT NULL
+    started_at   DATE         NOT NULL,
+    ended_at     DATE
 );
 
 CREATE TABLE IF NOT EXISTS payroll_periods (

@@ -33,6 +33,7 @@ class EmployerModel(Base):
     tax_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     country_code: Mapped[str] = mapped_column(String(2), default="CL")
     started_at: Mapped[date] = mapped_column(Date)
+    ended_at: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     payroll_periods: Mapped[list["PayrollPeriodModel"]] = relationship(
         back_populates="employer"

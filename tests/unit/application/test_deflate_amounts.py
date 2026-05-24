@@ -27,6 +27,8 @@ class StubPayrollRepository:
             employer_name="ACME",
             employer_tax_id=None,
             employer_country_code="CL",
+            employer_started_at=date(2020, 1, 1),
+            employer_ended_at=None,
             period_year=2026,
             period_month=1,
             payment_date=date(2026, 1, 31),

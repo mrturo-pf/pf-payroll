@@ -124,10 +124,15 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
             employer = employer_result.scalar_one_or_none()
             if employer is None:
                 employer = EmployerModel(
-                    name=employer_name, started_at=first_row.payment_date
+                    name=employer_name,
+                    started_at=first_row.payment_date,
                 )
                 self._session.add(employer)
                 await self._session.flush()
+                await self._close_overlapping_open_ended_employers(employer)
+            elif first_row.payment_date < employer.started_at:
+                employer.started_at = first_row.payment_date
+                await self._close_overlapping_open_ended_employers(employer)
 
             period_result = await self._session.execute(
                 select(PayrollPeriodModel).where(

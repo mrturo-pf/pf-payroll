@@ -224,6 +224,94 @@ async def test_sqlalchemy_payroll_repository_returns_empty_result_for_no_rows() 
 
 
 @pytest.mark.asyncio
+async def test_sa_payroll_repository_closes_previous_open_ended_employer() -> None:
+    """Test creating an employer closes previous open-ended employers."""
+    previous_employer = EmployerModel(
+        id=9,
+        name="PreviousCo",
+        started_at=date(2025, 1, 1),
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_rows=[SimpleNamespace(id=1, code="SALARY_BASE")]),
+            FakeResult(scalar_one=None),
+            FakeResult(scalar_rows=[previous_employer]),
+            FakeResult(scalar_one=None),
+            FakeResult(),
+            FakeResult(),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    await repository.import_rows(
+        [
+            SimpleNamespace(
+                employer="NewCo",
+                period_year=2026,
+                period_month=1,
+                payment_date=date(2026, 1, 31),
+                status="actual",
+                employment_contract_kind=EmploymentContractKind.FIXED_TERM,
+                concept_code="SALARY_BASE",
+                amount_clp=Decimal("1000000"),
+                declared_net_pay_clp=None,
+                expected_net_pay_clp=None,
+                net_pay_difference_clp=None,
+            )
+        ]
+    )
+
+    assert previous_employer.ended_at == date(2026, 1, 30)
+
+
+@pytest.mark.asyncio
+async def test_sa_payroll_repository_updates_existing_employer_started_at() -> None:
+    """Test importing older periods updates the employer start date."""
+    employer = EmployerModel(
+        id=10,
+        name="ACME",
+        started_at=date(2026, 2, 28),
+    )
+    previous_employer = EmployerModel(
+        id=9,
+        name="PreviousCo",
+        started_at=date(2025, 1, 1),
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_rows=[SimpleNamespace(id=1, code="SALARY_BASE")]),
+            FakeResult(scalar_one=employer),
+            FakeResult(scalar_rows=[previous_employer]),
+            FakeResult(scalar_one=None),
+            FakeResult(),
+            FakeResult(),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    await repository.import_rows(
+        [
+            SimpleNamespace(
+                employer="ACME",
+                period_year=2026,
+                period_month=1,
+                payment_date=date(2026, 1, 31),
+                status="actual",
+                employment_contract_kind=EmploymentContractKind.FIXED_TERM,
+                concept_code="SALARY_BASE",
+                amount_clp=Decimal("1000000"),
+                declared_net_pay_clp=None,
+                expected_net_pay_clp=None,
+                net_pay_difference_clp=None,
+            )
+        ]
+    )
+
+    assert employer.started_at == date(2026, 1, 31)
+    assert previous_employer.ended_at == date(2026, 1, 30)
+
+
+@pytest.mark.asyncio
 async def test_sa_payroll_repository_creates_employer_and_replaces_period_items() -> (
     None
 ):
@@ -240,6 +328,7 @@ async def test_sa_payroll_repository_creates_employer_and_replaces_period_items(
         [
             FakeResult(scalar_rows=[SimpleNamespace(id=1, code="SALARY_BASE")]),
             FakeResult(scalar_one=None),
+            FakeResult(scalar_rows=[]),
             FakeResult(scalar_one=existing_period),
             FakeResult(),
             FakeResult(),
@@ -1145,6 +1234,7 @@ async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary()
         country_code="CL",
         started_at=date(2020, 1, 1),
     )
+    next_employer_started_at = date(2026, 2, 1)
     summary = PayrollSummaryModel(
         period_id=7,
         employer_id=1,
@@ -1159,6 +1249,7 @@ async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary()
     session = FakeSession(
         [
             FakeResult(first_row=(period, employer)),
+            FakeResult(scalar_one=next_employer_started_at),
             FakeResult(
                 joined_rows=[
                     (
@@ -1191,9 +1282,83 @@ async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary()
     assert result is not None
     assert result.employer_name == "ACME"
     assert result.employment_contract_kind is EmploymentContractKind.INDEFINITE
+    assert result.employer_started_at == date(2020, 1, 1)
+    assert result.employer_ended_at == date(2026, 1, 31)
     assert result.items[0].concept_code == "SALARY_BASE"
     assert result.summary is not None
     assert result.summary.net_pay_clp == Decimal("830000")
+
+
+@pytest.mark.asyncio
+async def test_repository_returns_period_detail_without_end_date() -> None:
+    """Test period detail keeps employer end date open without a later employer."""
+    period = PayrollPeriodModel(
+        id=7,
+        employer_id=1,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        worked_days=30,
+        status=PayrollStatus.ACTUAL,
+        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+    )
+    employer = EmployerModel(
+        id=1,
+        name="ACME",
+        tax_id="76.123.456-7",
+        country_code="CL",
+        started_at=date(2020, 1, 1),
+    )
+    session = FakeSession(
+        [
+            FakeResult(first_row=(period, employer)),
+            FakeResult(scalar_one=None),
+            FakeResult(joined_rows=[]),
+            FakeResult(first_row=None),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.get_period_detail(7)
+
+    assert result is not None
+    assert result.employer_ended_at is None
+
+
+@pytest.mark.asyncio
+async def test_repository_returns_explicit_period_detail_end_date() -> None:
+    """Test period detail uses the explicit employer end date when present."""
+    period = PayrollPeriodModel(
+        id=7,
+        employer_id=1,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        worked_days=30,
+        status=PayrollStatus.ACTUAL,
+        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+    )
+    employer = EmployerModel(
+        id=1,
+        name="ACME",
+        tax_id="76.123.456-7",
+        country_code="CL",
+        started_at=date(2020, 1, 1),
+        ended_at=date(2026, 1, 15),
+    )
+    session = FakeSession(
+        [
+            FakeResult(first_row=(period, employer)),
+            FakeResult(joined_rows=[]),
+            FakeResult(first_row=None),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.get_period_detail(7)
+
+    assert result is not None
+    assert result.employer_ended_at == date(2026, 1, 15)
 
 
 @pytest.mark.asyncio

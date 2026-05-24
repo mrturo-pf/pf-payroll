@@ -240,6 +240,8 @@ class PayrollPeriodDetailRead(BaseModel):
     employer_name: str
     employer_tax_id: str | None
     employer_country_code: str
+    employer_started_at: date
+    employer_ended_at: date | None
     period_year: int
     period_month: int
     payment_date: date
@@ -337,6 +339,8 @@ async def get_payroll_period(
         employer_name=detail.employer_name,
         employer_tax_id=detail.employer_tax_id,
         employer_country_code=detail.employer_country_code,
+        employer_started_at=detail.employer_started_at,
+        employer_ended_at=detail.employer_ended_at,
         period_year=detail.period_year,
         period_month=detail.period_month,
         payment_date=detail.payment_date,

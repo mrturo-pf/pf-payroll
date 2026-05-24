@@ -1,6 +1,6 @@
 """Shared helpers for SQLAlchemy payroll repositories."""
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from sqlalchemy import or_, select, text
@@ -16,6 +16,7 @@ from payroll.application.errors import (
 from payroll.application.dto import PayrollSummaryDTO
 from payroll.infrastructure.db.models import (
     ContributionCapModel,
+    EmployerModel,
     HealthInstitutionModel,
     HealthPlanModel,
     PensionInstitutionModel,
@@ -112,6 +113,39 @@ class SqlAlchemyPayrollRepositoryBase:
                 f"Payroll period {period_id} was not found."
             )
         return period
+
+    async def _get_effective_employer_ended_at(
+        self, employer: EmployerModel
+    ) -> date | None:
+        """Resolve the effective employer end date."""
+        if employer.ended_at is not None:
+            return employer.ended_at
+
+        result = await self._session.execute(
+            select(EmployerModel.started_at)
+            .where(EmployerModel.id != employer.id)
+            .where(EmployerModel.started_at > employer.started_at)
+            .order_by(EmployerModel.started_at.asc())
+            .limit(1)
+        )
+        next_started_at = result.scalar_one_or_none()
+        if next_started_at is None:
+            return None
+        return next_started_at - timedelta(days=1)
+
+    async def _close_overlapping_open_ended_employers(
+        self, employer: EmployerModel
+    ) -> None:
+        """Close previous open-ended employers that overlap the new employer."""
+        result = await self._session.execute(
+            select(EmployerModel)
+            .where(EmployerModel.id != employer.id)
+            .where(EmployerModel.started_at < employer.started_at)
+            .where(EmployerModel.ended_at.is_(None))
+        )
+        inferred_end_date = employer.started_at - timedelta(days=1)
+        for overlapping_employer in result.scalars().all():
+            overlapping_employer.ended_at = inferred_end_date
 
     async def _get_pension_plan(
         self,

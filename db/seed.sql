@@ -22,13 +22,13 @@ SET
 -- 2. Pension institutions
 -- ============================================================
 INSERT INTO pension_institutions (code, name, mandatory_rate, is_active) VALUES
-    ('AFP_CAPITAL', 'AFP Capital', 0.10, TRUE),
-    ('AFP_CUPRUM', 'AFP Cuprum', 0.10, TRUE),
-    ('AFP_HABITAT', 'AFP Habitat', 0.10, TRUE),
-    ('AFP_MODELO', 'AFP Modelo', 0.10, TRUE),
+    ('AFP_CAPITAL', 'AFP Capital', 0.10, FALSE),
+    ('AFP_CUPRUM', 'AFP Cuprum', 0.10, FALSE),
+    ('AFP_HABITAT', 'AFP Habitat', 0.10, FALSE),
+    ('AFP_MODELO', 'AFP Modelo', 0.10, FALSE),
     ('AFP_PLANVITAL', 'AFP PlanVital', 0.10, TRUE),
-    ('AFP_PROVIDA', 'AFP ProVida', 0.10, TRUE),
-    ('AFP_UNO', 'AFP Uno', 0.10, TRUE)
+    ('AFP_PROVIDA', 'AFP ProVida', 0.10, FALSE),
+    ('AFP_UNO', 'AFP Uno', 0.10, FALSE)
 ON CONFLICT (code) DO UPDATE
 SET
     name = EXCLUDED.name,
@@ -39,14 +39,14 @@ SET
 -- 3. Health institutions
 -- ============================================================
 INSERT INTO health_institutions (code, name, kind, mandatory_rate, is_active) VALUES
-    ('FONASA', 'Fonasa', 'fonasa', 0.07, TRUE),
-    ('BANMEDICA', 'Banmedica', 'isapre', 0.07, TRUE),
-    ('COLMENA', 'Colmena', 'isapre', 0.07, TRUE),
-    ('CONSALUD', 'Consalud', 'isapre', 0.07, TRUE),
-    ('CRUZBLANCA', 'CruzBlanca', 'isapre', 0.07, TRUE),
+    ('FONASA', 'Fonasa', 'fonasa', 0.07, FALSE),
+    ('BANMEDICA', 'Banmedica', 'isapre', 0.07, FALSE),
+    ('COLMENA', 'Colmena', 'isapre', 0.07, FALSE),
+    ('CONSALUD', 'Consalud', 'isapre', 0.07, FALSE),
+    ('CRUZBLANCA', 'CruzBlanca', 'isapre', 0.07, FALSE),
     ('ESENCIAL', 'Esencial', 'isapre', 0.07, TRUE),
-    ('NUEVA_MASVIDA', 'Nueva Masvida', 'isapre', 0.07, TRUE),
-    ('VIDA_TRES', 'Vida Tres', 'isapre', 0.07, TRUE)
+    ('NUEVA_MASVIDA', 'Nueva Masvida', 'isapre', 0.07, FALSE),
+    ('VIDA_TRES', 'Vida Tres', 'isapre', 0.07, FALSE)
 ON CONFLICT (code) DO UPDATE
 SET
     name = EXCLUDED.name,

@@ -35,6 +35,12 @@ Reset the local database data and reload both base and test-only seed data:
 make db-reset-data-test
 ```
 
+Reset the local database data and reload both base and real operational seed data:
+
+```bash
+make db-reset-data-real
+```
+
 Open a `psql` session inside the running container:
 
 ```bash
@@ -59,7 +65,7 @@ Override defaults when needed:
 make db-up DB_CONTAINER=my-payroll-db DB_PORT=5433 DB_PASSWORD=secret
 ```
 
-The schema lives in `db/schema.sql`, the default catalog data in `db/seed.sql`, and test-only fixtures in `db/seed_test.sql`. At the moment, all current inserts remain in `db/seed.sql` because they are production-safe reference or bootstrap data rather than test fixtures.
+The schema lives in `db/schema.sql`, the default catalog data in `db/seed.sql`, the real operational bootstrap data in `db/seed_real.sql`, and test-only fixtures in `db/seed_test.sql`.
 
 ## Adminer
 

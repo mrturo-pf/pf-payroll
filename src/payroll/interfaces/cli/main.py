@@ -32,6 +32,7 @@ from payroll.infrastructure.db.repositories.market_data_repository import SqlAlc
 from payroll.infrastructure.db.repositories.payroll_repository import SqlAlchemyPayrollRepository
 from payroll.infrastructure.db.repositories.reference_data_repository import SqlAlchemyReferenceDataRepository
 from payroll.infrastructure.db.session import SessionLocal
+from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
 from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import WeasyPrintPayrollReportRenderer
 
 app = typer.Typer(help="Payroll CLI")
@@ -73,7 +74,7 @@ def _parse_optional_decimal(name: str, value: str | None) -> Decimal | None:
 
 async def _import_payroll_async(file_path: Path) -> object:
     async with SessionLocal() as session:
-        use_case = ImportPayroll(SqlAlchemyPayrollRepository(session))
+        use_case = ImportPayroll(SqlAlchemyPayrollRepository(session), XlsxPayrollImporter())
         return await use_case.from_bytes(file_path.name, file_path.read_bytes())
 
 

@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from payroll.application.errors import PayrollValidationError
 from payroll.application.dto import (
     EconomicIndexDTO,
     ExchangeRateDTO,
@@ -89,7 +90,7 @@ class SqlAlchemyMarketDataRepository:
             known_currencies = {code.strip() for code in currency_result.scalars().all()}
             missing_currencies = sorted({entry.currency_code for entry in command.exchange_rates} - known_currencies)
             if missing_currencies:
-                raise ValueError(f"Unknown currencies in exchange rates: {', '.join(missing_currencies)}")
+                raise PayrollValidationError(f"Unknown currencies in exchange rates: {', '.join(missing_currencies)}")
 
             exchange_rate_insert = insert(ExchangeRateModel)
             await self._session.execute(

@@ -2,6 +2,7 @@
 
 from payroll.application.dto import ComputeContributionsCommandDTO, ComputeContributionsResultDTO
 from payroll.application.ports.repositories import MarketDataRepository, PayrollRepository
+from payroll.application.services.exchange_rates import resolve_required_exchange_rate
 from payroll.domain.contribution_calculator import ContributionCalculator
 
 
@@ -20,11 +21,12 @@ class ComputeContributions:
 
     async def execute(self, command: ComputeContributionsCommandDTO) -> ComputeContributionsResultDTO:
         context = await self._repository.get_contribution_context(command)
-        uf_value_clp = command.uf_value_clp
-        if uf_value_clp is None:
-            uf_value_clp = await self._market_data_repository.get_exchange_rate_value("UF", context.payment_date)
-            if uf_value_clp is None:
-                raise ValueError(f"UF exchange rate for {context.payment_date.isoformat()} was not found.")
+        uf_value_clp = await resolve_required_exchange_rate(
+            provided_value=command.uf_value_clp,
+            currency_code="UF",
+            rate_date=context.payment_date,
+            market_data_repository=self._market_data_repository,
+        )
 
         pension = self._calculator.pension(
             context.taxable_income_clp,

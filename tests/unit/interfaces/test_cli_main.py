@@ -157,8 +157,9 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
             return None
 
     class FakeImportPayroll:
-        def __init__(self, repository: object) -> None:
+        def __init__(self, repository: object, importer: object) -> None:
             assert repository == "payroll-repo"
+            assert importer == "importer"
 
         async def from_bytes(self, filename: str, content: bytes) -> object:
             assert filename == "sample.csv"
@@ -230,6 +231,7 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     monkeypatch.setattr(cli_main, "SqlAlchemyReferenceDataRepository", lambda session: "reference-repo")
     monkeypatch.setattr(cli_main, "SqlAlchemyMarketDataRepository", lambda session: "market-repo")
     monkeypatch.setattr(cli_main, "WeasyPrintPayrollReportRenderer", lambda: "renderer")
+    monkeypatch.setattr(cli_main, "XlsxPayrollImporter", lambda: "importer")
     monkeypatch.setattr(cli_main, "ImportPayroll", FakeImportPayroll)
     monkeypatch.setattr(cli_main, "PayrollQueries", FakePayrollQueries)
     monkeypatch.setattr(cli_main, "ReferenceDataQueries", FakeReferenceDataQueries)

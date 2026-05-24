@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from payroll.application.errors import PayrollError
 from payroll.application.dto import (
     AssignPlansCommandDTO,
     GeneratedPayrollReportDTO,
@@ -18,6 +19,7 @@ from payroll.application.dto import (
     ComputeIncomeTaxCommandDTO,
     PayrollSummaryDTO,
 )
+from payroll.interfaces.api.errors import to_http_exception
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
@@ -250,8 +252,8 @@ async def import_payroll(
 
     try:
         result = await use_case.from_bytes(file.filename, await file.read())
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PayrollError as exc:
+        raise to_http_exception(exc, default_status=400) from exc
 
     return ImportPayrollResponse(
         imported_periods=result.imported_periods,
@@ -274,8 +276,8 @@ async def get_payroll_period(
 ) -> PayrollPeriodDetailRead:
     try:
         detail = await queries.get_period_detail(period_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PayrollError as exc:
+        raise to_http_exception(exc, default_status=404) from exc
 
     return PayrollPeriodDetailRead(
         id=detail.id,
@@ -316,8 +318,8 @@ async def get_payroll_report(
 ) -> Response:
     try:
         return to_pdf_response(await use_case.execute(period_id))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PayrollError as exc:
+        raise to_http_exception(exc, default_status=400) from exc
 
 
 @router.post("/{period_id}/assign-plans", response_model=AssignPlansResponse)
@@ -334,8 +336,8 @@ async def assign_plans(
                 health_plan_id=payload.health_plan_id,
             )
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PayrollError as exc:
+        raise to_http_exception(exc, default_status=400) from exc
 
     return AssignPlansResponse(
         period_id=result.period_id,
@@ -352,8 +354,8 @@ async def review_payroll_period(
 ) -> ReviewPayrollPeriodResponse:
     try:
         result = await use_case.execute(ReviewPayrollPeriodCommandDTO(period_id=period_id))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PayrollError as exc:
+        raise to_http_exception(exc, default_status=400) from exc
 
     return ReviewPayrollPeriodResponse(
         period_id=result.period_id,
@@ -375,8 +377,8 @@ async def compute_income_tax(
                 utm_value_clp=payload.utm_value_clp,
             )
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PayrollError as exc:
+        raise to_http_exception(exc, default_status=400) from exc
 
     return ComputeIncomeTaxResponse(
         period_id=result.period_id,
@@ -411,8 +413,8 @@ async def deflate_amounts(
                 index_code=payload.index_code,
             )
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PayrollError as exc:
+        raise to_http_exception(exc, default_status=400) from exc
 
     return DeflateAmountsResponse(
         period_id=result.period_id,
@@ -445,8 +447,8 @@ async def compute_contributions(
                 uf_value_clp=payload.uf_value_clp,
             )
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PayrollError as exc:
+        raise to_http_exception(exc, default_status=400) from exc
 
     return ComputeContributionsResponse(
         period_id=result.period_id,

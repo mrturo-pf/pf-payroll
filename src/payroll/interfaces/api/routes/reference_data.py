@@ -3,12 +3,14 @@
 from dataclasses import asdict
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from payroll.application.errors import PayrollError
 from payroll.application.dto import RefreshIncomeTaxBracketsCommandDTO
 from payroll.application.use_cases.refresh_income_tax_brackets import RefreshIncomeTaxBrackets
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
+from payroll.interfaces.api.errors import to_http_exception
 from payroll.interfaces.api.dependencies import get_reference_data_queries, get_refresh_income_tax_brackets_use_case
 
 router = APIRouter(prefix="/reference-data", tags=["reference-data"])
@@ -209,8 +211,8 @@ async def refresh_income_tax_brackets(
 ) -> RefreshIncomeTaxBracketsResponse:
     try:
         result = await use_case.execute(RefreshIncomeTaxBracketsCommandDTO(year=payload.year))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PayrollError as exc:
+        raise to_http_exception(exc, default_status=400) from exc
 
     return RefreshIncomeTaxBracketsResponse(
         year=result.year,

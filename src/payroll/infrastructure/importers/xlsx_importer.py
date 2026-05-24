@@ -1,11 +1,15 @@
 """Payroll flat-file import helpers."""
 
 from dataclasses import dataclass
+from datetime import date, datetime
 from decimal import Decimal
-from io import BufferedIOBase
+from io import BufferedIOBase, BytesIO
 
 import pandas as pd
 
+from payroll.application.errors import PayrollValidationError
+from payroll.application.dto import ImportPayrollRowDTO
+from payroll.application.ports.importers import PayrollImporter
 from payroll.domain.contributions import EmploymentContractKind
 
 CONCEPT_MAP = {
@@ -39,11 +43,23 @@ class NetPayValidation:
     warning: str | None
 
 
+_PAYMENT_DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d")
+
+
 def parse_payment_date(raw_value: object) -> pd.Timestamp | pd.NaT:
-    payment_dt = pd.to_datetime(raw_value, errors="coerce")
-    if pd.notna(payment_dt):
-        return payment_dt
-    return pd.to_datetime(raw_value, errors="coerce", dayfirst=True)
+    if isinstance(raw_value, pd.Timestamp):
+        return raw_value
+    if isinstance(raw_value, datetime):
+        return pd.Timestamp(raw_value)
+    if isinstance(raw_value, date):
+        return pd.Timestamp(raw_value)
+    if isinstance(raw_value, str):
+        normalized = raw_value.strip()
+        for date_format in _PAYMENT_DATE_FORMATS:
+            payment_dt = pd.to_datetime(normalized, errors="coerce", format=date_format)
+            if pd.notna(payment_dt):
+                return payment_dt
+    return pd.to_datetime(raw_value, errors="coerce")
 
 
 def read_payroll_dataframe(filename: str, payload: BufferedIOBase) -> pd.DataFrame:
@@ -52,17 +68,17 @@ def read_payroll_dataframe(filename: str, payload: BufferedIOBase) -> pd.DataFra
         return pd.read_csv(payload)
     if lowered.endswith(".xlsx"):
         return pd.read_excel(payload)
-    raise ValueError("Unsupported payroll file format. Use .csv or .xlsx.")
+    raise PayrollValidationError("Unsupported payroll file format. Use .csv or .xlsx.")
 
 
 def parse_contract_kind(raw_value: object) -> EmploymentContractKind:
     normalized = str(raw_value or "").strip().lower()
     if not normalized:
-        raise ValueError("Every imported payroll row must include employment_contract_kind.")
+        raise PayrollValidationError("Every imported payroll row must include employment_contract_kind.")
     try:
         return CONTRACT_KIND_ALIASES[normalized]
     except KeyError as exc:
-        raise ValueError(
+        raise PayrollValidationError(
             "Unsupported employment_contract_kind. Use one of: indefinite, fixed_term, indefinido, plazo_fijo."
         ) from exc
 
@@ -126,11 +142,11 @@ def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:
         m_str, y_str = period_str.split("/")
         payment_dt = parse_payment_date(row.get("payment_date"))
         if pd.isna(payment_dt):
-            raise ValueError("Every imported payroll row must include a valid payment_date.")
+            raise PayrollValidationError("Every imported payroll row must include a valid payment_date.")
 
         employer = str(row.get("employer", "")).strip()
         if not employer:
-            raise ValueError("Every imported payroll row must include an employer.")
+            raise PayrollValidationError("Every imported payroll row must include an employer.")
 
         base_meta = {
             "employer": employer,
@@ -155,3 +171,33 @@ def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:
                 )
 
     return pd.DataFrame(long_rows)
+
+
+@dataclass(frozen=True, slots=True)
+class XlsxPayrollImporter(PayrollImporter):
+    """Tabular payroll importer backed by pandas CSV/XLSX readers."""
+
+    def read_rows(self, filename: str, content: bytes) -> list[ImportPayrollRowDTO]:
+        dataframe = read_payroll_dataframe(filename, BytesIO(content))
+        normalized = to_long_format(dataframe)
+        validations = extract_net_pay_validations(dataframe)
+
+        rows: list[ImportPayrollRowDTO] = []
+        for row in normalized.to_dict(orient="records"):
+            validation = validations.get((str(row["employer"]), int(row["year"]), int(row["month"])))
+            rows.append(
+                ImportPayrollRowDTO(
+                    employer=str(row["employer"]),
+                    period_year=int(row["year"]),
+                    period_month=int(row["month"]),
+                    payment_date=row["payment_date"],
+                    status=row["status"],
+                    employment_contract_kind=row["employment_contract_kind"],
+                    concept_code=str(row["concept_code"]),
+                    amount_clp=row["amount_clp"],
+                    declared_net_pay_clp=None if validation is None else validation.declared_net_pay_clp,
+                    expected_net_pay_clp=None if validation is None else validation.expected_net_pay_clp,
+                    net_pay_difference_clp=None if validation is None else validation.net_pay_difference_clp,
+                )
+            )
+        return rows

@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from payroll.application.errors import PayrollValidationError
 from payroll.application.dto import EconomicIndexDTO, ExchangeRateDTO, RefreshRatesResultDTO
 from payroll.interfaces.api.dependencies import get_market_data_queries, get_refresh_rates_use_case
 from payroll.interfaces.api.main import app
@@ -116,7 +117,7 @@ def test_market_data_endpoints() -> None:
 def test_market_data_refresh_endpoint_surfaces_domain_errors() -> None:
     class ErrorRefreshRates:
         async def execute(self, command: object) -> RefreshRatesResultDTO:
-            raise ValueError("bad market data payload")
+            raise PayrollValidationError("bad market data payload")
 
     app.dependency_overrides[get_refresh_rates_use_case] = lambda: ErrorRefreshRates()
     client = TestClient(app)
@@ -153,7 +154,7 @@ def test_market_data_refresh_endpoint_accepts_provider_fetch_requests() -> None:
 async def test_market_data_refresh_handler_maps_value_errors() -> None:
     class ErrorRefreshRates:
         async def execute(self, command: object) -> RefreshRatesResultDTO:
-            raise ValueError("invalid refresh")
+            raise PayrollValidationError("invalid refresh")
 
     with pytest.raises(HTTPException, match="invalid refresh"):
         await refresh_rates(

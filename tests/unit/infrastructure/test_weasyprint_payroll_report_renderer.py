@@ -1,7 +1,9 @@
-import pytest
 import sys
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
+
+import pytest
 
 from payroll.application.dto import PayrollItemDetailDTO, PayrollPeriodDetailDTO, PayrollSummaryDTO
 from payroll.domain.contributions import EmploymentContractKind
@@ -94,3 +96,8 @@ def test_weasyprint_payroll_report_renderer_uses_weasyprint_when_available(monke
     pdf = WeasyPrintPayrollReportRenderer().render_payroll_period(sample_detail())
 
     assert pdf == b"%PDF-weasy"
+
+
+def test_weasyprint_payroll_report_renderer_requires_summary() -> None:
+    with pytest.raises(ValueError, match="Payroll summary for period 10 was not found."):
+        WeasyPrintPayrollReportRenderer().render_payroll_period(replace(sample_detail(), summary=None))

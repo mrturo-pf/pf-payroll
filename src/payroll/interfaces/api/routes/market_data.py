@@ -3,9 +3,10 @@
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
+from payroll.application.errors import PayrollError
 from payroll.application.dto import (
     EconomicIndexWriteDTO,
     ExchangeRateWriteDTO,
@@ -13,6 +14,7 @@ from payroll.application.dto import (
     ProviderExchangeRateRequestDTO,
     RefreshRatesCommandDTO,
 )
+from payroll.interfaces.api.errors import to_http_exception
 from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.refresh_rates import RefreshRates
 from payroll.interfaces.api.dependencies import get_market_data_queries, get_refresh_rates_use_case
@@ -159,8 +161,8 @@ async def refresh_rates(
                 ],
             )
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PayrollError as exc:
+        raise to_http_exception(exc, default_status=400) from exc
 
     return RefreshRatesResponse(
         upserted_exchange_rates=result.upserted_exchange_rates,

@@ -3,6 +3,7 @@
 from decimal import Decimal
 from html import escape
 
+from payroll.application.errors import PayrollSummaryNotFoundError
 from payroll.application.dto import PayrollPeriodDetailDTO
 
 
@@ -61,7 +62,8 @@ class WeasyPrintPayrollReportRenderer:
 
     def render_payroll_period(self, detail: PayrollPeriodDetailDTO) -> bytes:
         summary = detail.summary
-        assert summary is not None
+        if summary is None:
+            raise PayrollSummaryNotFoundError(f"Payroll summary for period {detail.id} was not found.")
 
         rows = "".join(
             (

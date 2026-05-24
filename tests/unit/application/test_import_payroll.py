@@ -1,9 +1,11 @@
+from datetime import date
 from decimal import Decimal
 
 import pytest
 
-from payroll.application.dto import ImportPayrollResultDTO, ImportedPayrollPeriodDTO
+from payroll.application.dto import ImportPayrollResultDTO, ImportPayrollRowDTO, ImportedPayrollPeriodDTO
 from payroll.application.use_cases.import_payroll import ImportPayroll
+from payroll.domain.contributions import EmploymentContractKind
 
 
 class StubPayrollRepository:
@@ -39,21 +41,59 @@ class StubPayrollRepository:
         )
 
 
+class StubPayrollImporter:
+    def __init__(self, rows: list[ImportPayrollRowDTO]) -> None:
+        self.rows = rows
+        self.calls: list[tuple[str, bytes]] = []
+
+    def read_rows(self, filename: str, content: bytes) -> list[ImportPayrollRowDTO]:
+        self.calls.append((filename, content))
+        return self.rows
+
+
+def sample_rows() -> list[ImportPayrollRowDTO]:
+    return [
+        ImportPayrollRowDTO(
+            employer="ACME",
+            period_year=2026,
+            period_month=1,
+            payment_date=date(2026, 1, 31),
+            status="actual",
+            employment_contract_kind=EmploymentContractKind.INDEFINITE,
+            concept_code="SALARY_BASE",
+            amount_clp=Decimal("1000000"),
+            declared_net_pay_clp=Decimal("950000"),
+            expected_net_pay_clp=Decimal("900000"),
+            net_pay_difference_clp=Decimal("50000"),
+        ),
+        ImportPayrollRowDTO(
+            employer="ACME",
+            period_year=2026,
+            period_month=1,
+            payment_date=date(2026, 1, 31),
+            status="actual",
+            employment_contract_kind=EmploymentContractKind.INDEFINITE,
+            concept_code="PENSION_BASE",
+            amount_clp=Decimal("100000"),
+            declared_net_pay_clp=Decimal("950000"),
+            expected_net_pay_clp=Decimal("900000"),
+            net_pay_difference_clp=Decimal("50000"),
+        ),
+    ]
+
+
 @pytest.mark.asyncio
 async def test_import_payroll_reads_csv_and_builds_rows() -> None:
     repository = StubPayrollRepository()
-    use_case = ImportPayroll(repository)
+    importer = StubPayrollImporter(sample_rows())
+    use_case = ImportPayroll(repository, importer)
 
-    result = await use_case.from_bytes(
-        "sample.csv",
-        (
-            b"period,employer,payment_date,employment_contract_kind,salary_base,pension_base\n"
-            b"Jan/2026,ACME,2026-01-31,indefinite,1000000,100000\n"
-        ),
-    )
+    payload = b"period,employer,payment_date\nJan/2026,ACME,2026-01-31\n"
+    result = await use_case.from_bytes("sample.csv", payload)
 
     assert result.imported_periods == 1
     assert result.imported_items == 2
+    assert importer.calls == [("sample.csv", payload)]
     assert repository.rows[0].employer == "ACME"
     assert repository.rows[0].concept_code == "SALARY_BASE"
     assert repository.rows[0].employment_contract_kind.value == "indefinite"
@@ -63,7 +103,7 @@ async def test_import_payroll_reads_csv_and_builds_rows() -> None:
 @pytest.mark.asyncio
 async def test_import_payroll_rejects_empty_import() -> None:
     repository = StubPayrollRepository()
-    use_case = ImportPayroll(repository)
+    use_case = ImportPayroll(repository, StubPayrollImporter([]))
 
     with pytest.raises(ValueError, match="did not yield any importable rows"):
         await use_case.from_bytes("sample.csv", b"period,employer,payment_date\n")
@@ -72,15 +112,9 @@ async def test_import_payroll_rejects_empty_import() -> None:
 @pytest.mark.asyncio
 async def test_import_payroll_adds_net_pay_warning_without_rejecting_import() -> None:
     repository = StubPayrollRepository()
-    use_case = ImportPayroll(repository)
+    use_case = ImportPayroll(repository, StubPayrollImporter(sample_rows()))
 
-    result = await use_case.from_bytes(
-        "sample.csv",
-        (
-            b"period,employer,payment_date,employment_contract_kind,salary_base,pension_base,net_pay\n"
-            b"Jan/2026,ACME,2026-01-31,indefinite,1000000,100000,950000\n"
-        ),
-    )
+    result = await use_case.from_bytes("sample.csv", b"sample")
 
     assert result.periods[0].declared_net_pay_clp == Decimal("950000")
     assert result.periods[0].expected_net_pay_clp == Decimal("900000")

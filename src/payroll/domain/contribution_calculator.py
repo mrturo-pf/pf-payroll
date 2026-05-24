@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
+from payroll.domain.errors import UnsupportedEmploymentContractKindError
 from payroll.domain.contributions import (
     ContributionCap,
     EmploymentContractKind,
@@ -98,7 +99,9 @@ class ContributionCalculator:
             employee_rate = Decimal("0")
             employer_rate = Decimal("0.03")
         else:
-            raise ValueError(f"Unsupported employment contract kind: {contract_kind.value}")
+            raise UnsupportedEmploymentContractKindError(
+                f"Unsupported employment contract kind: {contract_kind.value}"
+            )
 
         return UnemploymentContribution(
             contract_kind=contract_kind,

@@ -1,5 +1,6 @@
 """Use case for deflating payroll summary amounts with IPC."""
 
+from payroll.application.errors import EconomicIndexNotFoundError, PayrollSummaryNotFoundError
 from payroll.application.dto import DeflateAmountsCommandDTO, DeflateAmountsResultDTO, DeflatedAmountDTO
 from payroll.application.ports.repositories import MarketDataRepository, PayrollRepository
 from payroll.domain.deflation import DeflationCalculator
@@ -21,7 +22,7 @@ class DeflateAmounts:
     async def execute(self, command: DeflateAmountsCommandDTO) -> DeflateAmountsResultDTO:
         detail = await self._payroll_repository.get_period_detail(command.period_id)
         if detail is None or detail.summary is None:
-            raise ValueError(f"Payroll summary for period {command.period_id} was not found.")
+            raise PayrollSummaryNotFoundError(f"Payroll summary for period {command.period_id} was not found.")
 
         source_index = await self._market_data_repository.get_economic_index_value(
             command.index_code,
@@ -29,7 +30,7 @@ class DeflateAmounts:
             detail.period_month,
         )
         if source_index is None:
-            raise ValueError(
+            raise EconomicIndexNotFoundError(
                 f"Economic index {command.index_code} for {detail.period_year:04d}-{detail.period_month:02d} was not found."
             )
 
@@ -39,7 +40,7 @@ class DeflateAmounts:
             command.target_month,
         )
         if target_index is None:
-            raise ValueError(
+            raise EconomicIndexNotFoundError(
                 f"Economic index {command.index_code} for {command.target_year:04d}-{command.target_month:02d} was not found."
             )
 

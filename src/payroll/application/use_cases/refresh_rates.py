@@ -2,6 +2,11 @@
 
 from dataclasses import dataclass
 
+from payroll.application.errors import (
+    PayrollDependencyConfigurationError,
+    PayrollDependencyError,
+    PayrollValidationError,
+)
 from payroll.application.dto import (
     EconomicIndexWriteDTO,
     ExchangeRateWriteDTO,
@@ -29,7 +34,7 @@ class RefreshRates:
             and not command.provider_exchange_rates
             and not command.provider_economic_indices
         ):
-            raise ValueError("At least one exchange rate or economic index entry is required.")
+            raise PayrollValidationError("At least one exchange rate or economic index entry is required.")
 
         exchange_rates: list[ExchangeRateWriteDTO] = [
             ExchangeRateWriteDTO(
@@ -69,37 +74,35 @@ class RefreshRates:
             for item in command.provider_economic_indices
         ]
 
-        if provider_exchange_rates and self.fx_provider is None:
-            raise ValueError("Exchange-rate provider chain is not configured.")
-        if provider_economic_indices and self.economic_index_provider is None:
-            raise ValueError("Economic-index provider chain is not configured.")
-
-        fx_provider = self.fx_provider
-        economic_index_provider = self.economic_index_provider
-
         fetched_exchange_rates: list[ExchangeRateWriteDTO] = []
-        for rate_request in provider_exchange_rates:
-            assert fx_provider is not None
-            rate_entry = await fx_provider.fetch_rate_entry(rate_request.currency_code, rate_request.rate_date)
-            if rate_entry is None:
-                raise ValueError(
-                    f"Exchange rate {rate_request.currency_code} for {rate_request.rate_date.isoformat()} could not be fetched from configured providers."
-                )
-            fetched_exchange_rates.append(rate_entry)
+        if provider_exchange_rates:
+            fx_provider = self.fx_provider
+            if fx_provider is None:
+                raise PayrollDependencyConfigurationError("Exchange-rate provider chain is not configured.")
+            for rate_request in provider_exchange_rates:
+                rate_entry = await fx_provider.fetch_rate_entry(rate_request.currency_code, rate_request.rate_date)
+                if rate_entry is None:
+                    raise PayrollDependencyError(
+                        f"Exchange rate {rate_request.currency_code} for {rate_request.rate_date.isoformat()} could not be fetched from configured providers."
+                    )
+                fetched_exchange_rates.append(rate_entry)
 
         fetched_economic_indices: list[EconomicIndexWriteDTO] = []
-        for index_request in provider_economic_indices:
-            assert economic_index_provider is not None
-            index_entry = await economic_index_provider.fetch_index(
-                index_request.code,
-                index_request.period_year,
-                index_request.period_month,
-            )
-            if index_entry is None:
-                raise ValueError(
-                    f"Economic index {index_request.code} for {index_request.period_year:04d}-{index_request.period_month:02d} could not be fetched from configured providers."
+        if provider_economic_indices:
+            economic_index_provider = self.economic_index_provider
+            if economic_index_provider is None:
+                raise PayrollDependencyConfigurationError("Economic-index provider chain is not configured.")
+            for index_request in provider_economic_indices:
+                index_entry = await economic_index_provider.fetch_index(
+                    index_request.code,
+                    index_request.period_year,
+                    index_request.period_month,
                 )
-            fetched_economic_indices.append(index_entry)
+                if index_entry is None:
+                    raise PayrollDependencyError(
+                        f"Economic index {index_request.code} for {index_request.period_year:04d}-{index_request.period_month:02d} could not be fetched from configured providers."
+                    )
+                fetched_economic_indices.append(index_entry)
 
         normalized_command = RefreshRatesCommandDTO(
             exchange_rates=list(

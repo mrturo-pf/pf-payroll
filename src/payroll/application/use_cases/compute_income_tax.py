@@ -2,8 +2,10 @@
 
 from decimal import Decimal
 
+from payroll.application.errors import IncomeTaxBracketNotFoundError
 from payroll.application.dto import ComputeIncomeTaxCommandDTO, ComputeIncomeTaxResultDTO
 from payroll.application.ports.repositories import MarketDataRepository, PayrollRepository
+from payroll.application.services.exchange_rates import resolve_required_exchange_rate
 from payroll.domain.tax_calculator import ChileanTaxCalculator, quantize_utm
 
 
@@ -22,17 +24,18 @@ class ComputeIncomeTax:
 
     async def execute(self, command: ComputeIncomeTaxCommandDTO) -> ComputeIncomeTaxResultDTO:
         context = await self._repository.get_income_tax_context(command)
-        utm_value_clp = command.utm_value_clp
-        if utm_value_clp is None:
-            utm_value_clp = await self._market_data_repository.get_exchange_rate_value("UTM", context.payment_date)
-            if utm_value_clp is None:
-                raise ValueError(f"UTM exchange rate for {context.payment_date.isoformat()} was not found.")
+        utm_value_clp = await resolve_required_exchange_rate(
+            provided_value=command.utm_value_clp,
+            currency_code="UTM",
+            rate_date=context.payment_date,
+            market_data_repository=self._market_data_repository,
+        )
 
         taxable_base_clp = max(Decimal("0"), context.taxable_income_clp - context.deductible_amount_clp)
         taxable_base_utm = quantize_utm(taxable_base_clp / utm_value_clp) if utm_value_clp > 0 else Decimal("0")
         bracket = await self._repository.get_income_tax_bracket(context.payment_date, taxable_base_utm)
         if bracket is None:
-            raise ValueError(
+            raise IncomeTaxBracketNotFoundError(
                 "No income tax bracket was found "
                 f"for {context.payment_date.isoformat()} and taxable base {taxable_base_utm} UTM."
             )

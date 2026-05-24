@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from io import BytesIO
 from decimal import Decimal
 
@@ -5,6 +6,7 @@ import pandas as pd
 import pytest
 
 from payroll.infrastructure.importers.xlsx_importer import (
+    XlsxPayrollImporter,
     extract_net_pay_validations,
     parse_payment_date,
     read_payroll_dataframe,
@@ -111,6 +113,9 @@ def test_to_long_format_rejects_invalid_contract_kind() -> None:
 def test_parse_payment_date_supports_iso_and_dayfirst_formats() -> None:
     assert str(parse_payment_date("2026-01-31").date()) == "2026-01-31"
     assert str(parse_payment_date("31/01/2026").date()) == "2026-01-31"
+    assert str(parse_payment_date(pd.Timestamp("2026-01-31")).date()) == "2026-01-31"
+    assert str(parse_payment_date(datetime(2026, 1, 31, 8, 30)).date()) == "2026-01-31"
+    assert str(parse_payment_date(date(2026, 1, 31)).date()) == "2026-01-31"
 
 
 def test_extract_net_pay_validations_returns_expected_and_difference_values() -> None:
@@ -132,6 +137,13 @@ def test_extract_net_pay_validations_returns_expected_and_difference_values() ->
                     "employment_contract_kind": "indefinite",
                     "salary_base": 1000,
                     "net_pay": 1000,
+                },
+                {
+                    "period": "Jan/2026",
+                    "employer": "ACME",
+                    "payment_date": "2026-01-31",
+                    "employment_contract_kind": "indefinite",
+                    "salary_base": 1000,
                 },
                 {
                     "period": "Jan/2026",
@@ -162,3 +174,19 @@ def test_extract_net_pay_validations_returns_expected_and_difference_values() ->
     assert result[("ACME", 2026, 2)].expected_net_pay_clp == Decimal("900")
     assert result[("ACME", 2026, 2)].net_pay_difference_clp == Decimal("0")
     assert result[("ACME", 2026, 2)].warning is None
+
+
+def test_xlsx_payroll_importer_builds_application_rows() -> None:
+    rows = XlsxPayrollImporter().read_rows(
+        "sample.csv",
+        (
+            b"period,employer,payment_date,employment_contract_kind,salary_base,pension_base,net_pay\n"
+            b"Jan/2026,ACME,31/01/2026,indefinite,1000000,100000,950000\n"
+        ),
+    )
+
+    assert len(rows) == 2
+    assert rows[0].payment_date.isoformat() == "2026-01-31"
+    assert rows[0].declared_net_pay_clp == Decimal("950000")
+    assert rows[0].expected_net_pay_clp == Decimal("900000")
+    assert rows[0].net_pay_difference_clp == Decimal("50000")

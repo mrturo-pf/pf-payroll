@@ -204,6 +204,9 @@ async def test_sqlalchemy_payroll_repository_creates_employer_and_replaces_exist
                 employment_contract_kind=EmploymentContractKind.FIXED_TERM,
                 concept_code="SALARY_BASE",
                 amount_clp=Decimal("1000000"),
+                declared_net_pay_clp=None,
+                expected_net_pay_clp=None,
+                net_pay_difference_clp=None,
             )
         ]
     )

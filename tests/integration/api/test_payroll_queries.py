@@ -5,6 +5,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+from payroll.application.errors import PayrollPeriodNotFoundError
 from payroll.application.dto import PayrollItemDetailDTO, PayrollPeriodDetailDTO, PayrollSummaryDTO
 from payroll.interfaces.api.dependencies import get_payroll_queries
 from payroll.interfaces.api.main import app
@@ -154,7 +155,7 @@ def test_payroll_query_endpoints() -> None:
 def test_payroll_detail_endpoint_surfaces_not_found() -> None:
     class ErrorPayrollQueries:
         async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO:
-            raise ValueError("Payroll period 9 was not found.")
+            raise PayrollPeriodNotFoundError("Payroll period 9 was not found.")
 
         async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
             return []
@@ -175,7 +176,7 @@ def test_payroll_detail_endpoint_surfaces_not_found() -> None:
 async def test_payroll_detail_handler_maps_value_errors() -> None:
     class ErrorPayrollQueries:
         async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO:
-            raise ValueError("Payroll period 9 was not found.")
+            raise PayrollPeriodNotFoundError("Payroll period 9 was not found.")
 
     with pytest.raises(HTTPException, match="Payroll period 9 was not found."):
         await get_payroll_period(period_id=9, queries=ErrorPayrollQueries())

@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from fastapi.testclient import TestClient
 
+from payroll.application.errors import PayrollDependencyError
 from payroll.application.dto import (
     ContributionCapDTO,
     CurrencyDTO,
@@ -206,7 +207,7 @@ def test_reference_data_refresh_income_tax_brackets_endpoint() -> None:
 def test_reference_data_refresh_income_tax_brackets_endpoint_returns_bad_request() -> None:
     class ErrorRefreshIncomeTaxBrackets:
         async def execute(self, command: object) -> RefreshIncomeTaxBracketsResultDTO:
-            raise ValueError("No official income tax brackets were found for 2026.")
+            raise PayrollDependencyError("No official income tax brackets were found for 2026.")
 
     app.dependency_overrides[get_refresh_income_tax_brackets_use_case] = lambda: ErrorRefreshIncomeTaxBrackets()
     client = TestClient(app)
@@ -214,7 +215,7 @@ def test_reference_data_refresh_income_tax_brackets_endpoint_returns_bad_request
     try:
         response = client.post("/reference-data/income-tax-brackets/refresh", json={"year": 2026})
 
-        assert response.status_code == 400
+        assert response.status_code == 502
         assert response.json() == {"detail": "No official income tax brackets were found for 2026."}
     finally:
         app.dependency_overrides.clear()

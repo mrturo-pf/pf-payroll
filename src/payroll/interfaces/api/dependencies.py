@@ -14,6 +14,7 @@ from payroll.infrastructure.rate_providers.official_providers import (
     SiiIndicatorsProvider,
 )
 from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import WeasyPrintPayrollReportRenderer
+from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
 from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.compute_contributions import ComputeContributions
@@ -130,7 +131,7 @@ def get_economic_index_provider() -> ChainedEconomicIndexProvider:
 def get_import_payroll_use_case(
     repository: PayrollRepository = Depends(get_payroll_repository),
 ) -> ImportPayroll:
-    return ImportPayroll(repository)
+    return ImportPayroll(repository, XlsxPayrollImporter())
 
 
 def get_payroll_queries(

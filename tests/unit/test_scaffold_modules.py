@@ -40,7 +40,7 @@ from payroll.domain.tax_calculator import ChileanTaxCalculator
 from payroll.domain.taxes import IncomeTaxBracket
 from payroll.domain.entities import PayrollPeriod
 from payroll.domain.value_objects import Money
-from payroll.infrastructure.importers.xlsx_importer import read_payroll_dataframe, to_long_format
+from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter, read_payroll_dataframe, to_long_format
 from payroll.infrastructure.logging.logger import logger
 from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import WeasyPrintPayrollReportRenderer
 from payroll.infrastructure.rate_providers.chained_provider import ChainedFxProvider
@@ -166,7 +166,7 @@ def test_use_case_placeholders_are_instantiable() -> None:
         async def save_computed_income_tax(self, result: object) -> object:
             return result
 
-    assert isinstance(ImportPayroll(StubRepository()), ImportPayroll)
+    assert isinstance(ImportPayroll(StubRepository(), XlsxPayrollImporter()), ImportPayroll)
     assert isinstance(PayrollQueries(StubRepository()), PayrollQueries)
     assert isinstance(AssignPlans(StubRepository()), AssignPlans)
     assert isinstance(GeneratePayrollReport(StubRepository(), WeasyPrintPayrollReportRenderer()), GeneratePayrollReport)

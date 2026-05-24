@@ -311,6 +311,16 @@ class RefreshRatesResultDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class SyncRecentMarketDataResultDTO:
+    """Represent Sync Recent Market Data Result DTO."""
+
+    requested_exchange_rates: int
+    requested_economic_indices: int
+    upserted_exchange_rates: int
+    upserted_economic_indices: int
+
+
+@dataclass(frozen=True, slots=True)
 class PayrollItemDetailDTO:
     """Represent Payroll Item Detail DTO."""
 

@@ -90,6 +90,19 @@ class SqlAlchemyMarketDataRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_exchange_rate_dates(
+        self, currency_code: str, start_date: date, end_date: date
+    ) -> list[date]:
+        """List exchange-rate dates."""
+        result = await self._session.execute(
+            select(ExchangeRateModel.rate_date).where(
+                ExchangeRateModel.currency_code == currency_code,
+                ExchangeRateModel.rate_date >= start_date,
+                ExchangeRateModel.rate_date <= end_date,
+            )
+        )
+        return list(result.scalars().all())
+
     async def get_economic_index_value(
         self, code: str, period_year: int, period_month: int
     ) -> Decimal | None:
@@ -102,6 +115,29 @@ class SqlAlchemyMarketDataRepository:
             )
         )
         return result.scalar_one_or_none()
+
+    async def list_economic_index_periods(
+        self,
+        code: str,
+        start_year: int,
+        start_month: int,
+        end_year: int,
+        end_month: int,
+    ) -> list[tuple[int, int]]:
+        """List economic-index periods."""
+        start_key = start_year * 100 + start_month
+        end_key = end_year * 100 + end_month
+        period_key = (
+            EconomicIndexModel.period_year * 100 + EconomicIndexModel.period_month
+        )
+        result = await self._session.execute(
+            select(EconomicIndexModel).where(
+                EconomicIndexModel.code == code,
+                period_key >= start_key,
+                period_key <= end_key,
+            )
+        )
+        return [(row.period_year, row.period_month) for row in result.scalars().all()]
 
     async def refresh_rates(
         self, command: RefreshRatesCommandDTO

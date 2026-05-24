@@ -104,6 +104,13 @@ async def test_sqlalchemy_market_data_repository_lists_rates_and_indices() -> No
             ),
             FakeResult(scalar_one=Decimal("38000")),
             FakeResult(scalar_one=Decimal("38000")),
+            FakeResult(scalar_rows=[date(2026, 1, 31), date(2026, 1, 30)]),
+            FakeResult(
+                scalar_rows=[
+                    SimpleNamespace(period_year=2026, period_month=1),
+                    SimpleNamespace(period_year=2025, period_month=12),
+                ]
+            ),
         ]
     )
     repository = SqlAlchemyMarketDataRepository(session)  # type: ignore[arg-type]
@@ -112,12 +119,20 @@ async def test_sqlalchemy_market_data_repository_lists_rates_and_indices() -> No
     economic_indices = await repository.list_economic_indices("IPC_CL")
     uf_value = await repository.get_exchange_rate_value("UF", date(2026, 1, 31))
     ipc_value = await repository.get_economic_index_value("IPC_CL", 2026, 1)
+    rate_dates = await repository.list_exchange_rate_dates(
+        "UF", date(2026, 1, 1), date(2026, 1, 31)
+    )
+    index_periods = await repository.list_economic_index_periods(
+        "IPC_CL", 2025, 12, 2026, 1
+    )
 
     assert [item.currency_code for item in exchange_rates] == ["UF"]
     assert [item.code for item in economic_indices] == ["IPC_CL"]
     assert uf_value == Decimal("38000")
     assert ipc_value == Decimal("38000")
-    assert len(session.statements) == 4
+    assert rate_dates == [date(2026, 1, 31), date(2026, 1, 30)]
+    assert index_periods == [(2026, 1), (2025, 12)]
+    assert len(session.statements) == 6
 
 
 @pytest.mark.asyncio
@@ -225,11 +240,13 @@ async def test_api_dependencies_build_market_data_queries_use_case_and_session(
     repository = dependencies.get_market_data_repository(fake_session)  # type: ignore[arg-type]
     queries = dependencies.get_market_data_queries(repository)
     use_case = dependencies.get_refresh_rates_use_case(repository)
+    startup_sync = dependencies.build_startup_market_data_sync(fake_session)  # type: ignore[arg-type]
     deflate_use_case = dependencies.get_deflate_amounts_use_case(object(), repository)  # type: ignore[arg-type]
 
     assert isinstance(repository, SqlAlchemyMarketDataRepository)
     assert isinstance(queries, MarketDataQueries)
     assert isinstance(use_case, RefreshRates)
+    assert startup_sync.repository is not None
     assert isinstance(deflate_use_case, DeflateAmounts)
 
 

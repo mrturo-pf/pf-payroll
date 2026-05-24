@@ -14,7 +14,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from payroll.application.dto import MoneyDTO
+from payroll.application.dto import ExchangeRateWriteDTO, MoneyDTO
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.compute_contributions import ComputeContributions
@@ -29,6 +29,7 @@ from payroll.application.use_cases.refresh_income_tax_brackets import (
 )
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.application.use_cases.refresh_rates import RefreshRates
+from payroll.application.use_cases.sync_recent_market_data import SyncRecentMarketData
 from payroll.config import Settings
 from payroll.domain.contribution_calculator import ContributionCalculator, quantize_clp
 from payroll.domain.contributions import (
@@ -177,11 +178,28 @@ def test_use_case_placeholders_are_instantiable() -> None:
             """Get exchange rate value."""
             return Decimal("1")
 
+        async def list_exchange_rate_dates(
+            self, currency_code: str, start_date: date, end_date: date
+        ) -> list[date]:
+            """List exchange rate dates."""
+            return []
+
         async def get_economic_index_value(
             self, code: str, period_year: int, period_month: int
         ) -> Decimal | None:
             """Get economic index value."""
             return Decimal("100")
+
+        async def list_economic_index_periods(
+            self,
+            code: str,
+            start_year: int,
+            start_month: int,
+            end_year: int,
+            end_month: int,
+        ) -> list[tuple[int, int]]:
+            """List economic index periods."""
+            return []
 
         async def refresh_rates(self, command: object) -> object:
             """Refresh rates."""
@@ -237,6 +255,10 @@ def test_use_case_placeholders_are_instantiable() -> None:
     assert isinstance(RefreshRates(StubRepository()), RefreshRates)
     assert isinstance(
         RefreshIncomeTaxBrackets(StubRepository(), object()), RefreshIncomeTaxBrackets
+    )
+    assert isinstance(
+        SyncRecentMarketData(StubRepository(), object(), object()),
+        SyncRecentMarketData,
     )
 
 
@@ -308,6 +330,21 @@ async def test_chained_provider_returns_first_available_rate() -> None:
             assert on == date(2026, 5, 1)
             return self.value
 
+        async def fetch_rate_entries(
+            self, currency_code: str, requested_dates: list[date]
+        ) -> list[ExchangeRateWriteDTO]:
+            """Handle fetch rate entries."""
+            return [
+                ExchangeRateWriteDTO(
+                    currency_code=currency_code,
+                    rate_date=requested_date,
+                    value_clp=self.value,
+                    source="test",
+                )
+                for requested_date in requested_dates
+                if self.value is not None
+            ]
+
     provider = ChainedFxProvider(
         [Provider(None), Provider(Decimal("950.12")), Provider(Decimal("999.99"))]
     )
@@ -329,6 +366,12 @@ async def test_chained_provider_returns_none_when_all_providers_miss() -> None:
             assert currency_code == "EUR"
             assert on == date(2026, 5, 2)
             return None
+
+        async def fetch_rate_entries(
+            self, currency_code: str, requested_dates: list[date]
+        ) -> list[ExchangeRateWriteDTO]:
+            """Handle fetch rate entries."""
+            return []
 
     provider = ChainedFxProvider([Provider(), Provider()])
 

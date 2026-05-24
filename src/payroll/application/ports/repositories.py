@@ -161,6 +161,12 @@ class MarketDataRepository(Protocol):
         """Get exchange rate value."""
         ...
 
+    async def list_exchange_rate_dates(
+        self, currency_code: str, start_date: date, end_date: date
+    ) -> list[date]:
+        """List stored exchange-rate dates for a currency and range."""
+        ...
+
     async def refresh_rates(
         self, command: RefreshRatesCommandDTO
     ) -> RefreshRatesResultDTO:
@@ -171,4 +177,15 @@ class MarketDataRepository(Protocol):
         self, code: str, period_year: int, period_month: int
     ) -> Decimal | None:
         """Get economic index value."""
+        ...
+
+    async def list_economic_index_periods(
+        self,
+        code: str,
+        start_year: int,
+        start_month: int,
+        end_year: int,
+        end_month: int,
+    ) -> list[tuple[int, int]]:
+        """List stored economic-index periods for a code and range."""
         ...

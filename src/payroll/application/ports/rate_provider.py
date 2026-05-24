@@ -24,6 +24,12 @@ class FxRateProvider(Protocol):
         """Handle fetch rate entry."""
         ...
 
+    async def fetch_rate_entries(
+        self, currency_code: str, requested_dates: list[date]
+    ) -> list[ExchangeRateWriteDTO]:
+        """Handle fetch rate entries."""
+        ...
+
 
 class EconomicIndexProvider(Protocol):
     """Provide economic index provider."""
@@ -32,6 +38,12 @@ class EconomicIndexProvider(Protocol):
         self, code: str, period_year: int, period_month: int
     ) -> EconomicIndexWriteDTO | None:
         """Handle fetch index."""
+        ...
+
+    async def fetch_indices(
+        self, code: str, requested_periods: list[tuple[int, int]]
+    ) -> list[EconomicIndexWriteDTO]:
+        """Handle fetch indices."""
         ...
 
 

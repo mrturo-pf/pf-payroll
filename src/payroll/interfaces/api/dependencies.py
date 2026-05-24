@@ -38,6 +38,7 @@ from payroll.application.use_cases.refresh_income_tax_brackets import (
 )
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.application.use_cases.refresh_rates import RefreshRates
+from payroll.application.use_cases.sync_recent_market_data import SyncRecentMarketData
 from payroll.infrastructure.db.repositories.market_data_repository import (
     SqlAlchemyMarketDataRepository,
 )
@@ -113,6 +114,15 @@ def get_refresh_rates_use_case(
     """Get refresh rates use case."""
     return RefreshRates(
         repository, get_fx_rate_provider(), get_economic_index_provider()
+    )
+
+
+def build_startup_market_data_sync(session: AsyncSession) -> SyncRecentMarketData:
+    """Build startup market-data sync use case."""
+    return SyncRecentMarketData(
+        SqlAlchemyMarketDataRepository(session),
+        get_fx_rate_provider(),
+        get_economic_index_provider(),
     )
 
 

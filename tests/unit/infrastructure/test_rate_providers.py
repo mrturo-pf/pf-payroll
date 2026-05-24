@@ -51,6 +51,9 @@ async def test_mindicador_rate_provider_parses_year_series_and_unknown_indicator
     result = await provider.fetch_rate("UF", date(2026, 1, 31))
     missing = await provider.fetch_rate("CLP", date(2026, 1, 31))
     entry = await provider.fetch_rate_entry("UF", date(2026, 1, 31))
+    entries = await provider.fetch_rate_entries(
+        "UF", [date(2026, 1, 29), date(2026, 1, 30), date(2026, 1, 31)]
+    )
     missing_entry = await provider.fetch_rate_entry("CLP", date(2026, 1, 31))
 
     assert result == Decimal("38000")
@@ -62,6 +65,21 @@ async def test_mindicador_rate_provider_parses_year_series_and_unknown_indicator
         value_clp=Decimal("38000"),
         source="mindicador",
     )
+    assert entries == [
+        ExchangeRateWriteDTO(
+            currency_code="UF",
+            rate_date=date(2026, 1, 30),
+            value_clp=Decimal("37900"),
+            source="mindicador",
+        ),
+        ExchangeRateWriteDTO(
+            currency_code="UF",
+            rate_date=date(2026, 1, 31),
+            value_clp=Decimal("38000"),
+            source="mindicador",
+        ),
+    ]
+    assert await provider.fetch_rate_entries("CLP", [date(2026, 1, 31)]) == []
 
 
 @pytest.mark.asyncio
@@ -72,6 +90,7 @@ async def test_mindicador_rate_provider_returns_none_on_invalid_payload() -> Non
     assert await provider.fetch_rate("USD", date(2026, 1, 31)) is None
     provider = MindicadorRateProvider(fetcher=lambda url, timeout: '{"serie":{}}')
     assert await provider.fetch_rate("USD", date(2026, 1, 31)) is None
+    assert await provider.fetch_rate_entries("USD", []) == []
 
 
 @pytest.mark.asyncio
@@ -89,8 +108,12 @@ async def test_sii_indicators_provider_parses_utm_and_ipc_rows() -> None:
 
     utm = await provider.fetch_rate("UTM", date(2026, 1, 15))
     utm_entry = await provider.fetch_rate_entry("UTM", date(2026, 1, 15))
+    utm_entries = await provider.fetch_rate_entries(
+        "UTM", [date(2026, 1, 1), date(2026, 2, 1)]
+    )
     missing_entry = await provider.fetch_rate_entry("UF", date(2026, 1, 15))
     ipc = await provider.fetch_index("IPC_CL", 2026, 2)
+    indices = await provider.fetch_indices("IPC_CL", [(2026, 1), (2026, 2)])
     unsupported = await provider.fetch_rate("UF", date(2026, 1, 15))
 
     assert utm == Decimal("69751")
@@ -111,7 +134,44 @@ async def test_sii_indicators_provider_parses_utm_and_ipc_rows() -> None:
         base_period="2023=100",
         source="sii",
     )
+    assert utm_entries == [
+        ExchangeRateWriteDTO(
+            currency_code="UTM",
+            rate_date=date(2026, 1, 1),
+            value_clp=Decimal("69751"),
+            source="sii",
+        ),
+        ExchangeRateWriteDTO(
+            currency_code="UTM",
+            rate_date=date(2026, 2, 1),
+            value_clp=Decimal("69611"),
+            source="sii",
+        ),
+    ]
+    assert indices == [
+        EconomicIndexWriteDTO(
+            code="IPC_CL",
+            period_year=2026,
+            period_month=1,
+            index_value=Decimal("109.71"),
+            monthly_change=Decimal("0.4"),
+            yearly_change=Decimal("2.8"),
+            base_period="2023=100",
+            source="sii",
+        ),
+        EconomicIndexWriteDTO(
+            code="IPC_CL",
+            period_year=2026,
+            period_month=2,
+            index_value=Decimal("109.70"),
+            monthly_change=Decimal("0.0"),
+            yearly_change=Decimal("2.4"),
+            base_period="2023=100",
+            source="sii",
+        ),
+    ]
     assert unsupported is None
+    assert await provider.fetch_rate_entries("UF", [date(2026, 1, 1)]) == []
 
 
 @pytest.mark.asyncio
@@ -132,6 +192,32 @@ async def test_sii_indicators_provider_returns_none_for_blank_or_missing_rows() 
     assert await provider.fetch_index("IPC_CL", 2026, 5) is None
     assert await blank_ipc_provider.fetch_index("IPC_CL", 2026, 5) is None
     assert await provider.fetch_index("UF_CL", 2026, 5) is None
+    assert await provider.fetch_rate_entries("UTM", []) == []
+    assert await provider.fetch_indices("IPC_CL", []) == []
+    assert await provider.fetch_indices("IPC_CL", [(2026, 5)]) == []
+    assert await provider.fetch_rate_entries("UTM", [date(2026, 5, 1)]) == [
+        ExchangeRateWriteDTO(
+            currency_code="UTM",
+            rate_date=date(2026, 5, 1),
+            value_clp=Decimal("70588"),
+            source="sii",
+        )
+    ]
+    assert await provider.fetch_indices("UF_CL", [(2026, 5)]) == []
+
+    missing_utm_provider = SiiIndicatorsProvider(
+        fetcher=lambda url, timeout: "<table><tr><td>Mayo</td></tr></table>"
+    )
+    assert (
+        await missing_utm_provider.fetch_rate_entries("UTM", [date(2026, 5, 1)]) == []
+    )
+    blank_utm_provider = SiiIndicatorsProvider(
+        fetcher=lambda url, timeout: (
+            "<table><tr><td>Mayo</td><td>&nbsp;</td></tr></table>"
+        )
+    )
+    assert await blank_utm_provider.fetch_rate_entries("UTM", [date(2026, 5, 1)]) == []
+    assert await blank_ipc_provider.fetch_indices("IPC_CL", [(2026, 5)]) == []
 
 
 @pytest.mark.asyncio
@@ -224,13 +310,17 @@ async def test_bcch_series_provider_parses_supported_shapes_and_missing_config()
         user="user",
         password="pass",
         series_codes={"UF": "UF_SERIES", "IPC_CL": "IPC_SERIES"},
-        fetcher=lambda url, timeout: '{"Series":{"Obs":[{"value":"38000"}]}}',
+        fetcher=lambda url, timeout: (
+            '{"Series":{"Obs":[{"value":"38000","indexDate":"2026-01-31T00:00:00"}]}}'
+        ),
     )
     list_provider = BcchSeriesProvider(
         user="user",
         password="pass",
         series_codes={"IPC_CL": "IPC_SERIES"},
-        fetcher=lambda url, timeout: '{"Series":[{"Obs":[{"Valor":"112.340000"}]}]}',
+        fetcher=lambda url, timeout: (
+            '{"Series":[{"Obs":[{"Valor":"112.340000","indexDate":"2026-01-01T00:00:00"}]}]}'
+        ),
     )
     missing_provider = BcchSeriesProvider(
         user=None, password=None, series_codes={"UF": None}
@@ -245,6 +335,14 @@ async def test_bcch_series_provider_parses_supported_shapes_and_missing_config()
         value_clp=Decimal("38000"),
         source="bcch",
     )
+    assert await provider.fetch_rate_entries("UF", [date(2026, 1, 31)]) == [
+        ExchangeRateWriteDTO(
+            currency_code="UF",
+            rate_date=date(2026, 1, 31),
+            value_clp=Decimal("38000"),
+            source="bcch",
+        )
+    ]
     assert await missing_provider.fetch_rate_entry("UF", date(2026, 1, 31)) is None
     assert await list_provider.fetch_index("IPC_CL", 2026, 1) == EconomicIndexWriteDTO(
         code="IPC_CL",
@@ -253,7 +351,18 @@ async def test_bcch_series_provider_parses_supported_shapes_and_missing_config()
         index_value=Decimal("112.340000"),
         source="bcch",
     )
+    assert await list_provider.fetch_indices("IPC_CL", [(2026, 1)]) == [
+        EconomicIndexWriteDTO(
+            code="IPC_CL",
+            period_year=2026,
+            period_month=1,
+            index_value=Decimal("112.340000"),
+            source="bcch",
+        )
+    ]
     assert await missing_provider.fetch_rate("UF", date(2026, 1, 31)) is None
+    assert await provider.fetch_rate_entries("UF", []) == []
+    assert await list_provider.fetch_indices("IPC_CL", []) == []
 
 
 @pytest.mark.asyncio
@@ -282,6 +391,10 @@ async def test_bcch_series_provider_handles_fetch_failures_and_empty_obs() -> No
     assert await malformed.fetch_index("IPC_CL", 2026, 1) is None
     assert await missing_values.fetch_rate("UF", date(2026, 1, 31)) is None
     assert await missing_values.fetch_index("IPC_CL", 2026, 1) is None
+    assert await failing.fetch_rate_entries("UF", [date(2026, 1, 31)]) == []
+    assert await malformed.fetch_indices("IPC_CL", [(2026, 1)]) == []
+    assert await missing_values.fetch_rate_entries("UF", [date(2026, 1, 31)]) == []
+    assert await missing_values.fetch_indices("IPC_CL", [(2026, 1)]) == []
 
 
 @pytest.mark.asyncio
@@ -297,6 +410,12 @@ async def test_chained_rate_and_index_providers_use_first_success() -> None:
             """Handle fetch rate."""
             raise RuntimeError("boom")
 
+        async def fetch_rate_entries(
+            self, currency_code: str, requested_dates: list[date]
+        ) -> list[ExchangeRateWriteDTO]:
+            """Handle fetch rate entries."""
+            raise RuntimeError("boom")
+
     class WorkingFx:
         """Represent Working Fx."""
 
@@ -305,6 +424,20 @@ async def test_chained_rate_and_index_providers_use_first_success() -> None:
         async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
             """Handle fetch rate."""
             return Decimal("950.12")
+
+        async def fetch_rate_entries(
+            self, currency_code: str, requested_dates: list[date]
+        ) -> list[ExchangeRateWriteDTO]:
+            """Handle fetch rate entries."""
+            return [
+                ExchangeRateWriteDTO(
+                    currency_code=currency_code,
+                    rate_date=requested_date,
+                    value_clp=Decimal("950.12"),
+                    source="mindicador",
+                )
+                for requested_date in requested_dates
+            ]
 
     class FailingIndex:
         """Represent Failing Index."""
@@ -315,6 +448,12 @@ async def test_chained_rate_and_index_providers_use_first_success() -> None:
             self, code: str, period_year: int, period_month: int
         ) -> EconomicIndexWriteDTO | None:
             """Handle fetch index."""
+            raise RuntimeError("boom")
+
+        async def fetch_indices(
+            self, code: str, requested_periods: list[tuple[int, int]]
+        ) -> list[EconomicIndexWriteDTO]:
+            """Handle fetch indices."""
             raise RuntimeError("boom")
 
     class WorkingIndex:
@@ -333,6 +472,21 @@ async def test_chained_rate_and_index_providers_use_first_success() -> None:
                 index_value=Decimal("109.71"),
                 source="sii",
             )
+
+        async def fetch_indices(
+            self, code: str, requested_periods: list[tuple[int, int]]
+        ) -> list[EconomicIndexWriteDTO]:
+            """Handle fetch indices."""
+            return [
+                EconomicIndexWriteDTO(
+                    code=code,
+                    period_year=period_year,
+                    period_month=period_month,
+                    index_value=Decimal("109.71"),
+                    source="sii",
+                )
+                for period_year, period_month in requested_periods
+            ]
 
     fx_chain = ChainedFxProvider([FailingFx(), WorkingFx()])
     index_chain = ChainedEconomicIndexProvider([FailingIndex(), WorkingIndex()])
@@ -353,6 +507,135 @@ async def test_chained_rate_and_index_providers_use_first_success() -> None:
         index_value=Decimal("109.71"),
         source="sii",
     )
+    assert await fx_chain.fetch_rate_entries("USD", [date(2026, 1, 31)]) == [
+        ExchangeRateWriteDTO(
+            currency_code="USD",
+            rate_date=date(2026, 1, 31),
+            value_clp=Decimal("950.12"),
+            source="mindicador",
+        )
+    ]
+    assert await index_chain.fetch_indices("IPC_CL", [(2026, 1)]) == [
+        EconomicIndexWriteDTO(
+            code="IPC_CL",
+            period_year=2026,
+            period_month=1,
+            index_value=Decimal("109.71"),
+            source="sii",
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_chained_bulk_providers_stop_after_full_match() -> None:
+    """Test chained bulk providers stop once all requests are satisfied."""
+    called = {"fx": 0, "index": 0}
+
+    class FirstFx:
+        """Provide all requested FX entries."""
+
+        async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
+            """Handle fetch rate."""
+            return Decimal("950.12")
+
+        async def fetch_rate_entries(
+            self, currency_code: str, requested_dates: list[date]
+        ) -> list[ExchangeRateWriteDTO]:
+            """Handle fetch rate entries."""
+            return [
+                ExchangeRateWriteDTO(
+                    currency_code=currency_code,
+                    rate_date=requested_date,
+                    value_clp=Decimal("950.12"),
+                    source="first",
+                )
+                for requested_date in requested_dates
+            ]
+
+    class SecondFx:
+        """Fail if called after requests were already satisfied."""
+
+        async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
+            """Handle fetch rate."""
+            called["fx"] += 1
+            raise AssertionError("should not be called")
+
+        async def fetch_rate_entries(
+            self, currency_code: str, requested_dates: list[date]
+        ) -> list[ExchangeRateWriteDTO]:
+            """Handle fetch rate entries."""
+            called["fx"] += 1
+            raise AssertionError("should not be called")
+
+    class FirstIndex:
+        """Provide all requested index entries."""
+
+        async def fetch_index(
+            self, code: str, period_year: int, period_month: int
+        ) -> EconomicIndexWriteDTO | None:
+            """Handle fetch index."""
+            return EconomicIndexWriteDTO(
+                code=code,
+                period_year=period_year,
+                period_month=period_month,
+                index_value=Decimal("109.71"),
+                source="first",
+            )
+
+        async def fetch_indices(
+            self, code: str, requested_periods: list[tuple[int, int]]
+        ) -> list[EconomicIndexWriteDTO]:
+            """Handle fetch indices."""
+            return [
+                EconomicIndexWriteDTO(
+                    code=code,
+                    period_year=period_year,
+                    period_month=period_month,
+                    index_value=Decimal("109.71"),
+                    source="first",
+                )
+                for period_year, period_month in requested_periods
+            ]
+
+    class SecondIndex:
+        """Fail if called after requests were already satisfied."""
+
+        async def fetch_index(
+            self, code: str, period_year: int, period_month: int
+        ) -> EconomicIndexWriteDTO | None:
+            """Handle fetch index."""
+            called["index"] += 1
+            raise AssertionError("should not be called")
+
+        async def fetch_indices(
+            self, code: str, requested_periods: list[tuple[int, int]]
+        ) -> list[EconomicIndexWriteDTO]:
+            """Handle fetch indices."""
+            called["index"] += 1
+            raise AssertionError("should not be called")
+
+    assert await ChainedFxProvider([FirstFx(), SecondFx()]).fetch_rate_entries(
+        "USD", [date(2026, 1, 31)]
+    ) == [
+        ExchangeRateWriteDTO(
+            currency_code="USD",
+            rate_date=date(2026, 1, 31),
+            value_clp=Decimal("950.12"),
+            source="first",
+        )
+    ]
+    assert await ChainedEconomicIndexProvider(
+        [FirstIndex(), SecondIndex()]
+    ).fetch_indices("IPC_CL", [(2026, 1)]) == [
+        EconomicIndexWriteDTO(
+            code="IPC_CL",
+            period_year=2026,
+            period_month=1,
+            index_value=Decimal("109.71"),
+            source="first",
+        )
+    ]
+    assert called == {"fx": 0, "index": 0}
 
 
 @pytest.mark.asyncio
@@ -367,6 +650,12 @@ async def test_chained_economic_index_provider_returns_none_when_all_miss() -> N
         ) -> EconomicIndexWriteDTO | None:
             """Handle fetch index."""
             return None
+
+        async def fetch_indices(
+            self, code: str, requested_periods: list[tuple[int, int]]
+        ) -> list[EconomicIndexWriteDTO]:
+            """Handle fetch indices."""
+            return []
 
     assert (
         await ChainedEconomicIndexProvider([MissingIndex()]).fetch_index(

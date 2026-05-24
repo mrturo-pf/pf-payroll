@@ -33,10 +33,27 @@ class StubMarketDataRepository:
         """List economic indices."""
         raise AssertionError("not used")
 
+    async def list_economic_index_periods(
+        self,
+        code: str,
+        start_year: int,
+        start_month: int,
+        end_year: int,
+        end_month: int,
+    ) -> list[tuple[int, int]]:
+        """List economic index periods."""
+        raise AssertionError("not used")
+
     async def get_exchange_rate_value(
         self, currency_code: str, rate_date: date
     ) -> Decimal | None:
         """Get exchange rate value."""
+        raise AssertionError("not used")
+
+    async def list_exchange_rate_dates(
+        self, currency_code: str, start_date: date, end_date: date
+    ) -> list[date]:
+        """List exchange rate dates."""
         raise AssertionError("not used")
 
     async def refresh_rates(

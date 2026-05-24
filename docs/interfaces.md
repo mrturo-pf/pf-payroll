@@ -26,6 +26,7 @@ Default provider behavior:
 - `UTM` and `IPC_CL`: SII-backed lookup without credentials
 - `UF`, `USD`, `EUR`: `mindicador` fallback
 - BCCh support is available through optional environment variables for API credentials and series codes
+- API startup launches a background sync that backfills only missing periods for the last 365 daily entries of `USD`, `EUR`, and `UF`, plus the last 12 monthly entries of `IPC_CL` and `UTM`
 
 ### Payroll
 

@@ -77,6 +77,31 @@ class SyncRecentMarketData:
             upserted_economic_indices=upserted_economic_indices,
         )
 
+    async def execute_request_and_collect_remaining(
+        self, request: MarketDataSyncRequestDTO
+    ) -> tuple[SyncRecentMarketDataResultDTO, MarketDataSyncRequestDTO | None]:
+        """Synchronize a request and return any market-data gaps that remain."""
+        result = await self.execute_request(request)
+        remaining_request = await self.collect_remaining_request(request)
+        return result, remaining_request
+
+    async def collect_remaining_request(
+        self, request: MarketDataSyncRequestDTO
+    ) -> MarketDataSyncRequestDTO | None:
+        """Return any requested market-data entries that are still missing."""
+        remaining_exchange_rates = await self._collect_remaining_exchange_rates(
+            request.exchange_rate_dates
+        )
+        remaining_economic_indices = await self._collect_remaining_economic_indices(
+            request.economic_index_periods
+        )
+        if not remaining_exchange_rates and not remaining_economic_indices:
+            return None
+        return MarketDataSyncRequestDTO(
+            exchange_rate_dates=remaining_exchange_rates,
+            economic_index_periods=remaining_economic_indices,
+        )
+
     async def _collect_missing_exchange_rates(
         self,
         daily_dates: list[date],
@@ -156,6 +181,28 @@ class SyncRecentMarketData:
             upserted_exchange_rates += refresh_result.upserted_exchange_rates
         return upserted_exchange_rates
 
+    async def _collect_remaining_exchange_rates(
+        self, requests_by_code: dict[str, list[date]]
+    ) -> dict[str, list[date]]:
+        """Return requested exchange-rate dates that remain unavailable."""
+        remaining_requests: dict[str, list[date]] = {}
+        for currency_code, requested_dates in requests_by_code.items():
+            if not requested_dates:
+                continue
+            existing_dates = set(
+                await self.repository.list_exchange_rate_dates(
+                    currency_code, requested_dates[0], requested_dates[-1]
+                )
+            )
+            missing_dates = [
+                requested_date
+                for requested_date in requested_dates
+                if requested_date not in existing_dates
+            ]
+            if missing_dates:
+                remaining_requests[currency_code] = missing_dates
+        return remaining_requests
+
     async def _sync_economic_indices(
         self, requests_by_code: dict[str, list[tuple[int, int]]]
     ) -> int:
@@ -174,6 +221,34 @@ class SyncRecentMarketData:
             )
             upserted_economic_indices += refresh_result.upserted_economic_indices
         return upserted_economic_indices
+
+    async def _collect_remaining_economic_indices(
+        self, requests_by_code: dict[str, list[tuple[int, int]]]
+    ) -> dict[str, list[tuple[int, int]]]:
+        """Return requested economic-index periods that remain unavailable."""
+        remaining_requests: dict[str, list[tuple[int, int]]] = {}
+        for code, requested_periods in requests_by_code.items():
+            if not requested_periods:
+                continue
+            first_period_year, first_period_month = requested_periods[0]
+            last_period_year, last_period_month = requested_periods[-1]
+            existing_periods = set(
+                await self.repository.list_economic_index_periods(
+                    code,
+                    first_period_year,
+                    first_period_month,
+                    last_period_year,
+                    last_period_month,
+                )
+            )
+            missing_periods = [
+                requested_period
+                for requested_period in requested_periods
+                if requested_period not in existing_periods
+            ]
+            if missing_periods:
+                remaining_requests[code] = missing_periods
+        return remaining_requests
 
     def _build_daily_dates(self, today: date) -> list[date]:
         """Build daily dates for the rolling one-year window."""

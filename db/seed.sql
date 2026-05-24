@@ -98,10 +98,23 @@ INSERT INTO payroll_concepts (code, name, kind, is_taxable) VALUES
     ('SALARY_BASE', 'Base Salary', 'income', TRUE),
     ('LEGAL_GRATUITY', 'Legal Gratuity', 'income', TRUE),
     ('TELEWORK_REFUND', 'Telework Refund', 'income', FALSE),
+    (
+        'HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION',
+        'Employer Health Insurance Contribution',
+        'income',
+        TRUE
+    ),
     ('PENSION_BASE', 'Mandatory Pension Contribution', 'discount', FALSE),
     ('PENSION_ADDITIONAL', 'Additional Pension Contribution', 'discount', FALSE),
     ('HEALTH_BASE', 'Mandatory Health Contribution', 'discount', FALSE),
     ('HEALTH_ADDITIONAL_UF', 'Additional Health Charge in UF', 'discount', FALSE),
+    ('HEALTH_INSURANCE', 'Health Insurance', 'discount', FALSE),
+    (
+        'PRIOR_MONTH_LEAVE_ABSENCE_DISCOUNT',
+        'Prior-Month Leave or Absence Discount',
+        'discount',
+        FALSE
+    ),
     ('UNEMPLOYMENT_INSURANCE', 'Employee Unemployment Insurance', 'discount', FALSE),
     ('INCOME_TAX', 'Monthly Income Tax Withholding', 'discount', FALSE)
 ON CONFLICT (code) DO UPDATE

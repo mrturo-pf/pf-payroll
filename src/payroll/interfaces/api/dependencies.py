@@ -30,6 +30,9 @@ from payroll.application.use_cases.compute_contributions import ComputeContribut
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
+from payroll.application.use_cases.process_imported_payroll_periods import (
+    ProcessImportedPayrollPeriods,
+)
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
@@ -117,13 +120,18 @@ def get_refresh_rates_use_case(
     )
 
 
-def build_startup_market_data_sync(session: AsyncSession) -> SyncRecentMarketData:
-    """Build startup market-data sync use case."""
+def build_market_data_sync_use_case(session: AsyncSession) -> SyncRecentMarketData:
+    """Build the market-data sync use case."""
     return SyncRecentMarketData(
         SqlAlchemyMarketDataRepository(session),
         get_fx_rate_provider(),
         get_economic_index_provider(),
     )
+
+
+def build_startup_market_data_sync(session: AsyncSession) -> SyncRecentMarketData:
+    """Build startup market-data sync use case."""
+    return build_market_data_sync_use_case(session)
 
 
 def get_fx_rate_provider() -> ChainedFxProvider:
@@ -179,6 +187,14 @@ def get_import_payroll_use_case(
 ) -> ImportPayroll:
     """Get import payroll use case."""
     return ImportPayroll(repository, XlsxPayrollImporter())
+
+
+def get_process_imported_payroll_periods_use_case(
+    repository: PayrollRepository = Depends(get_payroll_repository),
+    market_data_repository: MarketDataRepository = Depends(get_market_data_repository),
+) -> ProcessImportedPayrollPeriods:
+    """Get imported-payroll post-processing use case."""
+    return ProcessImportedPayrollPeriods(repository, market_data_repository)
 
 
 def get_payroll_queries(

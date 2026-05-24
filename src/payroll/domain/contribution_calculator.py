@@ -64,10 +64,11 @@ class ContributionCalculator:
         taxable_clp: Decimal,
         plan: HealthPlan,
         cap: ContributionCap,
-        uf_value_clp: Decimal,
+        cap_uf_value_clp: Decimal,
+        plan_uf_value_clp: Decimal,
     ) -> HealthContribution:
         """Handle health."""
-        cap_clp, capped_base = self._capped_base(taxable_clp, cap, uf_value_clp)
+        cap_clp, capped_base = self._capped_base(taxable_clp, cap, cap_uf_value_clp)
 
         base_amount = quantize_clp(capped_base * plan.institution.mandatory_rate)
 
@@ -75,7 +76,7 @@ class ContributionCalculator:
             plan.institution.kind is HealthInstitutionKind.ISAPRE
             and plan.contracted_uf > 0
         ):
-            contracted_clp = quantize_clp(plan.contracted_uf * uf_value_clp)
+            contracted_clp = quantize_clp(plan.contracted_uf * plan_uf_value_clp)
             additional_amount = max(Decimal("0"), contracted_clp - base_amount)
         else:
             contracted_clp = Decimal("0")

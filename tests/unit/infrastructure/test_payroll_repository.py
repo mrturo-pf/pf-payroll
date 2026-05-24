@@ -40,6 +40,9 @@ from payroll.infrastructure.db.models.reference_data import (
 from payroll.infrastructure.db.repositories.payroll_repository import (
     SqlAlchemyPayrollRepository,
 )
+from payroll.infrastructure.db.repositories.payroll_repository_shared import (
+    build_net_pay_warning,
+)
 from payroll.interfaces.api import dependencies
 
 
@@ -129,6 +132,18 @@ class FakeSession:
         self.commit_count += 1
 
 
+def test_build_net_pay_warning_reports_final_mismatch() -> None:
+    """Test final net pay mismatch warning content."""
+    assert build_net_pay_warning(
+        Decimal("1000"),
+        Decimal("900"),
+        Decimal("100"),
+    ) == (
+        "Declared net_pay does not match the fully computed payroll totals. "
+        "Difference: 100 CLP."
+    )
+
+
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
     """Test sqlalchemy payroll repository imports rows."""
@@ -188,11 +203,11 @@ async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
         result.periods[0].employment_contract_kind is EmploymentContractKind.INDEFINITE
     )
     assert result.periods[0].declared_net_pay_clp == Decimal("950000")
-    assert result.periods[0].expected_net_pay_clp == Decimal("900000")
-    assert result.periods[0].net_pay_difference_clp == Decimal("50000")
+    assert result.periods[0].expected_net_pay_clp is None
+    assert result.periods[0].net_pay_difference_clp is None
     assert result.periods[0].net_pay_warning == (
-        "Declared net_pay does not match the imported concept "
-        "totals. Difference: 50000 CLP."
+        "Declared net_pay will be reconciled after computed contributions "
+        "and income tax are generated."
     )
     assert result.market_data_sync_request is not None
     assert result.market_data_sync_request.exchange_rate_dates == {
@@ -460,7 +475,7 @@ async def test_sa_payroll_repository_builds_sync_request_with_prior_gaps() -> No
     assert result.exchange_rate_dates == {
         "USD": [date(2026, 1, 1)],
         "EUR": [date(2026, 1, 2)],
-        "UF": [date(2025, 12, 31)],
+        "UF": [date(2025, 12, 31), date(2026, 1, 31)],
         "UTM": [date(2026, 1, 1)],
     }
     assert result.economic_index_periods == {"IPC_CL": [(2026, 1)]}
@@ -1297,10 +1312,91 @@ async def test_sqlalchemy_payroll_repository_saves_computed_contributions() -> N
     assert period.pension_plan_id == 11
     assert period.health_plan_id == 22
     assert sum(isinstance(item, PayrollItemModel) for item in session.added) == 5
-    assert session.commit_count == 2
+    assert session.commit_count == 3
     assert any(
         "DELETE FROM payroll_items" in str(statement) for statement in session.executed
     )
+
+
+@pytest.mark.asyncio
+async def test_sa_payroll_repository_keeps_net_pay_pending_until_tax_exists() -> None:
+    """Test net pay reconciliation stays pending after contributions only."""
+    period = PayrollPeriodModel(
+        id=5,
+        employer_id=10,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        status=PayrollStatus.PROJECTED,
+        declared_net_pay_clp=Decimal("830000"),
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=period),
+            FakeResult(
+                scalar_rows=[
+                    SimpleNamespace(id=1, code="PENSION_BASE"),
+                    SimpleNamespace(id=2, code="PENSION_ADDITIONAL"),
+                    SimpleNamespace(id=3, code="HEALTH_BASE"),
+                    SimpleNamespace(id=4, code="HEALTH_ADDITIONAL_UF"),
+                    SimpleNamespace(id=5, code="UNEMPLOYMENT_INSURANCE"),
+                ]
+            ),
+            FakeResult(),
+            FakeResult(),
+            FakeResult(
+                scalar_rows=[
+                    "PENSION_BASE",
+                    "PENSION_ADDITIONAL",
+                    "HEALTH_BASE",
+                    "HEALTH_ADDITIONAL_UF",
+                    "UNEMPLOYMENT_INSURANCE",
+                ]
+            ),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    await repository.save_computed_contributions(
+        SimpleNamespace(
+            period_id=5,
+            pension_plan_id=11,
+            health_plan_id=22,
+            pension=PensionContribution(
+                institution_code="AFP_UNO",
+                taxable_clp=Decimal("1000000"),
+                cap_clp=Decimal("3000000"),
+                capped_base_clp=Decimal("1000000"),
+                base_amount_clp=Decimal("100000"),
+                additional_amount_clp=Decimal("12700"),
+            ),
+            health=HealthContribution(
+                institution_code="FONASA",
+                institution_kind=HealthInstitutionKind.FONASA,
+                taxable_clp=Decimal("1000000"),
+                cap_clp=Decimal("3000000"),
+                capped_base_clp=Decimal("1000000"),
+                base_amount_clp=Decimal("70000"),
+                contracted_uf=Decimal("0"),
+                contracted_clp=Decimal("0"),
+                additional_amount_clp=Decimal("0"),
+            ),
+            unemployment=UnemploymentContribution(
+                contract_kind=EmploymentContractKind.INDEFINITE,
+                taxable_clp=Decimal("1000000"),
+                cap_clp=Decimal("3000000"),
+                capped_base_clp=Decimal("1000000"),
+                employee_rate=Decimal("0.006"),
+                employee_amount_clp=Decimal("6000"),
+                employer_rate=Decimal("0.024"),
+                employer_amount_clp=Decimal("24000"),
+            ),
+        )
+    )
+
+    assert period.expected_net_pay_clp is None
+    assert period.net_pay_difference_clp is None
+    assert session.commit_count == 3
 
 
 @pytest.mark.asyncio
@@ -1619,6 +1715,32 @@ async def test_sa_payroll_repository_builds_income_tax_context_and_bracket() -> 
 
 
 @pytest.mark.asyncio
+async def test_income_tax_ctx_excludes_health_additional() -> None:
+    """Test income-tax context excludes additional health plan charges."""
+    period = PayrollPeriodModel(
+        id=5,
+        employer_id=1,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        status=PayrollStatus.ACTUAL,
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=period),
+            FakeResult(scalar_one=Decimal("1000000")),
+            FakeResult(scalar_one=Decimal("143101")),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    context = await repository.get_income_tax_context(SimpleNamespace(period_id=5))
+
+    assert context.taxable_income_clp == Decimal("1000000")
+    assert context.deductible_amount_clp == Decimal("143101")
+
+
+@pytest.mark.asyncio
 async def test_sa_payroll_repository_rejects_missing_period_for_income_tax_ctx() -> (
     None
 ):
@@ -1640,6 +1762,43 @@ async def test_sa_payroll_repository_returns_none_for_missing_income_tax_bracket
         await repository.get_income_tax_bracket(date(2026, 1, 31), Decimal("20"))
         is None
     )
+
+
+@pytest.mark.asyncio
+async def test_sa_payroll_repository_builds_unemployment_context() -> None:
+    """Test sqlalchemy payroll repository builds unemployment context."""
+    period = PayrollPeriodModel(
+        id=5,
+        employer_id=1,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        status=PayrollStatus.ACTUAL,
+        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=period),
+            FakeResult(
+                scalar_one=ContributionCapModel(
+                    id=1,
+                    cap_type=ContributionCapType.UNEMPLOYMENT,
+                    valid_from=date(2026, 1, 1),
+                    valid_to=None,
+                    value_uf=Decimal("122.6000"),
+                )
+            ),
+            FakeResult(scalar_one=Decimal("1000000")),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    context = await repository.get_unemployment_context(SimpleNamespace(period_id=5))
+
+    assert context.period_id == 5
+    assert context.taxable_income_clp == Decimal("1000000")
+    assert context.employment_contract_kind is EmploymentContractKind.INDEFINITE
+    assert context.unemployment_cap.value_uf == Decimal("122.6000")
 
 
 @pytest.mark.asyncio
@@ -1672,7 +1831,162 @@ async def test_sqlalchemy_payroll_repository_saves_computed_income_tax() -> None
 
     assert result.period_id == 5
     assert sum(isinstance(item, PayrollItemModel) for item in session.added) == 1
-    assert session.commit_count == 2
+    assert session.commit_count == 3
+
+
+@pytest.mark.asyncio
+async def test_sa_payroll_repository_saves_computed_unemployment() -> None:
+    """Test sqlalchemy payroll repository saves computed unemployment."""
+    period = PayrollPeriodModel(
+        id=5,
+        employer_id=10,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        status=PayrollStatus.PROJECTED,
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=period),
+            FakeResult(
+                scalar_one=SimpleNamespace(id=10, code="UNEMPLOYMENT_INSURANCE")
+            ),
+            FakeResult(),
+            FakeResult(),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.save_computed_unemployment(
+        SimpleNamespace(
+            period_id=5,
+            unemployment=SimpleNamespace(employee_amount_clp=Decimal("23716")),
+        )
+    )
+
+    assert result.period_id == 5
+    assert sum(isinstance(item, PayrollItemModel) for item in session.added) == 1
+    assert session.commit_count == 3
+
+
+@pytest.mark.asyncio
+async def test_sa_payroll_repository_rejects_missing_unemployment_concept() -> None:
+    """Test rejection when unemployment concept is missing."""
+    period = PayrollPeriodModel(
+        id=5,
+        employer_id=10,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        status=PayrollStatus.PROJECTED,
+    )
+    repository = SqlAlchemyPayrollRepository(
+        FakeSession([FakeResult(scalar_one=period), FakeResult(scalar_one=None)])
+    )  # type: ignore[arg-type]
+
+    with pytest.raises(
+        ValueError,
+        match="Missing payroll concept for computed contributions: "
+        "UNEMPLOYMENT_INSURANCE",
+    ):
+        await repository.save_computed_unemployment(
+            SimpleNamespace(
+                period_id=5,
+                unemployment=SimpleNamespace(employee_amount_clp=Decimal("23716")),
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_sqlalchemy_payroll_repository_reconciles_net_pay_after_tax() -> None:
+    """Test net pay reconciliation completes after tax is saved."""
+    period = PayrollPeriodModel(
+        id=5,
+        employer_id=10,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        status=PayrollStatus.PROJECTED,
+        declared_net_pay_clp=Decimal("830000"),
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=period),
+            FakeResult(scalar_one=SimpleNamespace(id=9, code="INCOME_TAX")),
+            FakeResult(),
+            FakeResult(),
+            FakeResult(
+                scalar_rows=[
+                    "PENSION_BASE",
+                    "PENSION_ADDITIONAL",
+                    "HEALTH_BASE",
+                    "HEALTH_ADDITIONAL_UF",
+                    "UNEMPLOYMENT_INSURANCE",
+                    "INCOME_TAX",
+                ]
+            ),
+            FakeResult(scalar_one=Decimal("830000")),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    await repository.save_computed_income_tax(
+        SimpleNamespace(
+            period_id=5,
+            tax=SimpleNamespace(tax_clp=Decimal("674")),
+        )
+    )
+
+    assert period.expected_net_pay_clp == Decimal("830000")
+    assert period.net_pay_difference_clp == Decimal("0")
+    assert session.commit_count == 3
+
+
+@pytest.mark.asyncio
+async def test_sa_payroll_repository_keeps_net_pay_pending_without_summary_row() -> (
+    None
+):
+    """Test reconciliation stays pending when the summary row is unavailable."""
+    period = PayrollPeriodModel(
+        id=5,
+        employer_id=10,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        status=PayrollStatus.PROJECTED,
+        declared_net_pay_clp=Decimal("830000"),
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=period),
+            FakeResult(scalar_one=SimpleNamespace(id=9, code="INCOME_TAX")),
+            FakeResult(),
+            FakeResult(),
+            FakeResult(
+                scalar_rows=[
+                    "PENSION_BASE",
+                    "PENSION_ADDITIONAL",
+                    "HEALTH_BASE",
+                    "HEALTH_ADDITIONAL_UF",
+                    "UNEMPLOYMENT_INSURANCE",
+                    "INCOME_TAX",
+                ]
+            ),
+            FakeResult(scalar_one=None),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    await repository.save_computed_income_tax(
+        SimpleNamespace(
+            period_id=5,
+            tax=SimpleNamespace(tax_clp=Decimal("674")),
+        )
+    )
+
+    assert period.expected_net_pay_clp is None
+    assert period.net_pay_difference_clp is None
+    assert session.commit_count == 3
 
 
 @pytest.mark.asyncio

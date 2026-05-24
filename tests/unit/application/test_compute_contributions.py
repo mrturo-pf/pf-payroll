@@ -92,7 +92,9 @@ class StubPayrollRepository:
 class StubMarketDataRepository:
     """Test double for Market Data Repository."""
 
-    def __init__(self, uf_value: Decimal | None = Decimal("35000")) -> None:
+    def __init__(
+        self, uf_value: Decimal | dict[date, Decimal] | None = Decimal("35000")
+    ) -> None:
         """Initialize the instance."""
         self.uf_value = uf_value
         self.lookups: list[tuple[str, date]] = []
@@ -112,6 +114,8 @@ class StubMarketDataRepository:
     ) -> Decimal | None:
         """Get exchange rate value."""
         self.lookups.append((currency_code, rate_date))
+        if isinstance(self.uf_value, dict):
+            return self.uf_value.get(rate_date)
         return self.uf_value
 
     async def refresh_rates(self, command: object) -> object:
@@ -167,6 +171,64 @@ async def test_compute_contributions_uses_stored_uf_when_request_value_is_missin
     assert market_data_repository.lookups == [("UF", date(2026, 1, 31))]
     assert result.health.contracted_clp == Decimal("324000")
     assert result.unemployment.employee_amount_clp == Decimal("6000")
+
+
+@pytest.mark.asyncio
+async def test_compute_contributions_uses_month_end_uf_for_caps_and_health_plan() -> (
+    None
+):
+    """Test compute contributions uses month-end UF for all UF-based contributions."""
+    market_data_repository = StubMarketDataRepository(
+        {
+            date(2026, 1, 30): Decimal("40000"),
+            date(2026, 1, 31): Decimal("41000"),
+        }
+    )
+
+    class MonthEndRepository(StubPayrollRepository):
+        """Test double for month-end payment date."""
+
+        async def get_contribution_context(
+            self, command: ComputeContributionsCommandDTO
+        ) -> ContributionComputationContextDTO:
+            """Get contribution context."""
+            context = await super().get_contribution_context(command)
+            return ContributionComputationContextDTO(
+                period_id=context.period_id,
+                payment_date=date(2026, 1, 30),
+                taxable_income_clp=Decimal("4000000"),
+                employment_contract_kind=context.employment_contract_kind,
+                pension_plan=context.pension_plan,
+                health_plan=context.health_plan,
+                cap=context.cap,
+                unemployment_cap=context.unemployment_cap,
+            )
+
+    repository = MonthEndRepository()
+    use_case = ComputeContributions(repository, market_data_repository)  # type: ignore[arg-type]
+
+    result = await use_case.execute(
+        ComputeContributionsCommandDTO(
+            period_id=10,
+            pension_plan_id=1,
+            health_plan_id=2,
+        )
+    )
+
+    assert market_data_repository.lookups == [("UF", date(2026, 1, 31))]
+    assert result.pension.cap_clp == Decimal("3690000")
+    assert result.pension.capped_base_clp == Decimal("3690000")
+    assert result.pension.base_amount_clp == Decimal("369000")
+    assert result.pension.additional_amount_clp == Decimal("46863")
+    assert result.health.cap_clp == Decimal("3690000")
+    assert result.health.capped_base_clp == Decimal("3690000")
+    assert result.health.base_amount_clp == Decimal("258300")
+    assert result.health.contracted_clp == Decimal("332100")
+    assert result.health.additional_amount_clp == Decimal("73800")
+    assert result.unemployment.cap_clp == Decimal("3690000")
+    assert result.unemployment.capped_base_clp == Decimal("3690000")
+    assert result.unemployment.employee_amount_clp == Decimal("22140")
+    assert result.unemployment.employer_amount_clp == Decimal("88560")
 
 
 @pytest.mark.asyncio

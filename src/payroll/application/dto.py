@@ -186,6 +186,14 @@ class ComputeContributionsCommandDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class ComputeUnemploymentInsuranceCommandDTO:
+    """Represent Compute Unemployment Insurance Command DTO."""
+
+    period_id: int
+    uf_value_clp: Decimal | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class AssignPlansCommandDTO:
     """Represent Assign Plans Command DTO."""
 
@@ -235,6 +243,17 @@ class ContributionComputationContextDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class UnemploymentComputationContextDTO:
+    """Represent Unemployment Computation Context DTO."""
+
+    period_id: int
+    payment_date: date
+    taxable_income_clp: Decimal
+    employment_contract_kind: EmploymentContractKind
+    unemployment_cap: ContributionCap
+
+
+@dataclass(frozen=True, slots=True)
 class ComputeContributionsResultDTO:
     """Represent Compute Contributions Result DTO."""
 
@@ -246,6 +265,14 @@ class ComputeContributionsResultDTO:
     health: HealthContribution
     unemployment: UnemploymentContribution
     total_discount_clp: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class ComputeUnemploymentInsuranceResultDTO:
+    """Represent Compute Unemployment Insurance Result DTO."""
+
+    period_id: int
+    unemployment: UnemploymentContribution
 
 
 @dataclass(frozen=True, slots=True)

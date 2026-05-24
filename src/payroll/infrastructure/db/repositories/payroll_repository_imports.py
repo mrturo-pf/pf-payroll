@@ -27,6 +27,7 @@ from payroll.infrastructure.db.repositories.payroll_repository_shared import (
     SqlAlchemyPayrollRepositoryBase,
     build_net_pay_warning,
 )
+from payroll.shared.dates import last_day_of_month
 from payroll.shared.constants import (
     DAILY_MARKET_RATE_CODES,
     MONTHLY_ECONOMIC_INDEX_CODES,
@@ -151,8 +152,8 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                     status=PayrollStatus(first_row.status),
                     employment_contract_kind=first_row.employment_contract_kind,
                     declared_net_pay_clp=first_row.declared_net_pay_clp,
-                    expected_net_pay_clp=first_row.expected_net_pay_clp,
-                    net_pay_difference_clp=first_row.net_pay_difference_clp,
+                    expected_net_pay_clp=None,
+                    net_pay_difference_clp=None,
                 )
                 self._session.add(period)
                 await self._session.flush()
@@ -161,8 +162,8 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                 period.status = PayrollStatus(first_row.status)
                 period.employment_contract_kind = first_row.employment_contract_kind
                 period.declared_net_pay_clp = first_row.declared_net_pay_clp
-                period.expected_net_pay_clp = first_row.expected_net_pay_clp
-                period.net_pay_difference_clp = first_row.net_pay_difference_clp
+                period.expected_net_pay_clp = None
+                period.net_pay_difference_clp = None
                 await self._session.execute(
                     delete(PayrollItemModel).where(
                         PayrollItemModel.period_id == period.id
@@ -195,7 +196,9 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                     expected_net_pay_clp=period.expected_net_pay_clp,
                     net_pay_difference_clp=period.net_pay_difference_clp,
                     net_pay_warning=build_net_pay_warning(
-                        period.net_pay_difference_clp
+                        period.declared_net_pay_clp,
+                        period.expected_net_pay_clp,
+                        period.net_pay_difference_clp,
                     ),
                 )
             )
@@ -271,9 +274,15 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
             start_payment_date, period.payment_date
         )
         for currency_code in DAILY_MARKET_RATE_CODES:
+            requested_dates = requested_daily_dates
+            if currency_code == "UF":
+                requested_dates = sorted(
+                    set(requested_daily_dates)
+                    | {last_day_of_month(period.payment_date)}
+                )
             missing_dates = await self._list_missing_exchange_rate_dates(
                 currency_code=currency_code,
-                requested_dates=requested_daily_dates,
+                requested_dates=requested_dates,
             )
             if missing_dates:
                 missing_dates_by_code.setdefault(currency_code, set()).update(

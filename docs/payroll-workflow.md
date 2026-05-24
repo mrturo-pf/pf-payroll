@@ -193,9 +193,9 @@ Jan/2026,ACME,2026-01-31,indefinite,1000000
 Full CSV:
 
 ```csv
-period,employer,payment_date,employment_contract_kind,salary_base,monthly_legal_gratuity,teleworking_refund,pension_base,pension_additional,health_base,health_additional_uf,net_pay
-Jan/2026,ACME,2026-01-31,indefinite,1000000,250000,50000,100000,25000,70000,2.5,1105000
-Feb/2026,ACME,2026-02-28,fixed_term,1000000,250000,50000,100000,25000,70000,2.5,1105000
+period,employer,payment_date,employment_contract_kind,salary_base,monthly_legal_gratuity,teleworking_refund,health_insurance_employer_contribution,pension_base,pension_additional,health_base,health_plan_additional,health_insurance,prior_month_leave_absence_discount,net_pay
+Jan/2026,ACME,2026-01-31,indefinite,1000000,250000,50000,10030,100000,25000,70000,87500,12000,3000,1105000
+Feb/2026,ACME,2026-02-28,fixed_term,1000000,250000,50000,10030,100000,25000,70000,87500,12000,3000,1105000
 ```
 
 Supported payroll amount columns:
@@ -203,10 +203,31 @@ Supported payroll amount columns:
 - `salary_base`
 - `monthly_legal_gratuity`
 - `teleworking_refund`
+- `health_insurance_employer_contribution`
 - `pension_base`
 - `pension_additional`
 - `health_base`
-- `health_additional_uf`
+- `health_plan_additional`
+- `health_insurance`
+- `prior_month_leave_absence_discount`
+
+Computed concepts are intentionally **not** imported from the CSV:
+
+- `UNEMPLOYMENT_INSURANCE`
+- `INCOME_TAX`
+
+Those values are generated later through the workflow steps `compute-contributions`
+and `compute-tax`.
+
+Column semantics:
+
+- `health_insurance_employer_contribution` imports an additional **taxable**
+  income item, so it affects derived unemployment insurance and income tax.
+- `health_insurance` imports an extra discount item for payroll deductions such
+  as grouped complementary health-insurance charges; it affects net pay but is
+  not treated as a mandatory social-security deduction.
+- `prior_month_leave_absence_discount` imports carry-over payroll discounts such
+  as prior-month leave or absence adjustments; it affects net pay only.
 
 Import notes:
 
@@ -217,6 +238,9 @@ Import notes:
 - accepted contract kind aliases include `indefinite`, `fixed_term`, `indefinido`, and `plazo_fijo`
 - `net_pay` is optional; if present, the imported period is marked as `actual`, otherwise it is marked as `projected`
 - `net_pay` is **not** imported as a payroll concept row
-- when `net_pay` is present, the import response compares it against the sum of imported income and discount columns
-- a mismatch does **not** reject the import; the response includes `declared_net_pay_clp`, `expected_net_pay_clp`, `net_pay_difference_clp`, and `net_pay_warning`
+- when `net_pay` is present, the import response stores the declared value and marks reconciliation as pending until computed contributions and income tax are generated
+- during import, the system also tries to fetch any missing `UF`, `UTM`, `USD`, `EUR`, or `IPC_CL` entries required by the imported period so the next calculation steps can run immediately
+- all UF-valued payroll contribution calculations use the **last day of the remuneration month**, including contribution caps and `ISAPRE` contracted plan pricing; imports therefore request the `UF` for both the payroll `payment_date` and the month's last day when those dates differ
+- if the CSV already includes `PENSION_BASE`, `PENSION_ADDITIONAL`, `HEALTH_BASE`, and `HEALTH_ADDITIONAL_UF`, the import flow automatically computes the remaining modeled concepts that do not depend on plan assignment: `UNEMPLOYMENT_INSURANCE` and `INCOME_TAX`
+- once `compute-contributions` and `compute-tax` have completed, the system fills `expected_net_pay_clp`, `net_pay_difference_clp`, and `net_pay_warning` using the fully computed payroll totals; for income tax, the deductible social-security set includes `PENSION_BASE`, `PENSION_ADDITIONAL`, `HEALTH_BASE`, and `UNEMPLOYMENT_INSURANCE`, but excludes `HEALTH_ADDITIONAL_UF`
 - each populated payroll amount column becomes one imported payroll concept row for that period

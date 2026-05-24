@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, is_dataclass, replace
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from enum import Enum
@@ -19,6 +19,7 @@ from payroll.application.dto import (
     ComputeContributionsCommandDTO,
     ComputeIncomeTaxCommandDTO,
     GeneratedPayrollReportDTO,
+    ImportPayrollResultDTO,
     ReviewPayrollPeriodCommandDTO,
 )
 from payroll.application.use_cases.assign_plans import AssignPlans
@@ -27,6 +28,9 @@ from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
+from payroll.application.use_cases.process_imported_payroll_periods import (
+    ProcessImportedPayrollPeriods,
+)
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
 from payroll.infrastructure.db.repositories.market_data_repository import (
@@ -43,6 +47,7 @@ from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
 from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import (
     WeasyPrintPayrollReportRenderer,
 )
+from payroll.interfaces.api.dependencies import build_market_data_sync_use_case
 
 app = typer.Typer(help="Payroll CLI")
 
@@ -89,7 +94,32 @@ async def _import_payroll_async(file_path: Path) -> object:
         use_case = ImportPayroll(
             SqlAlchemyPayrollRepository(session), XlsxPayrollImporter()
         )
-        return await use_case.from_bytes(file_path.name, file_path.read_bytes())
+        result = await use_case.from_bytes(file_path.name, file_path.read_bytes())
+        market_data_sync_request = getattr(result, "market_data_sync_request", None)
+        if market_data_sync_request is None:
+            if isinstance(result, ImportPayrollResultDTO):
+                return await ProcessImportedPayrollPeriods(
+                    SqlAlchemyPayrollRepository(session),
+                    SqlAlchemyMarketDataRepository(session),
+                ).execute(result)
+            return result
+
+        sync_result, remaining_request = await build_market_data_sync_use_case(
+            session
+        ).execute_request_and_collect_remaining(market_data_sync_request)
+        synced_result = replace(result, market_data_sync_request=remaining_request)
+        if isinstance(synced_result, ImportPayrollResultDTO):
+            synced_result = await ProcessImportedPayrollPeriods(
+                SqlAlchemyPayrollRepository(session),
+                SqlAlchemyMarketDataRepository(session),
+            ).execute(synced_result)
+        return {
+            "imported_periods": synced_result.imported_periods,
+            "imported_items": synced_result.imported_items,
+            "periods": synced_result.periods,
+            "market_data_sync_result": sync_result,
+            "market_data_sync_request": synced_result.market_data_sync_request,
+        }
 
 
 async def _list_period_summaries_async() -> object:

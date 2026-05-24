@@ -11,6 +11,8 @@ from payroll.application.dto import (
     ComputeContributionsResultDTO,
     ComputeIncomeTaxResultDTO,
     ComputeIncomeTaxCommandDTO,
+    ComputeUnemploymentInsuranceCommandDTO,
+    ComputeUnemploymentInsuranceResultDTO,
     ContributionComputationContextDTO,
     ContributionCapDTO,
     CurrencyDTO,
@@ -32,6 +34,7 @@ from payroll.application.dto import (
     RefreshRatesResultDTO,
     ReviewPayrollPeriodCommandDTO,
     ReviewPayrollPeriodResultDTO,
+    UnemploymentComputationContextDTO,
 )
 from payroll.domain.taxes import IncomeTaxBracket
 
@@ -110,11 +113,25 @@ class PayrollRepository(Protocol):
         """Get contribution context."""
         ...
 
+    async def get_unemployment_context(
+        self,
+        command: ComputeUnemploymentInsuranceCommandDTO,
+    ) -> UnemploymentComputationContextDTO:
+        """Get unemployment computation context."""
+        ...
+
     async def save_computed_contributions(
         self,
         result: ComputeContributionsResultDTO,
     ) -> ComputeContributionsResultDTO:
         """Save computed contributions."""
+        ...
+
+    async def save_computed_unemployment(
+        self,
+        result: ComputeUnemploymentInsuranceResultDTO,
+    ) -> ComputeUnemploymentInsuranceResultDTO:
+        """Save computed unemployment insurance."""
         ...
 
     async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO | None:

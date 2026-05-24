@@ -19,20 +19,36 @@ from payroll.infrastructure.db.models import (
     EmployerModel,
     HealthInstitutionModel,
     HealthPlanModel,
+    PayrollConceptModel,
     PensionInstitutionModel,
     PensionPlanModel,
     PayrollSummaryModel,
 )
-from payroll.infrastructure.db.models.payroll import PayrollPeriodModel
+from payroll.infrastructure.db.models.payroll import (
+    PayrollItemModel,
+    PayrollPeriodModel,
+)
 from payroll.infrastructure.db.models.reference_data import ContributionCapType
+from payroll.shared.constants import REVIEW_REQUIRED_CONCEPT_CODES
 
 
-def build_net_pay_warning(net_pay_difference_clp: Decimal | None) -> str | None:
+def build_net_pay_warning(
+    declared_net_pay_clp: Decimal | None,
+    expected_net_pay_clp: Decimal | None,
+    net_pay_difference_clp: Decimal | None,
+) -> str | None:
     """Build net pay warning."""
-    if net_pay_difference_clp is None or net_pay_difference_clp == 0:
+    if declared_net_pay_clp is None:
+        return None
+    if expected_net_pay_clp is None or net_pay_difference_clp is None:
+        return (
+            "Declared net_pay will be reconciled after computed contributions "
+            "and income tax are generated."
+        )
+    if net_pay_difference_clp == 0:
         return None
     return (
-        "Declared net_pay does not match the imported concept totals. "
+        "Declared net_pay does not match the fully computed payroll totals. "
         f"Difference: {net_pay_difference_clp} CLP."
     )
 
@@ -58,7 +74,11 @@ def build_payroll_summary_dto(
         declared_net_pay_clp=period.declared_net_pay_clp,
         expected_net_pay_clp=period.expected_net_pay_clp,
         net_pay_difference_clp=period.net_pay_difference_clp,
-        net_pay_warning=build_net_pay_warning(period.net_pay_difference_clp),
+        net_pay_warning=build_net_pay_warning(
+            period.declared_net_pay_clp,
+            period.expected_net_pay_clp,
+            period.net_pay_difference_clp,
+        ),
     )
 
 
@@ -74,6 +94,56 @@ class SqlAlchemyPayrollRepositoryBase:
         await self._session.commit()
         await self._session.execute(
             text("REFRESH MATERIALIZED VIEW mv_payroll_summary")
+        )
+        await self._session.commit()
+
+    async def _reconcile_period_net_pay(
+        self,
+        period: PayrollPeriodModel,
+        *,
+        refresh_summary_view: bool,
+    ) -> None:
+        """Reconcile declared net pay once all computed concepts exist."""
+        if refresh_summary_view:
+            await self._refresh_summary_view()
+
+        if period.declared_net_pay_clp is None:
+            period.expected_net_pay_clp = None
+            period.net_pay_difference_clp = None
+            await self._session.commit()
+            return
+
+        concept_result = await self._session.execute(
+            select(PayrollConceptModel.code)
+            .join(
+                PayrollItemModel,
+                PayrollItemModel.concept_id == PayrollConceptModel.id,
+            )
+            .where(PayrollItemModel.period_id == period.id)
+            .where(PayrollConceptModel.code.in_(REVIEW_REQUIRED_CONCEPT_CODES))
+        )
+        available_codes = set(concept_result.scalars().all())
+        if available_codes != REVIEW_REQUIRED_CONCEPT_CODES:
+            period.expected_net_pay_clp = None
+            period.net_pay_difference_clp = None
+            await self._session.commit()
+            return
+
+        summary_result = await self._session.execute(
+            select(PayrollSummaryModel.net_pay_clp).where(
+                PayrollSummaryModel.period_id == period.id
+            )
+        )
+        expected_net_pay_clp = summary_result.scalar_one_or_none()
+        if expected_net_pay_clp is None:
+            period.expected_net_pay_clp = None
+            period.net_pay_difference_clp = None
+            await self._session.commit()
+            return
+
+        period.expected_net_pay_clp = Decimal(expected_net_pay_clp)
+        period.net_pay_difference_clp = (
+            period.declared_net_pay_clp - period.expected_net_pay_clp
         )
         await self._session.commit()
 

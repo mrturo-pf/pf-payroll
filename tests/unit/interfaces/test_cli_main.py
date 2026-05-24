@@ -17,9 +17,13 @@ import payroll.interfaces.cli.main as cli_main
 from payroll.application.dto import (
     GeneratedPayrollReportDTO,
     HealthPlanDTO,
+    ImportPayrollResultDTO,
+    ImportedPayrollPeriodDTO,
+    MarketDataSyncRequestDTO,
     PayrollPeriodDetailDTO,
     PayrollSummaryDTO,
     PensionPlanDTO,
+    SyncRecentMarketDataResultDTO,
 )
 from payroll.domain.contributions import EmploymentContractKind, HealthInstitutionKind
 
@@ -345,6 +349,213 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
         asyncio.run(cli_main._generate_payroll_report_async(7)).filename
         == "payroll-period-7.pdf"
     )
+
+
+def test_import_payroll_async_syncs_requested_market_data(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Test import payroll eagerly syncs the requested market data."""
+    sample_file = tmp_path / "sample.csv"
+    sample_file.write_text("period,employer\n")
+
+    class FakeSessionContext:
+        """Test double for Session Context."""
+
+        async def __aenter__(self) -> object:
+            """Enter the async context manager."""
+            return "session"
+
+        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+            """Exit the async context manager."""
+            return None
+
+    class FakeImportPayroll:
+        """Test double for Import Payroll."""
+
+        def __init__(self, repository: object, importer: object) -> None:
+            """Initialize the instance."""
+            assert repository == "payroll-repo"
+            assert importer == "importer"
+
+        async def from_bytes(
+            self, filename: str, content: bytes
+        ) -> ImportPayrollResultDTO:
+            """Create from bytes."""
+            assert filename == "sample.csv"
+            assert content == b"period,employer\n"
+            return ImportPayrollResultDTO(
+                imported_periods=1,
+                imported_items=1,
+                periods=[
+                    ImportedPayrollPeriodDTO(
+                        id=1,
+                        employer="ACME",
+                        period_year=2026,
+                        period_month=4,
+                        payment_date=date(2026, 4, 29),
+                        status="actual",
+                        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                        item_count=1,
+                    )
+                ],
+                market_data_sync_request=MarketDataSyncRequestDTO(
+                    exchange_rate_dates={"UF": [date(2026, 4, 29)]}
+                ),
+            )
+
+    class FakeMarketDataSyncUseCase:
+        """Test double for market-data sync."""
+
+        async def execute_request_and_collect_remaining(
+            self, request: MarketDataSyncRequestDTO
+        ) -> tuple[SyncRecentMarketDataResultDTO, MarketDataSyncRequestDTO | None]:
+            """Handle execute request and collect remaining."""
+            assert request == MarketDataSyncRequestDTO(
+                exchange_rate_dates={"UF": [date(2026, 4, 29)]}
+            )
+            return (
+                SyncRecentMarketDataResultDTO(
+                    requested_exchange_rates=1,
+                    requested_economic_indices=0,
+                    upserted_exchange_rates=1,
+                    upserted_economic_indices=0,
+                ),
+                None,
+            )
+
+    class FakeProcessImportedPayrollPeriods:
+        """Test double for imported-payroll post-processing."""
+
+        def __init__(self, repository: object, market_data_repository: object) -> None:
+            """Initialize the instance."""
+
+        async def execute(
+            self, result: ImportPayrollResultDTO
+        ) -> ImportPayrollResultDTO:
+            """Handle execute."""
+            return result
+
+    monkeypatch.setattr(cli_main, "SessionLocal", lambda: FakeSessionContext())
+    monkeypatch.setattr(
+        cli_main, "SqlAlchemyPayrollRepository", lambda session: "payroll-repo"
+    )
+    monkeypatch.setattr(cli_main, "XlsxPayrollImporter", lambda: "importer")
+    monkeypatch.setattr(cli_main, "ImportPayroll", FakeImportPayroll)
+    monkeypatch.setattr(
+        cli_main,
+        "build_market_data_sync_use_case",
+        lambda session: FakeMarketDataSyncUseCase(),
+    )
+    monkeypatch.setattr(
+        cli_main,
+        "ProcessImportedPayrollPeriods",
+        FakeProcessImportedPayrollPeriods,
+    )
+
+    result = asyncio.run(cli_main._import_payroll_async(sample_file))
+
+    assert result == {
+        "imported_periods": 1,
+        "imported_items": 1,
+        "periods": [
+            ImportedPayrollPeriodDTO(
+                id=1,
+                employer="ACME",
+                period_year=2026,
+                period_month=4,
+                payment_date=date(2026, 4, 29),
+                status="actual",
+                employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                item_count=1,
+            )
+        ],
+        "market_data_sync_result": SyncRecentMarketDataResultDTO(
+            requested_exchange_rates=1,
+            requested_economic_indices=0,
+            upserted_exchange_rates=1,
+            upserted_economic_indices=0,
+        ),
+        "market_data_sync_request": None,
+    }
+
+
+def test_import_payroll_async_processes_periods_without_market_sync(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Test import payroll post-processes DTO results without market sync work."""
+    sample_file = tmp_path / "sample.csv"
+    sample_file.write_text("period,employer\n")
+
+    class FakeSessionContext:
+        """Test double for Session Context."""
+
+        async def __aenter__(self) -> object:
+            """Enter the async context manager."""
+            return "session"
+
+        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+            """Exit the async context manager."""
+            return None
+
+    import_result = ImportPayrollResultDTO(
+        imported_periods=1,
+        imported_items=1,
+        periods=[
+            ImportedPayrollPeriodDTO(
+                id=1,
+                employer="ACME",
+                period_year=2026,
+                period_month=4,
+                payment_date=date(2026, 4, 29),
+                status="actual",
+                employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                item_count=1,
+            )
+        ],
+    )
+
+    class FakeImportPayroll:
+        """Test double for Import Payroll."""
+
+        def __init__(self, repository: object, importer: object) -> None:
+            """Initialize the instance."""
+
+        async def from_bytes(
+            self, filename: str, content: bytes
+        ) -> ImportPayrollResultDTO:
+            """Create from bytes."""
+            return import_result
+
+    class FakeProcessImportedPayrollPeriods:
+        """Test double for imported-payroll post-processing."""
+
+        def __init__(self, repository: object, market_data_repository: object) -> None:
+            """Initialize the instance."""
+
+        async def execute(
+            self, result: ImportPayrollResultDTO
+        ) -> ImportPayrollResultDTO:
+            """Handle execute."""
+            return result
+
+    monkeypatch.setattr(cli_main, "SessionLocal", lambda: FakeSessionContext())
+    monkeypatch.setattr(
+        cli_main, "SqlAlchemyPayrollRepository", lambda session: "payroll-repo"
+    )
+    monkeypatch.setattr(
+        cli_main, "SqlAlchemyMarketDataRepository", lambda session: "market-repo"
+    )
+    monkeypatch.setattr(cli_main, "XlsxPayrollImporter", lambda: "importer")
+    monkeypatch.setattr(cli_main, "ImportPayroll", FakeImportPayroll)
+    monkeypatch.setattr(
+        cli_main,
+        "ProcessImportedPayrollPeriods",
+        FakeProcessImportedPayrollPeriods,
+    )
+
+    result = asyncio.run(cli_main._import_payroll_async(sample_file))
+
+    assert result == import_result
 
 
 def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

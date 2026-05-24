@@ -9,6 +9,9 @@ import pytest
 
 from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
+from payroll.application.use_cases.process_imported_payroll_periods import (
+    ProcessImportedPayrollPeriods,
+)
 from payroll.application.use_cases.refresh_rates import RefreshRates
 from payroll.infrastructure.db.models import (
     CurrencyModel,
@@ -252,12 +255,17 @@ async def test_api_dependencies_build_market_data_queries_use_case_and_session(
     queries = dependencies.get_market_data_queries(repository)
     use_case = dependencies.get_refresh_rates_use_case(repository)
     startup_sync = dependencies.build_startup_market_data_sync(fake_session)  # type: ignore[arg-type]
+    process_use_case = dependencies.get_process_imported_payroll_periods_use_case(
+        object(),
+        repository,  # type: ignore[arg-type]
+    )
     deflate_use_case = dependencies.get_deflate_amounts_use_case(object(), repository)  # type: ignore[arg-type]
 
     assert isinstance(repository, SqlAlchemyMarketDataRepository)
     assert isinstance(queries, MarketDataQueries)
     assert isinstance(use_case, RefreshRates)
     assert startup_sync.repository is not None
+    assert isinstance(process_use_case, ProcessImportedPayrollPeriods)
     assert isinstance(deflate_use_case, DeflateAmounts)
 
 

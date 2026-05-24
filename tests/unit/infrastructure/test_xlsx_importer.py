@@ -231,3 +231,54 @@ def test_xlsx_payroll_importer_builds_application_rows() -> None:
     assert rows[0].declared_net_pay_clp == Decimal("950000")
     assert rows[0].expected_net_pay_clp == Decimal("900000")
     assert rows[0].net_pay_difference_clp == Decimal("50000")
+
+
+def test_xlsx_payroll_importer_maps_health_plan_additional_column() -> None:
+    """Test importer maps the health plan additional input column."""
+    rows = XlsxPayrollImporter().read_rows(
+        "sample.csv",
+        (
+            b"period,employer,payment_date,employment_contract_kind,"
+            b"health_plan_additional,net_pay\n"
+            b"Jan/2026,ACME,31/01/2026,indefinite,87500,0\n"
+        ),
+    )
+
+    assert len(rows) == 1
+    assert rows[0].concept_code == "HEALTH_ADDITIONAL_UF"
+    assert rows[0].amount_clp == Decimal("87500")
+
+
+def test_xlsx_payroll_importer_maps_health_insurance_columns() -> None:
+    """Test importer maps health-insurance income and discount columns."""
+    rows = XlsxPayrollImporter().read_rows(
+        "sample.csv",
+        (
+            b"period,employer,payment_date,employment_contract_kind,"
+            b"health_insurance_employer_contribution,health_insurance,net_pay\n"
+            b"Jan/2026,ACME,31/01/2026,indefinite,10030,46139,-36109\n"
+        ),
+    )
+
+    assert len(rows) == 2
+    assert rows[0].concept_code == "HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION"
+    assert rows[0].amount_clp == Decimal("10030")
+    assert rows[0].expected_net_pay_clp == Decimal("-36109")
+    assert rows[1].concept_code == "HEALTH_INSURANCE"
+    assert rows[1].amount_clp == Decimal("46139")
+
+
+def test_xlsx_payroll_importer_maps_prior_month_leave_absence_discount() -> None:
+    """Test importer maps the prior-month leave or absence discount column."""
+    rows = XlsxPayrollImporter().read_rows(
+        "sample.csv",
+        (
+            b"period,employer,payment_date,employment_contract_kind,"
+            b"prior_month_leave_absence_discount,net_pay\n"
+            b"Jan/2026,ACME,31/01/2026,indefinite,2933,-2933\n"
+        ),
+    )
+
+    assert len(rows) == 1
+    assert rows[0].concept_code == "PRIOR_MONTH_LEAVE_ABSENCE_DISCOUNT"
+    assert rows[0].amount_clp == Decimal("2933")

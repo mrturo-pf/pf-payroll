@@ -1,6 +1,6 @@
 """Payroll routes."""
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import date
 from decimal import Decimal
 
@@ -20,7 +20,10 @@ from payroll.application.dto import (
     PayrollSummaryDTO,
 )
 from payroll.interfaces.api.errors import to_http_exception
-from payroll.interfaces.api.background_tasks import schedule_payroll_market_data_sync
+from payroll.interfaces.api.background_tasks import (
+    schedule_payroll_market_data_sync,
+    sync_payroll_market_data_now,
+)
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
@@ -28,6 +31,9 @@ from payroll.application.use_cases.generate_payroll_report import GeneratePayrol
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
+from payroll.application.use_cases.process_imported_payroll_periods import (
+    ProcessImportedPayrollPeriods,
+)
 from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
 from payroll.interfaces.api.dependencies import (
     get_assign_plans_use_case,
@@ -37,6 +43,7 @@ from payroll.interfaces.api.dependencies import (
     get_import_payroll_use_case,
     get_generate_payroll_report_use_case,
     get_payroll_queries,
+    get_process_imported_payroll_periods_use_case,
     get_review_payroll_period_use_case,
 )
 
@@ -292,6 +299,9 @@ async def import_payroll(
     request: Request,
     file: UploadFile = File(...),
     use_case: ImportPayroll = Depends(get_import_payroll_use_case),
+    process_use_case: ProcessImportedPayrollPeriods = Depends(
+        get_process_imported_payroll_periods_use_case
+    ),
 ) -> ImportPayrollResponse:
     """Import payroll."""
     if not file.filename:
@@ -301,8 +311,12 @@ async def import_payroll(
         result = await use_case.from_bytes(file.filename, await file.read())
     except PayrollError as exc:
         raise to_http_exception(exc, default_status=400) from exc
-
-    schedule_payroll_market_data_sync(request.app, result.market_data_sync_request)
+    _, remaining_sync_request = await sync_payroll_market_data_now(
+        result.market_data_sync_request
+    )
+    result = replace(result, market_data_sync_request=remaining_sync_request)
+    result = await process_use_case.execute(result)
+    schedule_payroll_market_data_sync(request.app, remaining_sync_request)
 
     return ImportPayrollResponse(
         imported_periods=result.imported_periods,

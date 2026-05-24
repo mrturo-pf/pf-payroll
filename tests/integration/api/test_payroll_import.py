@@ -27,6 +27,7 @@ from payroll.application.dto import (
     ImportedPayrollPeriodDTO,
     MarketDataSyncRequestDTO,
     ReviewPayrollPeriodResultDTO,
+    SyncRecentMarketDataResultDTO,
 )
 
 from payroll.domain.contributions import (
@@ -45,6 +46,7 @@ from payroll.interfaces.api.dependencies import (
     get_generate_payroll_report_use_case,
     get_import_payroll_use_case,
     get_review_payroll_period_use_case,
+    get_process_imported_payroll_periods_use_case,
 )
 from payroll.interfaces.api.main import app
 from payroll.interfaces.api.routes.payroll import (
@@ -79,11 +81,11 @@ class FakeImportPayroll:
                     employment_contract_kind=EmploymentContractKind.INDEFINITE,
                     item_count=1,
                     declared_net_pay_clp=Decimal("950000"),
-                    expected_net_pay_clp=Decimal("900000"),
-                    net_pay_difference_clp=Decimal("50000"),
+                    expected_net_pay_clp=None,
+                    net_pay_difference_clp=None,
                     net_pay_warning=(
-                        "Declared net_pay does not match the imported concept "
-                        "totals. Difference: 50000 CLP."
+                        "Declared net_pay will be reconciled after computed "
+                        "contributions and income tax are generated."
                     ),
                 )
             ],
@@ -104,6 +106,14 @@ class FakeImportPayrollWithSyncRequest:
                 exchange_rate_dates={"UF": [date(2026, 1, 31)]}
             ),
         )
+
+
+class FakeProcessImportedPayrollPeriods:
+    """Test double for imported-payroll post-processing."""
+
+    async def execute(self, result: ImportPayrollResultDTO) -> ImportPayrollResultDTO:
+        """Handle execute."""
+        return result
 
 
 class FakeComputeContributions:
@@ -244,9 +254,22 @@ class FakeDeflateAmounts:
         )
 
 
+async def _async_return(
+    result: object,
+    observed_requests: list[MarketDataSyncRequestDTO | None],
+    sync_request: MarketDataSyncRequestDTO | None,
+) -> object:
+    """Return an async result while capturing the sync request."""
+    observed_requests.append(sync_request)
+    return result
+
+
 def test_payroll_import_endpoint() -> None:
     """Test payroll import endpoint."""
     app.dependency_overrides[get_import_payroll_use_case] = lambda: FakeImportPayroll()
+    app.dependency_overrides[get_process_imported_payroll_periods_use_case] = lambda: (
+        FakeProcessImportedPayrollPeriods()
+    )
     client = TestClient(app)
 
     try:
@@ -279,11 +302,11 @@ def test_payroll_import_endpoint() -> None:
                 "employment_contract_kind": "indefinite",
                 "item_count": 1,
                 "declared_net_pay_clp": "950000",
-                "expected_net_pay_clp": "900000",
-                "net_pay_difference_clp": "50000",
+                "expected_net_pay_clp": None,
+                "net_pay_difference_clp": None,
                 "net_pay_warning": (
-                    "Declared net_pay does not match the imported concept "
-                    "totals. Difference: 50000 CLP."
+                    "Declared net_pay will be reconciled after computed "
+                    "contributions and income tax are generated."
                 ),
             }
         ],
@@ -295,8 +318,28 @@ def test_payroll_import_endpoint_schedules_background_market_data_sync(
 ) -> None:
     """Test payroll import endpoint schedules a background market-data sync."""
     scheduled_requests: list[MarketDataSyncRequestDTO | None] = []
+    synced_requests: list[MarketDataSyncRequestDTO | None] = []
     app.dependency_overrides[get_import_payroll_use_case] = lambda: (
         FakeImportPayrollWithSyncRequest()
+    )
+    app.dependency_overrides[get_process_imported_payroll_periods_use_case] = lambda: (
+        FakeProcessImportedPayrollPeriods()
+    )
+    monkeypatch.setattr(
+        "payroll.interfaces.api.routes.payroll.sync_payroll_market_data_now",
+        lambda sync_request: _async_return(
+            (
+                SyncRecentMarketDataResultDTO(
+                    requested_exchange_rates=1,
+                    requested_economic_indices=0,
+                    upserted_exchange_rates=1,
+                    upserted_economic_indices=0,
+                ),
+                None,
+            ),
+            synced_requests,
+            sync_request,
+        ),
     )
     monkeypatch.setattr(
         "payroll.interfaces.api.routes.payroll.schedule_payroll_market_data_sync",
@@ -313,9 +356,10 @@ def test_payroll_import_endpoint_schedules_background_market_data_sync(
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert scheduled_requests == [
+    assert synced_requests == [
         MarketDataSyncRequestDTO(exchange_rate_dates={"UF": [date(2026, 1, 31)]})
     ]
+    assert scheduled_requests == [None]
 
 
 def test_payroll_import_endpoint_requires_filename_and_surfaces_value_errors() -> None:
@@ -331,6 +375,9 @@ def test_payroll_import_endpoint_requires_filename_and_surfaces_value_errors() -
             raise PayrollValidationError("bad payroll file")
 
     app.dependency_overrides[get_import_payroll_use_case] = lambda: ErrorImportPayroll()
+    app.dependency_overrides[get_process_imported_payroll_periods_use_case] = lambda: (
+        FakeProcessImportedPayrollPeriods()
+    )
     client = TestClient(app)
 
     try:
@@ -356,6 +403,7 @@ async def test_payroll_import_endpoint_rejects_empty_filename_in_handler() -> No
             SimpleNamespace(app=app),  # type: ignore[arg-type]
             UploadFile(file=BytesIO(b"noop"), filename=""),
             FakeImportPayroll(),
+            FakeProcessImportedPayrollPeriods(),
         )
 
 

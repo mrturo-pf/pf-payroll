@@ -8,6 +8,7 @@ import pytest
 from payroll.application.dto import (
     EconomicIndexWriteDTO,
     ExchangeRateWriteDTO,
+    MarketDataSyncRequestDTO,
     RefreshRatesCommandDTO,
     RefreshRatesResultDTO,
     SyncRecentMarketDataResultDTO,
@@ -82,6 +83,14 @@ class StubMarketDataRepository:
     ) -> RefreshRatesResultDTO:
         """Refresh rates."""
         self.refresh_calls.append(command)
+        for item in command.exchange_rates:
+            self.existing_exchange_rate_dates.setdefault(item.currency_code, set()).add(
+                item.rate_date
+            )
+        for item in command.economic_indices:
+            self.existing_index_periods.setdefault(item.code, set()).add(
+                (item.period_year, item.period_month)
+            )
         return RefreshRatesResultDTO(
             upserted_exchange_rates=len(command.exchange_rates),
             upserted_economic_indices=len(command.economic_indices),
@@ -333,3 +342,89 @@ async def test_sync_recent_market_data_skips_persisting_codes_with_no_results() 
         upserted_economic_indices=0,
     )
     assert len(repository.refresh_calls) == 3
+
+
+@pytest.mark.asyncio
+async def test_sync_recent_market_data_clears_remaining_request_after_success() -> None:
+    """Test explicit sync clears the requested gaps when providers return data."""
+    repository = StubMarketDataRepository()
+    use_case = SyncRecentMarketData(
+        repository,
+        StubFxProvider(),
+        StubEconomicIndexProvider(),
+        today_provider=lambda: date(2026, 5, 8),
+    )
+
+    result, remaining_request = await use_case.execute_request_and_collect_remaining(
+        request=MarketDataSyncRequestDTO(
+            exchange_rate_dates={
+                "UF": [date(2026, 4, 29)],
+                "UTM": [date(2026, 4, 1)],
+            },
+            economic_index_periods={"IPC_CL": [(2026, 4)]},
+        )
+    )
+
+    assert result == SyncRecentMarketDataResultDTO(
+        requested_exchange_rates=2,
+        requested_economic_indices=1,
+        upserted_exchange_rates=2,
+        upserted_economic_indices=1,
+    )
+    assert remaining_request is None
+
+
+@pytest.mark.asyncio
+async def test_sync_recent_market_data_keeps_remaining_request_on_provider_miss() -> (
+    None
+):
+    """Test explicit sync returns any still-missing requested entries."""
+    repository = StubMarketDataRepository()
+    use_case = SyncRecentMarketData(
+        repository,
+        StubFxProvider(missing_requests={("UF", date(2026, 4, 29))}),
+        StubEconomicIndexProvider(missing_requests={("IPC_CL", 2026, 4)}),
+        today_provider=lambda: date(2026, 5, 8),
+    )
+
+    result, remaining_request = await use_case.execute_request_and_collect_remaining(
+        request=MarketDataSyncRequestDTO(
+            exchange_rate_dates={
+                "UF": [date(2026, 4, 29)],
+                "UTM": [date(2026, 4, 1)],
+            },
+            economic_index_periods={"IPC_CL": [(2026, 4)]},
+        )
+    )
+
+    assert result == SyncRecentMarketDataResultDTO(
+        requested_exchange_rates=2,
+        requested_economic_indices=1,
+        upserted_exchange_rates=1,
+        upserted_economic_indices=0,
+    )
+    assert remaining_request == MarketDataSyncRequestDTO(
+        exchange_rate_dates={"UF": [date(2026, 4, 29)]},
+        economic_index_periods={"IPC_CL": [(2026, 4)]},
+    )
+
+
+@pytest.mark.asyncio
+async def test_sync_recent_market_data_ignores_empty_requested_groups() -> None:
+    """Test explicit sync skips empty request groups when checking remainders."""
+    repository = StubMarketDataRepository()
+    use_case = SyncRecentMarketData(
+        repository,
+        StubFxProvider(),
+        StubEconomicIndexProvider(),
+        today_provider=lambda: date(2026, 5, 8),
+    )
+
+    remaining_request = await use_case.collect_remaining_request(
+        MarketDataSyncRequestDTO(
+            exchange_rate_dates={"UF": []},
+            economic_index_periods={"IPC_CL": []},
+        )
+    )
+
+    assert remaining_request is None

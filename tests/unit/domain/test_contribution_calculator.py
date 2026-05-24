@@ -76,7 +76,8 @@ def test_health_contribution_uses_contract_amount_for_isapre_only() -> None:
         cap=ContributionCap(
             "pension_health", date(2026, 1, 1), None, Decimal("90.0000")
         ),
-        uf_value_clp=Decimal("10000"),
+        cap_uf_value_clp=Decimal("10000"),
+        plan_uf_value_clp=Decimal("10000"),
     )
     fonasa_contribution = calculator.health(
         taxable_clp=Decimal("1000000"),
@@ -96,7 +97,8 @@ def test_health_contribution_uses_contract_amount_for_isapre_only() -> None:
         cap=ContributionCap(
             "pension_health", date(2026, 1, 1), None, Decimal("90.0000")
         ),
-        uf_value_clp=Decimal("10000"),
+        cap_uf_value_clp=Decimal("10000"),
+        plan_uf_value_clp=Decimal("10000"),
     )
 
     assert isapre_contribution.base_amount_clp == Decimal("63000")

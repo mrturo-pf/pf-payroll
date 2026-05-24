@@ -6,7 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from payroll.application.dto import MarketDataSyncRequestDTO
+from payroll.application.dto import (
+    MarketDataSyncRequestDTO,
+    SyncRecentMarketDataResultDTO,
+)
 from payroll.interfaces.api import background_tasks
 
 
@@ -63,7 +66,7 @@ async def test_run_payroll_market_data_sync_logs_completion(
     monkeypatch.setattr(background_tasks, "SessionLocal", lambda: FakeSessionManager())
     monkeypatch.setattr(
         background_tasks,
-        "build_startup_market_data_sync",
+        "build_market_data_sync_use_case",
         lambda session: FakeUseCase(),
     )
     monkeypatch.setattr(
@@ -122,7 +125,7 @@ async def test_run_payroll_market_data_sync_logs_failures(
     monkeypatch.setattr(background_tasks, "SessionLocal", lambda: FakeSessionManager())
     monkeypatch.setattr(
         background_tasks,
-        "build_startup_market_data_sync",
+        "build_market_data_sync_use_case",
         lambda session: FakeUseCase(),
     )
     monkeypatch.setattr(background_tasks.logger, "info", lambda event, **kwargs: None)
@@ -170,7 +173,7 @@ async def test_run_payroll_market_data_sync_logs_cancellation(
     monkeypatch.setattr(background_tasks, "SessionLocal", lambda: FakeSessionManager())
     monkeypatch.setattr(
         background_tasks,
-        "build_startup_market_data_sync",
+        "build_market_data_sync_use_case",
         lambda session: FakeUseCase(),
     )
     monkeypatch.setattr(
@@ -210,6 +213,63 @@ async def test_run_payroll_market_data_sync_skips_when_disabled_or_empty(
     await background_tasks.run_payroll_market_data_sync(MarketDataSyncRequestDTO())
 
     assert called is False
+
+
+@pytest.mark.asyncio
+async def test_sync_payroll_market_data_now_returns_remaining_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test immediate payroll sync returns the unresolved remainder."""
+    sync_request = MarketDataSyncRequestDTO(
+        exchange_rate_dates={"UF": [date(2026, 1, 31)]}
+    )
+
+    class FakeSessionManager:
+        """Test double for session manager."""
+
+        async def __aenter__(self) -> object:
+            """Enter the async context manager."""
+            return object()
+
+        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+            """Exit the async context manager."""
+
+    class FakeUseCase:
+        """Test double for immediate sync use case."""
+
+        async def execute_request_and_collect_remaining(
+            self, request: MarketDataSyncRequestDTO
+        ) -> tuple[SyncRecentMarketDataResultDTO, MarketDataSyncRequestDTO | None]:
+            """Handle execute request and collect remaining."""
+            assert request is sync_request
+            return (
+                SyncRecentMarketDataResultDTO(
+                    requested_exchange_rates=1,
+                    requested_economic_indices=0,
+                    upserted_exchange_rates=1,
+                    upserted_economic_indices=0,
+                ),
+                None,
+            )
+
+    monkeypatch.setattr(background_tasks, "SessionLocal", lambda: FakeSessionManager())
+    monkeypatch.setattr(
+        background_tasks,
+        "build_market_data_sync_use_case",
+        lambda session: FakeUseCase(),
+    )
+
+    result = await background_tasks.sync_payroll_market_data_now(sync_request)
+
+    assert result == (
+        SyncRecentMarketDataResultDTO(
+            requested_exchange_rates=1,
+            requested_economic_indices=0,
+            upserted_exchange_rates=1,
+            upserted_economic_indices=0,
+        ),
+        None,
+    )
 
 
 @pytest.mark.asyncio

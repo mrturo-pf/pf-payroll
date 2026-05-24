@@ -12,10 +12,13 @@ from payroll.application.dto import (
     ComputeContributionsResultDTO,
     ComputeIncomeTaxCommandDTO,
     ComputeIncomeTaxResultDTO,
+    ComputeUnemploymentInsuranceCommandDTO,
+    ComputeUnemploymentInsuranceResultDTO,
     ContributionComputationContextDTO,
     IncomeTaxContextDTO,
     ReviewPayrollPeriodCommandDTO,
     ReviewPayrollPeriodResultDTO,
+    UnemploymentComputationContextDTO,
 )
 from payroll.application.errors import PayrollConflictError, PayrollNotFoundError
 from payroll.domain.contributions import (
@@ -40,6 +43,7 @@ from payroll.infrastructure.db.repositories.payroll_repository_shared import (
 )
 from payroll.shared.constants import (
     COMPUTED_CONTRIBUTION_CONCEPT_CODES,
+    INCOME_TAX_DEDUCTIBLE_CONCEPT_CODES,
     INCOME_TAX_CONCEPT_CODE,
     REVIEW_REQUIRED_CONCEPT_CODES,
 )
@@ -256,7 +260,79 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
             ]
         )
 
-        await self._refresh_summary_view()
+        await self._reconcile_period_net_pay(period, refresh_summary_view=True)
+        return result
+
+    async def get_unemployment_context(
+        self, command: ComputeUnemploymentInsuranceCommandDTO
+    ) -> UnemploymentComputationContextDTO:
+        """Get unemployment computation context."""
+        period = await self._get_period(command.period_id)
+        unemployment_cap_model = await self._get_latest_contribution_cap(
+            cap_type=ContributionCapType.UNEMPLOYMENT,
+            payment_date=period.payment_date,
+            missing_message=(
+                "No unemployment contribution cap was found for "
+                f"{period.payment_date.isoformat()}."
+            ),
+        )
+        taxable_result = await self._session.execute(
+            select(func.coalesce(func.sum(PayrollItemModel.amount_clp), 0))
+            .join(
+                PayrollConceptModel,
+                PayrollItemModel.concept_id == PayrollConceptModel.id,
+            )
+            .where(PayrollItemModel.period_id == period.id)
+            .where(PayrollConceptModel.kind == PayrollConceptKind.INCOME)
+            .where(PayrollConceptModel.is_taxable.is_(True))
+        )
+
+        return UnemploymentComputationContextDTO(
+            period_id=period.id,
+            payment_date=period.payment_date,
+            taxable_income_clp=Decimal(taxable_result.scalar_one()),
+            employment_contract_kind=period.employment_contract_kind,
+            unemployment_cap=ContributionCap(
+                cap_type=unemployment_cap_model.cap_type.value,
+                valid_from=unemployment_cap_model.valid_from,
+                valid_to=unemployment_cap_model.valid_to,
+                value_uf=unemployment_cap_model.value_uf,
+            ),
+        )
+
+    async def save_computed_unemployment(
+        self,
+        result: ComputeUnemploymentInsuranceResultDTO,
+    ) -> ComputeUnemploymentInsuranceResultDTO:
+        """Save computed unemployment insurance."""
+        period = await self._get_period(result.period_id)
+        concept_result = await self._session.execute(
+            select(PayrollConceptModel).where(
+                PayrollConceptModel.code == "UNEMPLOYMENT_INSURANCE"
+            )
+        )
+        concept = concept_result.scalar_one_or_none()
+        if concept is None:
+            raise PayrollNotFoundError(
+                "Missing payroll concept for computed contributions: "
+                "UNEMPLOYMENT_INSURANCE"
+            )
+
+        await self._session.execute(
+            delete(PayrollItemModel).where(
+                PayrollItemModel.period_id == result.period_id,
+                PayrollItemModel.concept_id == concept.id,
+            )
+        )
+        self._session.add(
+            PayrollItemModel(
+                period_id=result.period_id,
+                concept_id=concept.id,
+                amount_clp=result.unemployment.employee_amount_clp,
+            )
+        )
+
+        await self._reconcile_period_net_pay(period, refresh_summary_view=True)
         return result
 
     async def get_income_tax_context(
@@ -282,7 +358,7 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
                 PayrollItemModel.concept_id == PayrollConceptModel.id,
             )
             .where(PayrollItemModel.period_id == period.id)
-            .where(PayrollConceptModel.code.in_(COMPUTED_CONTRIBUTION_CONCEPT_CODES))
+            .where(PayrollConceptModel.code.in_(INCOME_TAX_DEDUCTIBLE_CONCEPT_CODES))
         )
 
         return IncomeTaxContextDTO(
@@ -335,7 +411,7 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
         result: ComputeIncomeTaxResultDTO,
     ) -> ComputeIncomeTaxResultDTO:
         """Save computed income tax."""
-        await self._get_period(result.period_id)
+        period = await self._get_period(result.period_id)
 
         concept_result = await self._session.execute(
             select(PayrollConceptModel).where(
@@ -363,5 +439,5 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
             )
         )
 
-        await self._refresh_summary_view()
+        await self._reconcile_period_net_pay(period, refresh_summary_view=True)
         return result

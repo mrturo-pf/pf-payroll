@@ -16,10 +16,21 @@ CONCEPT_MAP = {
     "salary_base": ("SALARY_BASE", "income", True),
     "monthly_legal_gratuity": ("LEGAL_GRATUITY", "income", True),
     "teleworking_refund": ("TELEWORK_REFUND", "income", False),
+    "health_insurance_employer_contribution": (
+        "HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION",
+        "income",
+        True,
+    ),
     "pension_base": ("PENSION_BASE", "discount", False),
     "pension_additional": ("PENSION_ADDITIONAL", "discount", False),
     "health_base": ("HEALTH_BASE", "discount", False),
-    "health_additional_uf": ("HEALTH_ADDITIONAL_UF", "discount", False),
+    "health_plan_additional": ("HEALTH_ADDITIONAL_UF", "discount", False),
+    "health_insurance": ("HEALTH_INSURANCE", "discount", False),
+    "prior_month_leave_absence_discount": (
+        "PRIOR_MONTH_LEAVE_ABSENCE_DISCOUNT",
+        "discount",
+        False,
+    ),
 }
 
 CONTRACT_KIND_ALIASES = {

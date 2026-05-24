@@ -18,11 +18,17 @@ from payroll.application.dto import ExchangeRateWriteDTO, MoneyDTO
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.compute_contributions import ComputeContributions
+from payroll.application.use_cases.compute_unemployment_insurance import (
+    ComputeUnemploymentInsurance,
+)
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
+from payroll.application.use_cases.process_imported_payroll_periods import (
+    ProcessImportedPayrollPeriods,
+)
 from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
 from payroll.application.use_cases.refresh_income_tax_brackets import (
     RefreshIncomeTaxBrackets,
@@ -231,6 +237,14 @@ def test_use_case_placeholders_are_instantiable() -> None:
             """Save computed income tax."""
             return result
 
+        async def get_unemployment_context(self, command: object) -> object:
+            """Get unemployment context."""
+            return object()
+
+        async def save_computed_unemployment(self, result: object) -> object:
+            """Save computed unemployment."""
+            return result
+
     assert isinstance(
         ImportPayroll(StubRepository(), XlsxPayrollImporter()), ImportPayroll
     )
@@ -251,6 +265,14 @@ def test_use_case_placeholders_are_instantiable() -> None:
     )
     assert isinstance(
         ComputeIncomeTax(StubRepository(), StubRepository()), ComputeIncomeTax
+    )
+    assert isinstance(
+        ComputeUnemploymentInsurance(StubRepository(), StubRepository()),
+        ComputeUnemploymentInsurance,
+    )
+    assert isinstance(
+        ProcessImportedPayrollPeriods(StubRepository(), StubRepository()),
+        ProcessImportedPayrollPeriods,
     )
     assert isinstance(RefreshRates(StubRepository()), RefreshRates)
     assert isinstance(

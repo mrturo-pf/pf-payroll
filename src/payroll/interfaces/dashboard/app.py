@@ -117,12 +117,10 @@ def _report_url(detail: PayrollPeriodDetailDTO) -> str | None:
 
 def _net_pay_check(summary: PayrollSummaryDTO) -> tuple[str, str]:
     """Handle net pay check."""
-    if (
-        summary.declared_net_pay_clp is None
-        or summary.expected_net_pay_clp is None
-        or summary.net_pay_difference_clp is None
-    ):
+    if summary.declared_net_pay_clp is None:
         return ("No declared net pay", "not_available")
+    if summary.expected_net_pay_clp is None or summary.net_pay_difference_clp is None:
+        return ("Pending computed reconciliation", "pending")
     if summary.net_pay_difference_clp == 0:
         return ("Matches declared net pay", "matched")
     difference = _format_clp(abs(summary.net_pay_difference_clp))

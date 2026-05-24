@@ -119,6 +119,23 @@ def test_dashboard_format_helpers() -> None:
     assert _format_clp(Decimal("1234567")) == "$1.234.567"
     assert _format_period(2026, 4) == "04/2026"
     assert _net_pay_check(sample_summary()) == ("Matches declared net pay", "matched")
+    pending_summary = PayrollSummaryDTO(
+        period_id=7,
+        employer_id=1,
+        employer_name="ACME",
+        period_year=2026,
+        period_month=4,
+        payment_date=date(2026, 4, 30),
+        taxable_income_clp=Decimal("1000000"),
+        gross_income_clp=Decimal("1250000"),
+        total_discounts_clp=Decimal("180000"),
+        net_pay_clp=Decimal("1070000"),
+        declared_net_pay_clp=Decimal("1070000"),
+    )
+    assert _net_pay_check(pending_summary) == (
+        "Pending computed reconciliation",
+        "pending",
+    )
 
 
 def test_missing_required_items_marks_every_pending_step() -> None:
@@ -323,6 +340,22 @@ def test_dashboard_renders_mismatch_and_missing_net_pay_states() -> None:
         mismatch_row.net_pay_check
         == "Mismatch by $20.000 (declared $1.050.000 vs expected $1.070.000)"
     )
+
+    pending_summary = PayrollSummaryDTO(
+        period_id=10,
+        employer_id=1,
+        employer_name="ACME",
+        period_year=2026,
+        period_month=7,
+        payment_date=date(2026, 7, 31),
+        taxable_income_clp=Decimal("1000000"),
+        gross_income_clp=Decimal("1250000"),
+        total_discounts_clp=Decimal("180000"),
+        net_pay_clp=Decimal("1070000"),
+        declared_net_pay_clp=Decimal("1050000"),
+    )
+    pending_row = _build_period_row(pending_summary, sample_detail())
+    assert pending_row.net_pay_check == "Pending computed reconciliation"
 
     missing_summary = PayrollSummaryDTO(
         period_id=9,

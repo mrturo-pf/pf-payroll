@@ -7,10 +7,13 @@ from contextlib import suppress
 
 from fastapi import FastAPI
 
-from payroll.application.dto import MarketDataSyncRequestDTO
+from payroll.application.dto import (
+    MarketDataSyncRequestDTO,
+    SyncRecentMarketDataResultDTO,
+)
 from payroll.infrastructure.db.session import SessionLocal
 from payroll.infrastructure.logging.logger import logger
-from payroll.interfaces.api.dependencies import build_startup_market_data_sync
+from payroll.interfaces.api.dependencies import build_market_data_sync_use_case
 
 
 def count_requested_exchange_rates(sync_request: MarketDataSyncRequestDTO) -> int:
@@ -49,7 +52,7 @@ async def run_payroll_market_data_sync(sync_request: MarketDataSyncRequestDTO) -
     )
     try:
         async with SessionLocal() as session:
-            result = await build_startup_market_data_sync(session).execute_request(
+            result = await build_market_data_sync_use_case(session).execute_request(
                 sync_request
             )
     except asyncio.CancelledError:
@@ -69,6 +72,22 @@ async def run_payroll_market_data_sync(sync_request: MarketDataSyncRequestDTO) -
         upserted_exchange_rates=result.upserted_exchange_rates,
         upserted_economic_indices=result.upserted_economic_indices,
     )
+
+
+async def sync_payroll_market_data_now(
+    sync_request: MarketDataSyncRequestDTO | None,
+) -> tuple[SyncRecentMarketDataResultDTO | None, MarketDataSyncRequestDTO | None]:
+    """Synchronize the requested payroll market data immediately."""
+    if not has_market_data_sync_work(sync_request):
+        return None, None
+
+    request = sync_request
+    assert request is not None
+
+    async with SessionLocal() as session:
+        return await build_market_data_sync_use_case(
+            session
+        ).execute_request_and_collect_remaining(request)
 
 
 def schedule_payroll_market_data_sync(

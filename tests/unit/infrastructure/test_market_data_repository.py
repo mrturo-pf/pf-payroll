@@ -17,6 +17,7 @@ from payroll.infrastructure.db.models import (
 )
 from payroll.infrastructure.db.repositories.market_data_repository import (
     SqlAlchemyMarketDataRepository,
+    normalize_exchange_rate_lookup_date,
 )
 from payroll.interfaces.api import dependencies
 
@@ -133,6 +134,16 @@ async def test_sqlalchemy_market_data_repository_lists_rates_and_indices() -> No
     assert rate_dates == [date(2026, 1, 31), date(2026, 1, 30)]
     assert index_periods == [(2026, 1), (2025, 12)]
     assert len(session.statements) == 6
+
+
+def test_normalize_exchange_rate_lookup_date_handles_monthly_and_daily_codes() -> None:
+    """Test exchange-rate lookup normalization for monthly and daily series."""
+    assert normalize_exchange_rate_lookup_date("UTM", date(2026, 1, 31)) == date(
+        2026, 1, 1
+    )
+    assert normalize_exchange_rate_lookup_date("UF", date(2026, 1, 31)) == date(
+        2026, 1, 31
+    )
 
 
 @pytest.mark.asyncio

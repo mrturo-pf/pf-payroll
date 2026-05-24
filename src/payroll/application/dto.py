@@ -172,6 +172,7 @@ class ImportPayrollResultDTO:
     imported_periods: int
     imported_items: int
     periods: list[ImportedPayrollPeriodDTO]
+    market_data_sync_request: "MarketDataSyncRequestDTO | None" = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -318,6 +319,16 @@ class SyncRecentMarketDataResultDTO:
     requested_economic_indices: int
     upserted_exchange_rates: int
     upserted_economic_indices: int
+
+
+@dataclass(frozen=True, slots=True)
+class MarketDataSyncRequestDTO:
+    """Represent an explicit market-data synchronization request."""
+
+    exchange_rate_dates: dict[str, list[date]] = field(default_factory=dict)
+    economic_index_periods: dict[str, list[tuple[int, int]]] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True, slots=True)

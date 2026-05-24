@@ -194,6 +194,16 @@ async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
         "Declared net_pay does not match the imported concept "
         "totals. Difference: 50000 CLP."
     )
+    assert result.market_data_sync_request is not None
+    assert result.market_data_sync_request.exchange_rate_dates == {
+        "USD": [date(2026, 1, 31)],
+        "EUR": [date(2026, 1, 31)],
+        "UF": [date(2026, 1, 31)],
+        "UTM": [date(2026, 1, 1)],
+    }
+    assert result.market_data_sync_request.economic_index_periods == {
+        "IPC_CL": [(2026, 1)]
+    }
     assert session.flush_count == 1
     assert session.commit_count == 2
     assert any(isinstance(item, PayrollPeriodModel) for item in session.added)
@@ -289,6 +299,104 @@ async def test_sqlalchemy_payroll_repository_rejects_unknown_concepts() -> None:
                 )
             ]
         )
+
+
+@pytest.mark.asyncio
+async def test_sa_payroll_repository_skips_sync_when_market_data_is_complete() -> None:
+    """Test imported periods skip sync scheduling when coverage is complete."""
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=None),
+            FakeResult(scalar_rows=[date(2026, 1, 31)]),
+            FakeResult(scalar_rows=[date(2026, 1, 31)]),
+            FakeResult(scalar_rows=[date(2026, 1, 31)]),
+            FakeResult(scalar_rows=[date(2026, 1, 1)]),
+            FakeResult(joined_rows=[(2026, 1)]),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+    period = PayrollPeriodModel(
+        id=5,
+        employer_id=10,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        status=PayrollStatus.PROJECTED,
+    )
+
+    assert await repository._build_market_data_sync_request([period]) is None
+
+
+@pytest.mark.asyncio
+async def test_sa_payroll_repository_builds_sync_request_with_prior_gaps() -> None:
+    """Test imported periods enqueue only the missing gaps after the previous period."""
+    session = FakeSession(
+        [
+            FakeResult(
+                scalar_one=PayrollPeriodModel(
+                    id=4,
+                    employer_id=10,
+                    period_year=2025,
+                    period_month=12,
+                    payment_date=date(2025, 12, 30),
+                    status=PayrollStatus.PROJECTED,
+                )
+            ),
+            FakeResult(
+                scalar_rows=[date(2025, 12, 30), date(2025, 12, 31), date(2026, 1, 2)]
+            ),
+            FakeResult(
+                scalar_rows=[date(2025, 12, 30), date(2025, 12, 31), date(2026, 1, 1)]
+            ),
+            FakeResult(
+                scalar_rows=[date(2025, 12, 30), date(2026, 1, 1), date(2026, 1, 2)]
+            ),
+            FakeResult(scalar_rows=[date(2025, 12, 1)]),
+            FakeResult(joined_rows=[(2025, 12)]),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+    period = PayrollPeriodModel(
+        id=5,
+        employer_id=10,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 2),
+        status=PayrollStatus.PROJECTED,
+    )
+
+    result = await repository._build_market_data_sync_request([period])
+
+    assert result is not None
+    assert result.exchange_rate_dates == {
+        "USD": [date(2026, 1, 1)],
+        "EUR": [date(2026, 1, 2)],
+        "UF": [date(2025, 12, 31)],
+        "UTM": [date(2026, 1, 1)],
+    }
+    assert result.economic_index_periods == {"IPC_CL": [(2026, 1)]}
+
+
+@pytest.mark.asyncio
+async def test_sa_payroll_repository_handles_empty_gap_requests() -> None:
+    """Test imported periods helper returns no missing entries for empty ranges."""
+    repository = SqlAlchemyPayrollRepository(FakeSession([]))  # type: ignore[arg-type]
+
+    assert await repository._build_market_data_sync_request([]) is None
+    assert (
+        await repository._list_missing_exchange_rate_dates(
+            currency_code="UF",
+            requested_dates=[],
+        )
+        == []
+    )
+    assert (
+        await repository._list_missing_index_periods(
+            code="IPC_CL",
+            requested_periods=[],
+        )
+        == []
+    )
 
 
 @pytest.mark.asyncio

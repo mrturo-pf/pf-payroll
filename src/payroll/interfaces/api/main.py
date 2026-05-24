@@ -9,6 +9,10 @@ from fastapi import FastAPI
 from payroll.infrastructure.db.session import SessionLocal
 from payroll.infrastructure.logging.logger import logger
 from payroll.interfaces.api.dependencies import build_startup_market_data_sync
+from payroll.interfaces.api.background_tasks import (
+    cancel_payroll_market_data_sync_tasks,
+    ensure_payroll_market_data_sync_tasks,
+)
 from payroll.interfaces.api.routes.health import router as health_router
 from payroll.interfaces.api.routes.market_data import router as market_data_router
 from payroll.interfaces.api.routes.payroll import router as payroll_router
@@ -46,11 +50,13 @@ async def run_startup_market_data_sync() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Run application lifespan hooks."""
+    ensure_payroll_market_data_sync_tasks(app)
     sync_task = asyncio.create_task(run_startup_market_data_sync())
     app.state.market_data_sync_task = sync_task
     try:
         yield
     finally:
+        await cancel_payroll_market_data_sync_tasks(app)
         if not sync_task.done():
             sync_task.cancel()
             with suppress(asyncio.CancelledError):

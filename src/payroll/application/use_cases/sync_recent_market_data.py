@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from payroll.application.dto import (
+    MarketDataSyncRequestDTO,
     RefreshRatesCommandDTO,
     SyncRecentMarketDataResultDTO,
 )
@@ -13,10 +14,12 @@ from payroll.application.ports.rate_provider import (
     FxRateProvider,
 )
 from payroll.application.ports.repositories import MarketDataRepository
+from payroll.shared.constants import (
+    DAILY_MARKET_RATE_CODES,
+    MONTHLY_ECONOMIC_INDEX_CODES,
+    MONTHLY_MARKET_RATE_CODES,
+)
 
-_DAILY_EXCHANGE_RATE_CODES = ("USD", "EUR", "UF")
-_MONTHLY_EXCHANGE_RATE_CODES = ("UTM",)
-_MONTHLY_ECONOMIC_INDEX_CODES = ("IPC_CL",)
 _LOOKBACK_DAYS = 365
 _LOOKBACK_MONTHS = 12
 
@@ -42,18 +45,29 @@ class SyncRecentMarketData:
         missing_economic_index_requests = await self._collect_missing_economic_indices(
             monthly_dates
         )
+        return await self.execute_request(
+            MarketDataSyncRequestDTO(
+                exchange_rate_dates=missing_exchange_rate_requests,
+                economic_index_periods=missing_economic_index_requests,
+            )
+        )
+
+    async def execute_request(
+        self, request: MarketDataSyncRequestDTO
+    ) -> SyncRecentMarketDataResultDTO:
+        """Synchronize the explicitly requested market-data gaps."""
         requested_exchange_rates = sum(
-            len(rate_dates) for rate_dates in missing_exchange_rate_requests.values()
+            len(rate_dates) for rate_dates in request.exchange_rate_dates.values()
         )
         requested_economic_indices = sum(
-            len(periods) for periods in missing_economic_index_requests.values()
+            len(periods) for periods in request.economic_index_periods.values()
         )
 
         upserted_exchange_rates = await self._sync_exchange_rates(
-            missing_exchange_rate_requests
+            request.exchange_rate_dates
         )
         upserted_economic_indices = await self._sync_economic_indices(
-            missing_economic_index_requests
+            request.economic_index_periods
         )
 
         return SyncRecentMarketDataResultDTO(
@@ -71,7 +85,7 @@ class SyncRecentMarketData:
         """Collect missing exchange-rate requests."""
         missing_requests: dict[str, list[date]] = {}
 
-        for currency_code in _DAILY_EXCHANGE_RATE_CODES:
+        for currency_code in DAILY_MARKET_RATE_CODES:
             existing_dates = set(
                 await self.repository.list_exchange_rate_dates(
                     currency_code, daily_dates[0], daily_dates[-1]
@@ -83,7 +97,7 @@ class SyncRecentMarketData:
                 if rate_date not in existing_dates
             ]
 
-        for currency_code in _MONTHLY_EXCHANGE_RATE_CODES:
+        for currency_code in MONTHLY_MARKET_RATE_CODES:
             existing_dates = set(
                 await self.repository.list_exchange_rate_dates(
                     currency_code, monthly_dates[0], monthly_dates[-1]
@@ -105,7 +119,7 @@ class SyncRecentMarketData:
         first_month = monthly_dates[0]
         last_month = monthly_dates[-1]
 
-        for code in _MONTHLY_ECONOMIC_INDEX_CODES:
+        for code in MONTHLY_ECONOMIC_INDEX_CODES:
             existing_periods = set(
                 await self.repository.list_economic_index_periods(
                     code,

@@ -32,7 +32,7 @@ Default provider behavior:
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `POST` | `/payroll/import` | Imports a CSV or XLSX payroll file and persists employers, periods, and items. |
+| `POST` | `/payroll/import` | Imports a CSV or XLSX payroll file and persists employers, periods, and items. If related market data is missing or has gaps, it enqueues a background sync instead of blocking the import. |
 | `GET` | `/payroll/summary` | Lists payroll period totals from `mv_payroll_summary`. |
 | `GET` | `/payroll/{period_id}` | Returns a payroll period with employer, items, selected plans, and summary. |
 | `POST` | `/payroll/{period_id}/assign-plans` | Assigns pension and health plan snapshot ids to a payroll period. |

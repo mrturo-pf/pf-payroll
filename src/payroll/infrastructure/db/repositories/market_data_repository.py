@@ -19,6 +19,14 @@ from payroll.infrastructure.db.models.reference_data import (
     EconomicIndexModel,
     ExchangeRateModel,
 )
+from payroll.shared.constants import MONTHLY_EXCHANGE_RATE_CODES
+
+
+def normalize_exchange_rate_lookup_date(currency_code: str, rate_date: date) -> date:
+    """Normalize lookup dates for monthly exchange-rate series."""
+    if currency_code.upper() in MONTHLY_EXCHANGE_RATE_CODES:
+        return date(rate_date.year, rate_date.month, 1)
+    return rate_date
 
 
 class SqlAlchemyMarketDataRepository:
@@ -82,10 +90,13 @@ class SqlAlchemyMarketDataRepository:
         self, currency_code: str, rate_date: date
     ) -> Decimal | None:
         """Get exchange rate value."""
+        normalized_rate_date = normalize_exchange_rate_lookup_date(
+            currency_code, rate_date
+        )
         result = await self._session.execute(
             select(ExchangeRateModel.value_clp).where(
                 ExchangeRateModel.currency_code == currency_code,
-                ExchangeRateModel.rate_date == rate_date,
+                ExchangeRateModel.rate_date == normalized_rate_date,
             )
         )
         return result.scalar_one_or_none()

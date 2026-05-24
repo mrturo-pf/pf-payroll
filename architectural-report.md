@@ -429,7 +429,7 @@ psql "$TARGET_DSN" -c "REFRESH MATERIALIZED VIEW CONCURRENTLY mv_payroll_summary
 
 ## 8. Verificación y Calidad de Software
 
-Para CI/CD en GitHub Actions se utiliza `pytest` + `testcontainers` ejecutando tests sobre instancias reales de PostgreSQL efímero, `mypy` para validación estática de tipos, y validación estricta de dominios matemáticos usando `raise AssertionError` directos.
+Para CI/CD en GitHub Actions se utiliza `pytest` + `testcontainers` ejecutando tests sobre instancias reales de PostgreSQL efímero, `mypy` para validación estática de tipos, y validación estricta de dominios matemáticos usando errores explícitos en código productivo y aserciones normales en tests.
 
 ```python
 # tests/unit/test_health_additional.py
@@ -468,14 +468,11 @@ def test_health_isapre_additional_when_plan_exceeds_seven_percent() -> None:
     
     result = calc.health(taxable, plan, cap, uf_value)
     
-    if result.base_amount_clp <= Decimal("0"):
-        raise AssertionError("Base mandatory amount must be strictly positive.")
+    assert result.base_amount_clp > Decimal("0")
     
     contracted_clp_expected = (Decimal("7.1224") * uf_value).quantize(Decimal("1"))
-    if result.contracted_clp != contracted_clp_expected:
-        raise AssertionError(f"Unexpected contracted CLP equivalent: {result.contracted_clp}")
+    assert result.contracted_clp == contracted_clp_expected
         
     expected_additional = max(Decimal("0"), contracted_clp_expected - result.base_amount_clp)
-    if result.additional_amount_clp != expected_additional:
-        raise AssertionError(f"Unexpected additional charge: {result.additional_amount_clp}")
+    assert result.additional_amount_clp == expected_additional
 ```

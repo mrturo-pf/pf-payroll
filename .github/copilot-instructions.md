@@ -10,6 +10,9 @@ This repository follows a modular monolith with **DDD** and **hexagonal architec
 ## Engineering standards
 
 - Apply **DRY, SOLID, Clean Code, and DDD** consistently in every change.
+- Keep identifiers, internal comments, and authored documentation in **English** by default, including file names, modules, classes, methods, functions, variables, and constants.
+- Preserve **official domain terms, legal or regulatory wording, source-system literals, seed or reference data values, and user-facing localized content** in their original language when translation would change meaning, break parsing, or reduce domain fidelity.
+- When these exceptions are necessary, keep the surrounding code, comments, and explanations in **English**.
 - Follow **PEP 8** for Python style and formatting so code stays compatible with the repository lint rules.
 - Follow **PEP 257** docstring conventions for every Python artifact. Module, package, class, function, method, and script docstrings must all be present; no Python artifact should be left undocumented.
 - Follow **PEP 484** typing consistently in public APIs, DTOs, ports, and application services; type safety is validated with `mypy`.
@@ -36,6 +39,7 @@ This repository follows a modular monolith with **DDD** and **hexagonal architec
 ## Scalability and safety
 
 - Follow **SemVer** for project versioning: breaking changes increment major, backward-compatible features increment minor, and fixes increment patch.
+- Write git commit messages in **English** and follow the **Conventional Commits** specification.
 - Follow **Twelve-Factor** principles where they apply to this service: keep config in environment variables, declare dependencies explicitly, keep processes disposable and stateless, and write logs to standard output/error.
 - Keep HTTP, CLI, and dashboard layers thin; orchestration belongs in application use cases.
 - Prefer reusable mappers, normalization helpers, and shared constants when multiple flows use the same rule.

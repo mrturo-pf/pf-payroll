@@ -1,5 +1,5 @@
 -- ============================================================
--- 1. Unidades y Monedas
+-- 1. Units and currencies
 -- ============================================================
 CREATE TABLE IF NOT EXISTS currencies (
     code        CHAR(3) PRIMARY KEY,
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS income_tax_brackets (
 );
 
 -- ============================================================
--- 2. Instituciones y Planes Previsionales/Salud
+-- 2. Pension and health institutions/plans
 -- ============================================================
 DO $$ BEGIN
     CREATE TYPE health_institution_kind AS ENUM ('fonasa', 'isapre');
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS contribution_caps (
 );
 
 -- ============================================================
--- 3. Core Nómina
+-- 3. Payroll core
 -- ============================================================
 DO $$ BEGIN
     CREATE TYPE payroll_status AS ENUM ('projected', 'actual', 'reviewed');
@@ -175,7 +175,7 @@ CREATE INDEX IF NOT EXISTS idx_payroll_items_period_id ON payroll_items(period_i
 CREATE INDEX IF NOT EXISTS idx_payroll_items_concept_id ON payroll_items(concept_id);
 
 -- ============================================================
--- 4. Analytics Vista Materializada
+-- 4. Analytics materialized view
 -- ============================================================
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_payroll_summary AS
 SELECT

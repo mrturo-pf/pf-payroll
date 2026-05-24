@@ -35,17 +35,6 @@ SET
     mandatory_rate = EXCLUDED.mandatory_rate,
     is_active = EXCLUDED.is_active;
 
-INSERT INTO pension_plans (institution_id, valid_from, valid_to, additional_rate)
-SELECT pi.id, DATE '2024-01-01', NULL, 0
-FROM pension_institutions pi
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM pension_plans pp
-    WHERE pp.institution_id = pi.id
-      AND pp.valid_from = DATE '2024-01-01'
-      AND pp.additional_rate = 0
-);
-
 -- ============================================================
 -- 3. Health institutions
 -- ============================================================
@@ -64,18 +53,6 @@ SET
     kind = EXCLUDED.kind,
     mandatory_rate = EXCLUDED.mandatory_rate,
     is_active = EXCLUDED.is_active;
-
-INSERT INTO health_plans (institution_id, valid_from, valid_to, plan_name, contracted_uf)
-SELECT hi.id, DATE '2024-01-01', NULL, 'Base', 0
-FROM health_institutions hi
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM health_plans hp
-    WHERE hp.institution_id = hi.id
-      AND hp.valid_from = DATE '2024-01-01'
-      AND COALESCE(hp.plan_name, '') = 'Base'
-      AND hp.contracted_uf = 0
-);
 
 -- ============================================================
 -- 4. Contribution caps

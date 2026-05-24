@@ -18,10 +18,14 @@ from payroll.infrastructure.db.models.reference_data import CurrencyModel, Econo
 
 
 class SqlAlchemyMarketDataRepository:
+    """Provide sql alchemy market data repository."""
+
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the instance."""
         self._session = session
 
     async def list_exchange_rates(self, currency_code: str | None = None) -> list[ExchangeRateDTO]:
+        """List exchange rates."""
         statement = select(ExchangeRateModel).order_by(ExchangeRateModel.rate_date.desc(), ExchangeRateModel.currency_code)
         if currency_code is not None:
             statement = statement.where(ExchangeRateModel.currency_code == currency_code)
@@ -38,6 +42,7 @@ class SqlAlchemyMarketDataRepository:
         ]
 
     async def list_economic_indices(self, code: str | None = None) -> list[EconomicIndexDTO]:
+        """List economic indices."""
         statement = select(EconomicIndexModel).order_by(
             EconomicIndexModel.code,
             EconomicIndexModel.period_year.desc(),
@@ -62,6 +67,7 @@ class SqlAlchemyMarketDataRepository:
         ]
 
     async def get_exchange_rate_value(self, currency_code: str, rate_date: date) -> Decimal | None:
+        """Get exchange rate value."""
         result = await self._session.execute(
             select(ExchangeRateModel.value_clp).where(
                 ExchangeRateModel.currency_code == currency_code,
@@ -71,6 +77,7 @@ class SqlAlchemyMarketDataRepository:
         return result.scalar_one_or_none()
 
     async def get_economic_index_value(self, code: str, period_year: int, period_month: int) -> Decimal | None:
+        """Get economic index value."""
         result = await self._session.execute(
             select(EconomicIndexModel.index_value).where(
                 EconomicIndexModel.code == code,
@@ -81,6 +88,7 @@ class SqlAlchemyMarketDataRepository:
         return result.scalar_one_or_none()
 
     async def refresh_rates(self, command: RefreshRatesCommandDTO) -> RefreshRatesResultDTO:
+        """Refresh rates."""
         if command.exchange_rates:
             currency_result = await self._session.execute(
                 select(CurrencyModel.code).where(

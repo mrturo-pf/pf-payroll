@@ -14,8 +14,7 @@ async def resolve_required_exchange_rate(
     rate_date: date,
     market_data_repository: MarketDataRepository,
 ) -> Decimal:
-    """Returns an explicit rate or loads the persisted value required by the use case."""
-
+    """Return an explicit rate or load the persisted value required by the use case."""
     if provided_value is not None:
         return provided_value
 

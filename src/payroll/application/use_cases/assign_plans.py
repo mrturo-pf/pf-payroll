@@ -8,7 +8,9 @@ class AssignPlans:
     """Assigns plan snapshot ids to an existing payroll period."""
 
     def __init__(self, repository: PayrollRepository) -> None:
+        """Initialize the instance."""
         self._repository = repository
 
     async def execute(self, command: AssignPlansCommandDTO) -> AssignPlansResultDTO:
+        """Handle execute."""
         return await self._repository.assign_plans(command)

@@ -1,3 +1,5 @@
+"""Tests for test deflate amounts."""
+
 from datetime import date
 from decimal import Decimal
 
@@ -9,7 +11,10 @@ from payroll.domain.contributions import EmploymentContractKind
 
 
 class StubPayrollRepository:
+    """Test double for Payroll Repository."""
+
     async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO | None:
+        """Get period detail."""
         if period_id == 404:
             return None
         return PayrollPeriodDetailDTO(
@@ -43,12 +48,16 @@ class StubPayrollRepository:
 
 
 class StubMarketDataRepository:
+    """Test double for Market Data Repository."""
+
     def __init__(self, source: Decimal | None = Decimal("100.000000"), target: Decimal | None = Decimal("112.340000")) -> None:
+        """Initialize the instance."""
         self.source = source
         self.target = target
         self.calls: list[tuple[str, int, int]] = []
 
     async def get_economic_index_value(self, code: str, period_year: int, period_month: int) -> Decimal | None:
+        """Get economic index value."""
         self.calls.append((code, period_year, period_month))
         if (period_year, period_month) == (2026, 1):
             return self.source
@@ -59,6 +68,7 @@ class StubMarketDataRepository:
 
 @pytest.mark.asyncio
 async def test_deflate_amounts_uses_ipc_and_returns_real_values() -> None:
+    """Test deflate amounts uses ipc and returns real values."""
     result = await DeflateAmounts(StubPayrollRepository(), StubMarketDataRepository()).execute(
         DeflateAmountsCommandDTO(period_id=1, target_year=2026, target_month=3)
     )
@@ -70,6 +80,7 @@ async def test_deflate_amounts_uses_ipc_and_returns_real_values() -> None:
 
 @pytest.mark.asyncio
 async def test_deflate_amounts_rejects_missing_summary() -> None:
+    """Test deflate amounts rejects missing summary."""
     with pytest.raises(ValueError, match="Payroll summary for period 404 was not found."):
         await DeflateAmounts(StubPayrollRepository(), StubMarketDataRepository()).execute(
             DeflateAmountsCommandDTO(period_id=404, target_year=2026, target_month=3)
@@ -78,6 +89,7 @@ async def test_deflate_amounts_rejects_missing_summary() -> None:
 
 @pytest.mark.asyncio
 async def test_deflate_amounts_rejects_missing_indices() -> None:
+    """Test deflate amounts rejects missing indices."""
     use_case = DeflateAmounts(StubPayrollRepository(), StubMarketDataRepository(target=None))
 
     with pytest.raises(ValueError, match="Economic index IPC_CL for 2026-03 was not found."):
@@ -86,6 +98,7 @@ async def test_deflate_amounts_rejects_missing_indices() -> None:
 
 @pytest.mark.asyncio
 async def test_deflate_amounts_rejects_missing_source_index() -> None:
+    """Test deflate amounts rejects missing source index."""
     use_case = DeflateAmounts(StubPayrollRepository(), StubMarketDataRepository(source=None))
 
     with pytest.raises(ValueError, match="Economic index IPC_CL for 2026-01 was not found."):

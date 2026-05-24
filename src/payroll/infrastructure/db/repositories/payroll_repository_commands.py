@@ -44,6 +44,7 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
     """Write and calculation-context payroll operations."""
 
     async def assign_plans(self, command: AssignPlansCommandDTO) -> AssignPlansResultDTO:
+        """Assign plans."""
         period = await self._get_period(command.period_id)
         await self._get_pension_plan(command.pension_plan_id, period.payment_date)
         await self._get_health_plan(command.health_plan_id, period.payment_date)
@@ -61,6 +62,7 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
         )
 
     async def review_period(self, command: ReviewPayrollPeriodCommandDTO) -> ReviewPayrollPeriodResultDTO:
+        """Review period."""
         period = await self._get_period(command.period_id)
         if period.pension_plan_id is None or period.health_plan_id is None:
             raise PayrollConflictError(
@@ -94,6 +96,7 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
         self,
         command: ComputeContributionsCommandDTO,
     ) -> ContributionComputationContextDTO:
+        """Get contribution context."""
         period = await self._get_period(command.period_id)
         pension_plan_model, pension_institution_model = await self._get_pension_plan(
             command.pension_plan_id,
@@ -171,6 +174,7 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
         self,
         result: ComputeContributionsResultDTO,
     ) -> ComputeContributionsResultDTO:
+        """Save computed contributions."""
         period = await self._get_period(result.period_id)
 
         concept_result = await self._session.execute(
@@ -224,6 +228,7 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
         return result
 
     async def get_income_tax_context(self, command: ComputeIncomeTaxCommandDTO) -> IncomeTaxContextDTO:
+        """Get income tax context."""
         period = await self._get_period(command.period_id)
 
         taxable_income_result = await self._session.execute(
@@ -248,6 +253,7 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
         )
 
     async def get_income_tax_bracket(self, payment_date: date, taxable_base_utm: Decimal) -> IncomeTaxBracket | None:
+        """Get income tax bracket."""
         result = await self._session.execute(
             select(IncomeTaxBracketModel)
             .where(IncomeTaxBracketModel.valid_from <= payment_date)
@@ -283,6 +289,7 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
         self,
         result: ComputeIncomeTaxResultDTO,
     ) -> ComputeIncomeTaxResultDTO:
+        """Save computed income tax."""
         await self._get_period(result.period_id)
 
         concept_result = await self._session.execute(

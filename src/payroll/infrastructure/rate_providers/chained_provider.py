@@ -12,16 +12,21 @@ log = structlog.get_logger(__name__)
 
 
 class ChainedFxProvider:
+    """Provide chained fx provider."""
+
     name = "chained"
 
     def __init__(self, providers: list[FxRateProvider]) -> None:
+        """Initialize the instance."""
         self._providers = providers
 
     async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
+        """Handle fetch rate."""
         entry = await self.fetch_rate_entry(currency_code, on)
         return None if entry is None else entry.value_clp
 
     async def fetch_rate_entry(self, currency_code: str, on: date) -> ExchangeRateWriteDTO | None:
+        """Handle fetch rate entry."""
         for provider in self._providers:
             try:
                 value = await provider.fetch_rate(currency_code, on)
@@ -39,12 +44,16 @@ class ChainedFxProvider:
 
 
 class ChainedEconomicIndexProvider:
+    """Provide chained economic index provider."""
+
     name = "chained"
 
     def __init__(self, providers: list[EconomicIndexProvider]) -> None:
+        """Initialize the instance."""
         self._providers = providers
 
     async def fetch_index(self, code: str, period_year: int, period_month: int) -> EconomicIndexWriteDTO | None:
+        """Handle fetch index."""
         for provider in self._providers:
             try:
                 value = await provider.fetch_index(code, period_year, period_month)

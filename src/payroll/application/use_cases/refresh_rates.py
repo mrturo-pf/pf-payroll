@@ -28,6 +28,7 @@ class RefreshRates:
     economic_index_provider: EconomicIndexProvider | None = None
 
     async def execute(self, command: RefreshRatesCommandDTO) -> RefreshRatesResultDTO:
+        """Handle execute."""
         if (
             not command.exchange_rates
             and not command.economic_indices

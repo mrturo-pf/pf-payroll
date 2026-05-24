@@ -10,6 +10,8 @@ from payroll.application.ports.repositories import ReferenceDataRepository
 
 @dataclass(slots=True)
 class RefreshIncomeTaxBrackets:
+    """Represent Refresh Income Tax Brackets."""
+
     repository: ReferenceDataRepository
     provider: IncomeTaxBracketProvider
 
@@ -17,6 +19,7 @@ class RefreshIncomeTaxBrackets:
         self,
         command: RefreshIncomeTaxBracketsCommandDTO,
     ) -> RefreshIncomeTaxBracketsResultDTO:
+        """Handle execute."""
         brackets = await self.provider.fetch_income_tax_brackets(command.year)
         if not brackets:
             raise PayrollDependencyError(f"No official income tax brackets were found for {command.year}.")

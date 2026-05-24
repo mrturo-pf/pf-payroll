@@ -10,11 +10,14 @@ UTM_QUANT = Decimal("0.000001")
 
 
 def quantize_utm(value: Decimal) -> Decimal:
+    """Quantize utm."""
     return value.quantize(UTM_QUANT)
 
 
 @dataclass(frozen=True, slots=True)
 class ChileanTaxCalculator:
+    """Provide chilean tax calculator."""
+
     def income_tax(
         self,
         taxable_income_clp: Decimal,
@@ -22,6 +25,7 @@ class ChileanTaxCalculator:
         bracket: IncomeTaxBracket,
         utm_value_clp: Decimal,
     ) -> IncomeTaxComputation:
+        """Handle income tax."""
         taxable_base_clp = max(Decimal("0"), taxable_income_clp - deductible_amount_clp)
         taxable_base_utm = quantize_utm(taxable_base_clp / utm_value_clp) if utm_value_clp > 0 else Decimal("0")
         tax_utm = max(Decimal("0"), quantize_utm((taxable_base_utm * bracket.marginal_rate) - bracket.rebate_utm))

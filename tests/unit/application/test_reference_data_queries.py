@@ -1,3 +1,5 @@
+"""Tests for test reference data queries."""
+
 from datetime import date
 from decimal import Decimal
 
@@ -18,13 +20,18 @@ from payroll.domain.contributions import HealthInstitutionKind
 
 
 class StubReferenceDataRepository:
+    """Test double for Reference Data Repository."""
+
     async def list_currencies(self) -> list[CurrencyDTO]:
+        """List currencies."""
         return [CurrencyDTO(code="CLP", name="Peso chileno", is_fiat=True, unit_kind="currency")]
 
     async def list_pension_institutions(self) -> list[PensionInstitutionDTO]:
+        """List pension institutions."""
         return [PensionInstitutionDTO(code="AFP_UNO", name="AFP Uno", mandatory_rate=Decimal("0.10"), is_active=True)]
 
     async def list_health_institutions(self) -> list[HealthInstitutionDTO]:
+        """List health institutions."""
         return [
             HealthInstitutionDTO(
                 code="FONASA",
@@ -36,6 +43,7 @@ class StubReferenceDataRepository:
         ]
 
     async def list_pension_plans(self) -> list[PensionPlanDTO]:
+        """List pension plans."""
         return [
             PensionPlanDTO(
                 id=1,
@@ -48,6 +56,7 @@ class StubReferenceDataRepository:
         ]
 
     async def list_health_plans(self) -> list[HealthPlanDTO]:
+        """List health plans."""
         return [
             HealthPlanDTO(
                 id=2,
@@ -62,6 +71,7 @@ class StubReferenceDataRepository:
         ]
 
     async def list_contribution_caps(self) -> list[ContributionCapDTO]:
+        """List contribution caps."""
         return [
             ContributionCapDTO(
                 cap_type="pension_health",
@@ -72,9 +82,11 @@ class StubReferenceDataRepository:
         ]
 
     async def list_payroll_concepts(self) -> list[PayrollConceptDTO]:
+        """List payroll concepts."""
         return [PayrollConceptDTO(code="SALARY_BASE", name="Base Salary", kind="income", is_taxable=True)]
 
     async def list_income_tax_brackets(self) -> list[IncomeTaxBracketDTO]:
+        """List income tax brackets."""
         return [
             IncomeTaxBracketDTO(
                 valid_from=date(2026, 1, 1),
@@ -89,6 +101,7 @@ class StubReferenceDataRepository:
 
 @pytest.mark.asyncio
 async def test_reference_data_queries_delegate_to_repository() -> None:
+    """Test reference data queries delegate to repository."""
     queries = ReferenceDataQueries(StubReferenceDataRepository())
 
     assert [item.code for item in await queries.list_currencies()] == ["CLP"]

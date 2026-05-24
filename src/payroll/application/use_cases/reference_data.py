@@ -17,28 +17,38 @@ from payroll.application.ports.repositories import ReferenceDataRepository
 
 @dataclass(slots=True)
 class ReferenceDataQueries:
+    """Provide reference data queries."""
+
     repository: ReferenceDataRepository
 
     async def list_currencies(self) -> list[CurrencyDTO]:
+        """List currencies."""
         return await self.repository.list_currencies()
 
     async def list_pension_institutions(self) -> list[PensionInstitutionDTO]:
+        """List pension institutions."""
         return await self.repository.list_pension_institutions()
 
     async def list_health_institutions(self) -> list[HealthInstitutionDTO]:
+        """List health institutions."""
         return await self.repository.list_health_institutions()
 
     async def list_pension_plans(self) -> list[PensionPlanDTO]:
+        """List pension plans."""
         return await self.repository.list_pension_plans()
 
     async def list_health_plans(self) -> list[HealthPlanDTO]:
+        """List health plans."""
         return await self.repository.list_health_plans()
 
     async def list_contribution_caps(self) -> list[ContributionCapDTO]:
+        """List contribution caps."""
         return await self.repository.list_contribution_caps()
 
     async def list_payroll_concepts(self) -> list[PayrollConceptDTO]:
+        """List payroll concepts."""
         return await self.repository.list_payroll_concepts()
 
     async def list_income_tax_brackets(self) -> list[IncomeTaxBracketDTO]:
+        """List income tax brackets."""
         return await self.repository.list_income_tax_brackets()

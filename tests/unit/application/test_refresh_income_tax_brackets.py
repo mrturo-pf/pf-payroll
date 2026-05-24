@@ -1,3 +1,5 @@
+"""Tests for test refresh income tax brackets."""
+
 from datetime import date
 from decimal import Decimal
 
@@ -12,26 +14,35 @@ from payroll.application.use_cases.refresh_income_tax_brackets import RefreshInc
 
 
 class StubReferenceDataRepository:
+    """Test double for Reference Data Repository."""
+
     def __init__(self) -> None:
+        """Initialize the instance."""
         self.brackets: list[IncomeTaxBracketWriteDTO] | None = None
 
     async def upsert_income_tax_brackets(self, brackets: list[IncomeTaxBracketWriteDTO]) -> int:
+        """Handle upsert income tax brackets."""
         self.brackets = brackets
         return len(brackets)
 
 
 class StubIncomeTaxBracketProvider:
+    """Test double for Income Tax Bracket Provider."""
+
     def __init__(self, brackets: list[IncomeTaxBracketWriteDTO]) -> None:
+        """Initialize the instance."""
         self.brackets = brackets
         self.requested_year: int | None = None
 
     async def fetch_income_tax_brackets(self, year: int) -> list[IncomeTaxBracketWriteDTO]:
+        """Handle fetch income tax brackets."""
         self.requested_year = year
         return self.brackets
 
 
 @pytest.mark.asyncio
 async def test_refresh_income_tax_brackets_fetches_official_rows_and_persists_them() -> None:
+    """Test refresh income tax brackets fetches official rows and persists them."""
     brackets = [
         IncomeTaxBracketWriteDTO(
             valid_from=date(2026, 1, 1),
@@ -76,6 +87,7 @@ async def test_refresh_income_tax_brackets_fetches_official_rows_and_persists_th
 
 @pytest.mark.asyncio
 async def test_refresh_income_tax_brackets_raises_when_provider_returns_no_official_rows() -> None:
+    """Test refresh income tax brackets raises when provider returns no official rows."""
     with pytest.raises(ValueError, match="No official income tax brackets were found for 2026."):
         await RefreshIncomeTaxBrackets(
             StubReferenceDataRepository(),

@@ -34,6 +34,8 @@ CONTRACT_KIND_ALIASES = {
 
 @dataclass(frozen=True, slots=True)
 class NetPayValidation:
+    """Represent Net Pay Validation."""
+
     employer: str
     period_year: int
     period_month: int
@@ -47,6 +49,7 @@ _PAYMENT_DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d")
 
 
 def parse_payment_date(raw_value: object) -> pd.Timestamp | pd.NaT:
+    """Parse payment date."""
     if isinstance(raw_value, pd.Timestamp):
         return raw_value
     if isinstance(raw_value, datetime):
@@ -63,6 +66,7 @@ def parse_payment_date(raw_value: object) -> pd.Timestamp | pd.NaT:
 
 
 def read_payroll_dataframe(filename: str, payload: BufferedIOBase) -> pd.DataFrame:
+    """Read payroll dataframe."""
     lowered = filename.lower()
     if lowered.endswith(".csv"):
         return pd.read_csv(payload)
@@ -72,6 +76,7 @@ def read_payroll_dataframe(filename: str, payload: BufferedIOBase) -> pd.DataFra
 
 
 def parse_contract_kind(raw_value: object) -> EmploymentContractKind:
+    """Parse contract kind."""
     normalized = str(raw_value or "").strip().lower()
     if not normalized:
         raise PayrollValidationError("Every imported payroll row must include employment_contract_kind.")
@@ -84,6 +89,7 @@ def parse_contract_kind(raw_value: object) -> EmploymentContractKind:
 
 
 def extract_net_pay_validations(wide_df: pd.DataFrame) -> dict[tuple[str, int, int], NetPayValidation]:
+    """Extract net pay validations."""
     validations: dict[tuple[str, int, int], NetPayValidation] = {}
 
     for _, row in wide_df.iterrows():
@@ -178,6 +184,7 @@ class XlsxPayrollImporter(PayrollImporter):
     """Tabular payroll importer backed by pandas CSV/XLSX readers."""
 
     def read_rows(self, filename: str, content: bytes) -> list[ImportPayrollRowDTO]:
+        """Read rows."""
         dataframe = read_payroll_dataframe(filename, BytesIO(content))
         normalized = to_long_format(dataframe)
         validations = extract_net_pay_validations(dataframe)

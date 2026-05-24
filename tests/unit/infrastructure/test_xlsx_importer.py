@@ -1,3 +1,5 @@
+"""Tests for test xlsx importer."""
+
 from datetime import date, datetime
 from io import BytesIO
 from decimal import Decimal
@@ -15,6 +17,7 @@ from payroll.infrastructure.importers.xlsx_importer import (
 
 
 def test_read_payroll_dataframe_supports_csv_and_xlsx() -> None:
+    """Test read payroll dataframe supports csv and xlsx."""
     csv_frame = read_payroll_dataframe(
         "sample.csv",
         BytesIO(
@@ -43,11 +46,13 @@ def test_read_payroll_dataframe_supports_csv_and_xlsx() -> None:
 
 
 def test_read_payroll_dataframe_rejects_unknown_extensions() -> None:
+    """Test read payroll dataframe rejects unknown extensions."""
     with pytest.raises(ValueError, match="Unsupported payroll file format"):
         read_payroll_dataframe("sample.txt", BytesIO(b"noop"))
 
 
 def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> None:
+    """Test to long format skips invalid period and validates required fields."""
     result = to_long_format(
         pd.DataFrame(
             [
@@ -76,6 +81,7 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
 
 
 def test_to_long_format_normalizes_contract_kind_aliases() -> None:
+    """Test to long format normalizes contract kind aliases."""
     result = to_long_format(
         pd.DataFrame(
             [
@@ -94,6 +100,7 @@ def test_to_long_format_normalizes_contract_kind_aliases() -> None:
 
 
 def test_to_long_format_rejects_invalid_contract_kind() -> None:
+    """Test to long format rejects invalid contract kind."""
     with pytest.raises(ValueError, match="Unsupported employment_contract_kind"):
         to_long_format(
             pd.DataFrame(
@@ -111,6 +118,7 @@ def test_to_long_format_rejects_invalid_contract_kind() -> None:
 
 
 def test_parse_payment_date_supports_iso_and_dayfirst_formats() -> None:
+    """Test parse payment date supports iso and dayfirst formats."""
     assert str(parse_payment_date("2026-01-31").date()) == "2026-01-31"
     assert str(parse_payment_date("31/01/2026").date()) == "2026-01-31"
     assert str(parse_payment_date(pd.Timestamp("2026-01-31")).date()) == "2026-01-31"
@@ -119,6 +127,7 @@ def test_parse_payment_date_supports_iso_and_dayfirst_formats() -> None:
 
 
 def test_extract_net_pay_validations_returns_expected_and_difference_values() -> None:
+    """Test extract net pay validations returns expected and difference values."""
     result = extract_net_pay_validations(
         pd.DataFrame(
             [
@@ -177,6 +186,7 @@ def test_extract_net_pay_validations_returns_expected_and_difference_values() ->
 
 
 def test_xlsx_payroll_importer_builds_application_rows() -> None:
+    """Test xlsx payroll importer builds application rows."""
     rows = XlsxPayrollImporter().read_rows(
         "sample.csv",
         (

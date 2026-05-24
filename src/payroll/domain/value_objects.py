@@ -6,5 +6,7 @@ from decimal import Decimal
 
 @dataclass(frozen=True, slots=True)
 class Money:
+    """Represent Money."""
+
     amount: Decimal
     currency: str = "CLP"

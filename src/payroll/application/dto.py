@@ -23,12 +23,16 @@ PayrollStatusKind = Literal["projected", "actual", "reviewed"]
 
 @dataclass(frozen=True, slots=True)
 class MoneyDTO:
+    """Represent Money DTO."""
+
     amount: Decimal
     currency: str = "CLP"
 
 
 @dataclass(frozen=True, slots=True)
 class CurrencyDTO:
+    """Represent Currency DTO."""
+
     code: str
     name: str
     is_fiat: bool
@@ -37,6 +41,8 @@ class CurrencyDTO:
 
 @dataclass(frozen=True, slots=True)
 class PensionInstitutionDTO:
+    """Represent Pension Institution DTO."""
+
     code: str
     name: str
     mandatory_rate: Decimal
@@ -45,6 +51,8 @@ class PensionInstitutionDTO:
 
 @dataclass(frozen=True, slots=True)
 class HealthInstitutionDTO:
+    """Represent Health Institution DTO."""
+
     code: str
     name: str
     kind: HealthInstitutionKind
@@ -54,6 +62,8 @@ class HealthInstitutionDTO:
 
 @dataclass(frozen=True, slots=True)
 class PensionPlanDTO:
+    """Represent Pension Plan DTO."""
+
     id: int
     institution_code: str
     institution_name: str
@@ -64,6 +74,8 @@ class PensionPlanDTO:
 
 @dataclass(frozen=True, slots=True)
 class HealthPlanDTO:
+    """Represent Health Plan DTO."""
+
     id: int
     institution_code: str
     institution_name: str
@@ -76,6 +88,8 @@ class HealthPlanDTO:
 
 @dataclass(frozen=True, slots=True)
 class ContributionCapDTO:
+    """Represent Contribution Cap DTO."""
+
     cap_type: str
     valid_from: date
     valid_to: date | None
@@ -84,6 +98,8 @@ class ContributionCapDTO:
 
 @dataclass(frozen=True, slots=True)
 class ExchangeRateDTO:
+    """Represent Exchange Rate DTO."""
+
     currency_code: str
     rate_date: date
     value_clp: Decimal
@@ -92,6 +108,8 @@ class ExchangeRateDTO:
 
 @dataclass(frozen=True, slots=True)
 class EconomicIndexDTO:
+    """Represent Economic Index DTO."""
+
     code: str
     period_year: int
     period_month: int
@@ -104,6 +122,8 @@ class EconomicIndexDTO:
 
 @dataclass(frozen=True, slots=True)
 class PayrollConceptDTO:
+    """Represent Payroll Concept DTO."""
+
     code: str
     name: str
     kind: PayrollConceptKind
@@ -112,6 +132,8 @@ class PayrollConceptDTO:
 
 @dataclass(frozen=True, slots=True)
 class ImportPayrollRowDTO:
+    """Represent Import Payroll Row DTO."""
+
     employer: str
     period_year: int
     period_month: int
@@ -127,6 +149,8 @@ class ImportPayrollRowDTO:
 
 @dataclass(frozen=True, slots=True)
 class ImportedPayrollPeriodDTO:
+    """Represent Imported Payroll Period DTO."""
+
     id: int
     employer: str
     period_year: int
@@ -143,6 +167,8 @@ class ImportedPayrollPeriodDTO:
 
 @dataclass(frozen=True, slots=True)
 class ImportPayrollResultDTO:
+    """Represent Import Payroll Result DTO."""
+
     imported_periods: int
     imported_items: int
     periods: list[ImportedPayrollPeriodDTO]
@@ -150,6 +176,8 @@ class ImportPayrollResultDTO:
 
 @dataclass(frozen=True, slots=True)
 class ComputeContributionsCommandDTO:
+    """Represent Compute Contributions Command DTO."""
+
     period_id: int
     pension_plan_id: int
     health_plan_id: int
@@ -158,6 +186,8 @@ class ComputeContributionsCommandDTO:
 
 @dataclass(frozen=True, slots=True)
 class AssignPlansCommandDTO:
+    """Represent Assign Plans Command DTO."""
+
     period_id: int
     pension_plan_id: int
     health_plan_id: int
@@ -165,6 +195,8 @@ class AssignPlansCommandDTO:
 
 @dataclass(frozen=True, slots=True)
 class AssignPlansResultDTO:
+    """Represent Assign Plans Result DTO."""
+
     period_id: int
     payment_date: date
     pension_plan_id: int
@@ -173,11 +205,15 @@ class AssignPlansResultDTO:
 
 @dataclass(frozen=True, slots=True)
 class ReviewPayrollPeriodCommandDTO:
+    """Represent Review Payroll Period Command DTO."""
+
     period_id: int
 
 
 @dataclass(frozen=True, slots=True)
 class ReviewPayrollPeriodResultDTO:
+    """Represent Review Payroll Period Result DTO."""
+
     period_id: int
     payment_date: date
     status: PayrollStatusKind
@@ -185,6 +221,8 @@ class ReviewPayrollPeriodResultDTO:
 
 @dataclass(frozen=True, slots=True)
 class ContributionComputationContextDTO:
+    """Represent Contribution Computation Context DTO."""
+
     period_id: int
     payment_date: date
     taxable_income_clp: Decimal
@@ -197,6 +235,8 @@ class ContributionComputationContextDTO:
 
 @dataclass(frozen=True, slots=True)
 class ComputeContributionsResultDTO:
+    """Represent Compute Contributions Result DTO."""
+
     period_id: int
     pension_plan_id: int
     health_plan_id: int
@@ -209,6 +249,8 @@ class ComputeContributionsResultDTO:
 
 @dataclass(frozen=True, slots=True)
 class ExchangeRateWriteDTO:
+    """Represent Exchange Rate Write DTO."""
+
     currency_code: str
     rate_date: date
     value_clp: Decimal
@@ -217,6 +259,8 @@ class ExchangeRateWriteDTO:
 
 @dataclass(frozen=True, slots=True)
 class EconomicIndexWriteDTO:
+    """Represent Economic Index Write DTO."""
+
     code: str
     period_year: int
     period_month: int
@@ -229,12 +273,16 @@ class EconomicIndexWriteDTO:
 
 @dataclass(frozen=True, slots=True)
 class ProviderExchangeRateRequestDTO:
+    """Represent Provider Exchange Rate Request DTO."""
+
     currency_code: str
     rate_date: date
 
 
 @dataclass(frozen=True, slots=True)
 class ProviderEconomicIndexRequestDTO:
+    """Represent Provider Economic Index Request DTO."""
+
     code: str
     period_year: int
     period_month: int
@@ -242,6 +290,8 @@ class ProviderEconomicIndexRequestDTO:
 
 @dataclass(frozen=True, slots=True)
 class RefreshRatesCommandDTO:
+    """Represent Refresh Rates Command DTO."""
+
     exchange_rates: list[ExchangeRateWriteDTO] = field(default_factory=list)
     economic_indices: list[EconomicIndexWriteDTO] = field(default_factory=list)
     provider_exchange_rates: list[ProviderExchangeRateRequestDTO] = field(default_factory=list)
@@ -250,12 +300,16 @@ class RefreshRatesCommandDTO:
 
 @dataclass(frozen=True, slots=True)
 class RefreshRatesResultDTO:
+    """Represent Refresh Rates Result DTO."""
+
     upserted_exchange_rates: int
     upserted_economic_indices: int
 
 
 @dataclass(frozen=True, slots=True)
 class PayrollItemDetailDTO:
+    """Represent Payroll Item Detail DTO."""
+
     concept_code: str
     concept_name: str
     kind: PayrollConceptKind
@@ -266,6 +320,8 @@ class PayrollItemDetailDTO:
 
 @dataclass(frozen=True, slots=True)
 class PayrollSummaryDTO:
+    """Represent Payroll Summary DTO."""
+
     period_id: int
     employer_id: int
     employer_name: str
@@ -284,6 +340,8 @@ class PayrollSummaryDTO:
 
 @dataclass(frozen=True, slots=True)
 class PayrollPeriodDetailDTO:
+    """Represent Payroll Period Detail DTO."""
+
     id: int
     employer_id: int
     employer_name: str
@@ -303,6 +361,8 @@ class PayrollPeriodDetailDTO:
 
 @dataclass(frozen=True, slots=True)
 class GeneratedPayrollReportDTO:
+    """Represent Generated Payroll Report DTO."""
+
     period_id: int
     filename: str
     content: bytes
@@ -310,12 +370,16 @@ class GeneratedPayrollReportDTO:
 
 @dataclass(frozen=True, slots=True)
 class ComputeIncomeTaxCommandDTO:
+    """Represent Compute Income Tax Command DTO."""
+
     period_id: int
     utm_value_clp: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class IncomeTaxContextDTO:
+    """Represent Income Tax Context DTO."""
+
     period_id: int
     payment_date: date
     taxable_income_clp: Decimal
@@ -324,12 +388,16 @@ class IncomeTaxContextDTO:
 
 @dataclass(frozen=True, slots=True)
 class ComputeIncomeTaxResultDTO:
+    """Represent Compute Income Tax Result DTO."""
+
     period_id: int
     tax: IncomeTaxComputation
 
 
 @dataclass(frozen=True, slots=True)
 class IncomeTaxBracketDTO:
+    """Represent Income Tax Bracket DTO."""
+
     valid_from: date
     valid_to: date | None
     lower_bound_utm: Decimal
@@ -340,6 +408,8 @@ class IncomeTaxBracketDTO:
 
 @dataclass(frozen=True, slots=True)
 class IncomeTaxBracketWriteDTO:
+    """Represent Income Tax Bracket Write DTO."""
+
     valid_from: date
     valid_to: date | None
     lower_bound_utm: Decimal
@@ -350,11 +420,15 @@ class IncomeTaxBracketWriteDTO:
 
 @dataclass(frozen=True, slots=True)
 class RefreshIncomeTaxBracketsCommandDTO:
+    """Represent Refresh Income Tax Brackets Command DTO."""
+
     year: int
 
 
 @dataclass(frozen=True, slots=True)
 class RefreshIncomeTaxBracketsResultDTO:
+    """Represent Refresh Income Tax Brackets Result DTO."""
+
     year: int
     refreshed_months: int
     upserted_brackets: int
@@ -362,6 +436,8 @@ class RefreshIncomeTaxBracketsResultDTO:
 
 @dataclass(frozen=True, slots=True)
 class DeflateAmountsCommandDTO:
+    """Represent Deflate Amounts Command DTO."""
+
     period_id: int
     target_year: int
     target_month: int
@@ -370,12 +446,16 @@ class DeflateAmountsCommandDTO:
 
 @dataclass(frozen=True, slots=True)
 class DeflatedAmountDTO:
+    """Represent Deflated Amount DTO."""
+
     nominal_clp: Decimal
     real_clp: Decimal
 
 
 @dataclass(frozen=True, slots=True)
 class DeflateAmountsResultDTO:
+    """Represent Deflate Amounts Result DTO."""
+
     period_id: int
     index_code: str
     source_year: int

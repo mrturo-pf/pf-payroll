@@ -23,6 +23,8 @@ router = APIRouter(prefix="/market-data", tags=["market-data"])
 
 
 class ExchangeRateRead(BaseModel):
+    """Represent Exchange Rate Read."""
+
     currency_code: str
     rate_date: date
     value_clp: str
@@ -30,6 +32,8 @@ class ExchangeRateRead(BaseModel):
 
 
 class EconomicIndexRead(BaseModel):
+    """Represent Economic Index Read."""
+
     code: str
     period_year: int
     period_month: int
@@ -41,6 +45,8 @@ class EconomicIndexRead(BaseModel):
 
 
 class ExchangeRateWrite(BaseModel):
+    """Represent Exchange Rate Write."""
+
     currency_code: str = Field(min_length=1)
     rate_date: date
     value_clp: Decimal = Field(gt=0)
@@ -48,6 +54,8 @@ class ExchangeRateWrite(BaseModel):
 
 
 class EconomicIndexWrite(BaseModel):
+    """Represent Economic Index Write."""
+
     code: str = Field(min_length=1)
     period_year: int = Field(ge=1990, le=2100)
     period_month: int = Field(ge=1, le=12)
@@ -59,17 +67,23 @@ class EconomicIndexWrite(BaseModel):
 
 
 class ProviderExchangeRateRequest(BaseModel):
+    """Represent Provider Exchange Rate Request."""
+
     currency_code: str = Field(min_length=1)
     rate_date: date
 
 
 class ProviderEconomicIndexRequest(BaseModel):
+    """Represent Provider Economic Index Request."""
+
     code: str = Field(min_length=1)
     period_year: int = Field(ge=1990, le=2100)
     period_month: int = Field(ge=1, le=12)
 
 
 class RefreshRatesRequest(BaseModel):
+    """Represent Refresh Rates Request."""
+
     exchange_rates: list[ExchangeRateWrite] = Field(default_factory=list)
     economic_indices: list[EconomicIndexWrite] = Field(default_factory=list)
     fetch_exchange_rates: list[ProviderExchangeRateRequest] = Field(default_factory=list)
@@ -77,6 +91,8 @@ class RefreshRatesRequest(BaseModel):
 
 
 class RefreshRatesResponse(BaseModel):
+    """Represent Refresh Rates Response."""
+
     upserted_exchange_rates: int
     upserted_economic_indices: int
 
@@ -86,6 +102,7 @@ async def list_exchange_rates(
     currency_code: str | None = Query(default=None),
     queries: MarketDataQueries = Depends(get_market_data_queries),
 ) -> list[ExchangeRateRead]:
+    """List exchange rates."""
     return [
         ExchangeRateRead(
             currency_code=item.currency_code,
@@ -102,6 +119,7 @@ async def list_economic_indices(
     code: str | None = Query(default=None),
     queries: MarketDataQueries = Depends(get_market_data_queries),
 ) -> list[EconomicIndexRead]:
+    """List economic indices."""
     return [
         EconomicIndexRead(
             code=item.code,
@@ -122,6 +140,7 @@ async def refresh_rates(
     payload: RefreshRatesRequest,
     use_case: RefreshRates = Depends(get_refresh_rates_use_case),
 ) -> RefreshRatesResponse:
+    """Refresh rates."""
     try:
         result = await use_case.execute(
             RefreshRatesCommandDTO(

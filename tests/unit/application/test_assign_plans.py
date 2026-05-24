@@ -1,3 +1,5 @@
+"""Tests for test assign plans."""
+
 from datetime import date
 
 import pytest
@@ -7,10 +9,14 @@ from payroll.application.use_cases.assign_plans import AssignPlans
 
 
 class StubPayrollRepository:
+    """Test double for Payroll Repository."""
+
     def __init__(self) -> None:
+        """Initialize the instance."""
         self.command: AssignPlansCommandDTO | None = None
 
     async def assign_plans(self, command: AssignPlansCommandDTO) -> AssignPlansResultDTO:
+        """Assign plans."""
         self.command = command
         return AssignPlansResultDTO(
             period_id=command.period_id,
@@ -22,6 +28,7 @@ class StubPayrollRepository:
 
 @pytest.mark.asyncio
 async def test_assign_plans_returns_repository_result() -> None:
+    """Test assign plans returns repository result."""
     repository = StubPayrollRepository()
 
     result = await AssignPlans(repository).execute(

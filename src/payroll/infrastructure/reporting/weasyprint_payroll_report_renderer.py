@@ -8,14 +8,17 @@ from payroll.application.dto import PayrollPeriodDetailDTO
 
 
 def _format_clp(amount: Decimal) -> str:
+    """Handle format clp."""
     return f"${amount:,.0f}".replace(",", ".")
 
 
 def _escape_pdf_text(value: str) -> str:
+    """Handle escape pdf text."""
     return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
 def _build_pdf(lines: list[str]) -> bytes:
+    """Handle build pdf."""
     content = "\n".join(
         [
             "BT",
@@ -61,6 +64,7 @@ class WeasyPrintPayrollReportRenderer:
     """Renders payroll period details into a styled PDF document."""
 
     def render_payroll_period(self, detail: PayrollPeriodDetailDTO) -> bytes:
+        """Render payroll period."""
         summary = detail.summary
         if summary is None:
             raise PayrollSummaryNotFoundError(f"Payroll summary for period {detail.id} was not found.")

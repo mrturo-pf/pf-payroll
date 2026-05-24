@@ -1,3 +1,5 @@
+"""Tests for test contribution calculator."""
+
 from datetime import date
 from decimal import Decimal
 
@@ -16,6 +18,7 @@ from payroll.domain.contributions import (
 
 
 def test_pension_base_respects_cap() -> None:
+    """Test pension base respects cap."""
     calculator = ContributionCalculator()
     cap = ContributionCap("pension_health", date(2026, 1, 1), None, Decimal("90.0000"))
 
@@ -23,6 +26,7 @@ def test_pension_base_respects_cap() -> None:
 
 
 def test_pension_contribution_uses_mandatory_and_additional_rates() -> None:
+    """Test pension contribution uses mandatory and additional rates."""
     calculator = ContributionCalculator()
     contribution = calculator.pension(
         taxable_clp=Decimal("1000000"),
@@ -48,6 +52,7 @@ def test_pension_contribution_uses_mandatory_and_additional_rates() -> None:
 
 
 def test_health_contribution_uses_contract_amount_for_isapre_only() -> None:
+    """Test health contribution uses contract amount for isapre only."""
     calculator = ContributionCalculator()
     isapre_contribution = calculator.health(
         taxable_clp=Decimal("1000000"),
@@ -94,6 +99,7 @@ def test_health_contribution_uses_contract_amount_for_isapre_only() -> None:
 
 
 def test_unemployment_contribution_depends_on_contract_kind() -> None:
+    """Test unemployment contribution depends on contract kind."""
     calculator = ContributionCalculator()
     cap = ContributionCap("unemployment", date(2026, 1, 1), None, Decimal("90.0000"))
 
@@ -117,7 +123,10 @@ def test_unemployment_contribution_depends_on_contract_kind() -> None:
 
 
 def test_unemployment_contribution_rejects_unknown_contract_kind() -> None:
+    """Test unemployment contribution rejects unknown contract kind."""
     class UnsupportedContractKind:
+        """Represent Unsupported Contract Kind."""
+
         value = "seasonal"
 
     with pytest.raises(ValueError, match="Unsupported employment contract kind: seasonal"):

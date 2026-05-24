@@ -26,6 +26,8 @@ _REQUIRED_CONTRIBUTION_CODES = {
 
 @dataclass(frozen=True, slots=True)
 class DashboardPeriodRow:
+    """Represent Dashboard Period Row."""
+
     period_id: int
     employer_name: str
     period_label: str
@@ -43,14 +45,17 @@ class DashboardPeriodRow:
 
 
 def _format_clp(amount: Decimal) -> str:
+    """Handle format clp."""
     return f"${amount:,.0f}".replace(",", ".")
 
 
 def _format_period(period_year: int, period_month: int) -> str:
+    """Handle format period."""
     return f"{period_month:02d}/{period_year}"
 
 
 def _missing_required_items(detail: PayrollPeriodDetailDTO) -> list[str]:
+    """Handle missing required items."""
     present_codes = {item.concept_code for item in detail.items}
     missing_codes: list[str] = []
     if detail.pension_plan_id is None or detail.health_plan_id is None:
@@ -65,6 +70,7 @@ def _missing_required_items(detail: PayrollPeriodDetailDTO) -> list[str]:
 
 
 def _next_action(detail: PayrollPeriodDetailDTO) -> tuple[str, str]:
+    """Handle next action."""
     present_codes = {item.concept_code for item in detail.items}
     if detail.status == "reviewed":
         return ("Download payroll PDF", f"GET /payroll/{detail.id}/report.pdf")
@@ -78,18 +84,21 @@ def _next_action(detail: PayrollPeriodDetailDTO) -> tuple[str, str]:
 
 
 def _assigned_plans_label(detail: PayrollPeriodDetailDTO) -> str:
+    """Handle assigned plans label."""
     if detail.pension_plan_id is None or detail.health_plan_id is None:
         return "Missing"
     return f"Pension #{detail.pension_plan_id} / Health #{detail.health_plan_id}"
 
 
 def _report_url(detail: PayrollPeriodDetailDTO) -> str | None:
+    """Handle report url."""
     if detail.status != "reviewed":
         return None
     return f"{settings.api_base_url}/payroll/{detail.id}/report.pdf"
 
 
 def _net_pay_check(summary: PayrollSummaryDTO) -> tuple[str, str]:
+    """Handle net pay check."""
     if (
         summary.declared_net_pay_clp is None
         or summary.expected_net_pay_clp is None
@@ -105,6 +114,7 @@ def _net_pay_check(summary: PayrollSummaryDTO) -> tuple[str, str]:
 
 
 def _render_report_cell(row: DashboardPeriodRow) -> str:
+    """Handle render report cell."""
     if row.report_url is None:
         return "<td>Available after review</td>"
     return (
@@ -114,6 +124,7 @@ def _render_report_cell(row: DashboardPeriodRow) -> str:
 
 
 def _build_period_row(summary: PayrollSummaryDTO, detail: PayrollPeriodDetailDTO) -> DashboardPeriodRow:
+    """Handle build period row."""
     next_action, action_endpoint = _next_action(detail)
     missing_items = _missing_required_items(detail)
     net_pay_check, net_pay_check_status = _net_pay_check(summary)
@@ -136,6 +147,7 @@ def _build_period_row(summary: PayrollSummaryDTO, detail: PayrollPeriodDetailDTO
 
 
 def _render_plan_options(pension_plans: list[PensionPlanDTO], health_plans: list[HealthPlanDTO]) -> str:
+    """Handle render plan options."""
     pension_items = "".join(
         (
             "<li>"
@@ -170,6 +182,7 @@ def render_dashboard_html(
     pension_plans: list[PensionPlanDTO],
     health_plans: list[HealthPlanDTO],
 ) -> str:
+    """Render dashboard html."""
     total_periods = len(period_rows)
     reviewed_periods = sum(1 for row in period_rows if row.status == "reviewed")
     pending_periods = total_periods - reviewed_periods
@@ -251,6 +264,7 @@ def render_dashboard_html(
 
 
 async def build_dashboard_html() -> str:
+    """Build dashboard html."""
     async with SessionLocal() as session:
         payroll_queries = PayrollQueries(SqlAlchemyPayrollRepository(session))
         reference_queries = ReferenceDataQueries(SqlAlchemyReferenceDataRepository(session))
@@ -263,6 +277,7 @@ async def build_dashboard_html() -> str:
 
 
 def main() -> None:
+    """Handle main."""
     print(asyncio.run(build_dashboard_html()))
 
 

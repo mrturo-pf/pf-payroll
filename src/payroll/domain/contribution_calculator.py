@@ -19,17 +19,21 @@ CLP_QUANT = Decimal("1")
 
 
 def quantize_clp(value: Decimal) -> Decimal:
+    """Quantize clp."""
     return value.quantize(CLP_QUANT)
 
 
 @dataclass(frozen=True, slots=True)
 class ContributionCalculator:
+    """Provide contribution calculator."""
+
     def _capped_base(
         self,
         taxable_clp: Decimal,
         cap: ContributionCap,
         uf_value_clp: Decimal,
     ) -> tuple[Decimal, Decimal]:
+        """Handle capped base."""
         cap_clp = quantize_clp(cap.value_uf * uf_value_clp)
         return cap_clp, min(taxable_clp, cap_clp)
 
@@ -40,6 +44,7 @@ class ContributionCalculator:
         cap: ContributionCap,
         uf_value_clp: Decimal,
     ) -> PensionContribution:
+        """Handle pension."""
         cap_clp, capped_base = self._capped_base(taxable_clp, cap, uf_value_clp)
 
         base_amount = quantize_clp(capped_base * plan.institution.mandatory_rate)
@@ -61,6 +66,7 @@ class ContributionCalculator:
         cap: ContributionCap,
         uf_value_clp: Decimal,
     ) -> HealthContribution:
+        """Handle health."""
         cap_clp, capped_base = self._capped_base(taxable_clp, cap, uf_value_clp)
 
         base_amount = quantize_clp(capped_base * plan.institution.mandatory_rate)
@@ -91,6 +97,7 @@ class ContributionCalculator:
         cap: ContributionCap,
         uf_value_clp: Decimal,
     ) -> UnemploymentContribution:
+        """Handle unemployment."""
         cap_clp, capped_base = self._capped_base(taxable_clp, cap, uf_value_clp)
         if contract_kind is EmploymentContractKind.INDEFINITE:
             employee_rate = Decimal("0.006")
@@ -115,5 +122,6 @@ class ContributionCalculator:
         )
 
     def pension_base(self, taxable_clp: Decimal, cap: ContributionCap, uf_value_clp: Decimal) -> Decimal:
+        """Handle pension base."""
         _, capped_base = self._capped_base(taxable_clp, cap, uf_value_clp)
         return capped_base

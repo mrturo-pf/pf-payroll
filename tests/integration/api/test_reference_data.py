@@ -1,3 +1,5 @@
+"""Tests for test reference data."""
+
 from datetime import date
 from decimal import Decimal
 
@@ -21,10 +23,14 @@ from payroll.interfaces.api.main import app
 
 
 class FakeReferenceDataQueries:
+    """Test double for Reference Data Queries."""
+
     async def list_currencies(self) -> list[CurrencyDTO]:
+        """List currencies."""
         return [CurrencyDTO(code="CLP", name="Peso chileno", is_fiat=True, unit_kind="currency")]
 
     async def list_pension_institutions(self) -> list[PensionInstitutionDTO]:
+        """List pension institutions."""
         return [
             PensionInstitutionDTO(
                 code="AFP_UNO",
@@ -35,6 +41,7 @@ class FakeReferenceDataQueries:
         ]
 
     async def list_health_institutions(self) -> list[HealthInstitutionDTO]:
+        """List health institutions."""
         return [
             HealthInstitutionDTO(
                 code="FONASA",
@@ -46,6 +53,7 @@ class FakeReferenceDataQueries:
         ]
 
     async def list_pension_plans(self) -> list[PensionPlanDTO]:
+        """List pension plans."""
         return [
             PensionPlanDTO(
                 id=1,
@@ -58,6 +66,7 @@ class FakeReferenceDataQueries:
         ]
 
     async def list_health_plans(self) -> list[HealthPlanDTO]:
+        """List health plans."""
         return [
             HealthPlanDTO(
                 id=2,
@@ -72,6 +81,7 @@ class FakeReferenceDataQueries:
         ]
 
     async def list_contribution_caps(self) -> list[ContributionCapDTO]:
+        """List contribution caps."""
         return [
             ContributionCapDTO(
                 cap_type="pension_health",
@@ -82,6 +92,7 @@ class FakeReferenceDataQueries:
         ]
 
     async def list_payroll_concepts(self) -> list[PayrollConceptDTO]:
+        """List payroll concepts."""
         return [
             PayrollConceptDTO(
                 code="SALARY_BASE",
@@ -92,6 +103,7 @@ class FakeReferenceDataQueries:
         ]
 
     async def list_income_tax_brackets(self) -> list[IncomeTaxBracketDTO]:
+        """List income tax brackets."""
         return [
             IncomeTaxBracketDTO(
                 valid_from=date(2026, 1, 1),
@@ -105,12 +117,16 @@ class FakeReferenceDataQueries:
 
 
 class FakeRefreshIncomeTaxBrackets:
+    """Test double for Refresh Income Tax Brackets."""
+
     async def execute(self, command: object) -> RefreshIncomeTaxBracketsResultDTO:
+        """Handle execute."""
         assert getattr(command, "year") == 2026
         return RefreshIncomeTaxBracketsResultDTO(year=2026, refreshed_months=6, upserted_brackets=48)
 
 
 def test_reference_data_endpoints() -> None:
+    """Test reference data endpoints."""
     app.dependency_overrides[get_reference_data_queries] = lambda: FakeReferenceDataQueries()
     client = TestClient(app)
 
@@ -188,6 +204,7 @@ def test_reference_data_endpoints() -> None:
 
 
 def test_reference_data_refresh_income_tax_brackets_endpoint() -> None:
+    """Test reference data refresh income tax brackets endpoint."""
     app.dependency_overrides[get_refresh_income_tax_brackets_use_case] = lambda: FakeRefreshIncomeTaxBrackets()
     client = TestClient(app)
 
@@ -205,8 +222,12 @@ def test_reference_data_refresh_income_tax_brackets_endpoint() -> None:
 
 
 def test_reference_data_refresh_income_tax_brackets_endpoint_returns_bad_request() -> None:
+    """Test reference data refresh income tax brackets endpoint returns bad request."""
     class ErrorRefreshIncomeTaxBrackets:
+        """Represent the error refresh income tax brackets."""
+
         async def execute(self, command: object) -> RefreshIncomeTaxBracketsResultDTO:
+            """Handle execute."""
             raise PayrollDependencyError("No official income tax brackets were found for 2026.")
 
     app.dependency_overrides[get_refresh_income_tax_brackets_use_case] = lambda: ErrorRefreshIncomeTaxBrackets()

@@ -1,3 +1,5 @@
+"""Tests for test market data."""
+
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
@@ -14,11 +16,15 @@ from payroll.interfaces.api.routes.market_data import refresh_rates
 
 
 class FakeMarketDataQueries:
+    """Test double for Market Data Queries."""
+
     async def list_exchange_rates(self, currency_code: str | None = None) -> list[ExchangeRateDTO]:
+        """List exchange rates."""
         assert currency_code in (None, "UF")
         return [ExchangeRateDTO(currency_code="UF", rate_date=date(2026, 1, 31), value_clp=Decimal("38000"), source="manual")]
 
     async def list_economic_indices(self, code: str | None = None) -> list[EconomicIndexDTO]:
+        """List economic indices."""
         assert code in (None, "IPC_CL")
         return [
             EconomicIndexDTO(
@@ -35,7 +41,10 @@ class FakeMarketDataQueries:
 
 
 class FakeRefreshRates:
+    """Test double for Refresh Rates."""
+
     async def execute(self, command: object) -> RefreshRatesResultDTO:
+        """Handle execute."""
         assert len(getattr(command, "exchange_rates")) == 1
         assert len(getattr(command, "economic_indices")) == 1
         assert len(getattr(command, "provider_exchange_rates")) == 0
@@ -44,7 +53,10 @@ class FakeRefreshRates:
 
 
 class FakeProviderRefreshRates:
+    """Test double for Provider Refresh Rates."""
+
     async def execute(self, command: object) -> RefreshRatesResultDTO:
+        """Handle execute."""
         assert len(getattr(command, "exchange_rates")) == 0
         assert len(getattr(command, "economic_indices")) == 0
         assert len(getattr(command, "provider_exchange_rates")) == 1
@@ -53,6 +65,7 @@ class FakeProviderRefreshRates:
 
 
 def test_market_data_endpoints() -> None:
+    """Test market data endpoints."""
     app.dependency_overrides[get_market_data_queries] = lambda: FakeMarketDataQueries()
     app.dependency_overrides[get_refresh_rates_use_case] = lambda: FakeRefreshRates()
     client = TestClient(app)
@@ -115,8 +128,12 @@ def test_market_data_endpoints() -> None:
 
 
 def test_market_data_refresh_endpoint_surfaces_domain_errors() -> None:
+    """Test market data refresh endpoint surfaces domain errors."""
     class ErrorRefreshRates:
+        """Represent the error refresh rates."""
+
         async def execute(self, command: object) -> RefreshRatesResultDTO:
+            """Handle execute."""
             raise PayrollValidationError("bad market data payload")
 
     app.dependency_overrides[get_refresh_rates_use_case] = lambda: ErrorRefreshRates()
@@ -132,6 +149,7 @@ def test_market_data_refresh_endpoint_surfaces_domain_errors() -> None:
 
 
 def test_market_data_refresh_endpoint_accepts_provider_fetch_requests() -> None:
+    """Test market data refresh endpoint accepts provider fetch requests."""
     app.dependency_overrides[get_refresh_rates_use_case] = lambda: FakeProviderRefreshRates()
     client = TestClient(app)
 
@@ -152,8 +170,12 @@ def test_market_data_refresh_endpoint_accepts_provider_fetch_requests() -> None:
 
 @pytest.mark.asyncio
 async def test_market_data_refresh_handler_maps_value_errors() -> None:
+    """Test market data refresh handler maps value errors."""
     class ErrorRefreshRates:
+        """Represent the error refresh rates."""
+
         async def execute(self, command: object) -> RefreshRatesResultDTO:
+            """Handle execute."""
             raise PayrollValidationError("invalid refresh")
 
     with pytest.raises(HTTPException, match="invalid refresh"):

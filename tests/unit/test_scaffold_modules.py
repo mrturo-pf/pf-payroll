@@ -1,3 +1,5 @@
+"""Tests for test scaffold modules."""
+
 from __future__ import annotations
 
 import asyncio
@@ -50,6 +52,7 @@ from payroll.shared.constants import DEFAULT_CURRENCY
 
 
 def test_settings_defaults_and_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test settings defaults and env override."""
     defaults = Settings()
     assert defaults.env == "development"
     assert defaults.log_level == "INFO"
@@ -63,6 +66,7 @@ def test_settings_defaults_and_env_override(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_domain_dataclasses_and_constants() -> None:
+    """Test domain dataclasses and constants."""
     payroll_period = PayrollPeriod(
         employer_id=7,
         period_year=2026,
@@ -107,6 +111,7 @@ def test_domain_dataclasses_and_constants() -> None:
 
 
 def test_contribution_calculator_quantizes_and_honors_lower_taxable_amount() -> None:
+    """Test contribution calculator quantizes and honors lower taxable amount."""
     calculator = ContributionCalculator()
     cap = ContributionCap("pension_health", date(2026, 1, 1), None, Decimal("90.0600"))
 
@@ -117,53 +122,72 @@ def test_contribution_calculator_quantizes_and_honors_lower_taxable_amount() -> 
 
 
 def test_use_case_placeholders_are_instantiable() -> None:
+    """Test use case placeholders are instantiable."""
     class StubRepository:
+        """Test double for Repository."""
+
         async def import_rows(self, rows: list[object]) -> object:
+            """Import rows."""
             return rows
 
         async def assign_plans(self, command: object) -> object:
+            """Assign plans."""
             return command
 
         async def review_period(self, command: object) -> object:
+            """Review period."""
             return command
 
         async def get_contribution_context(self, command: object) -> object:
+            """Get contribution context."""
             return command
 
         async def save_computed_contributions(self, result: object) -> object:
+            """Save computed contributions."""
             return result
 
         async def list_exchange_rates(self, currency_code: str | None = None) -> list[object]:
+            """List exchange rates."""
             return []
 
         async def list_economic_indices(self, code: str | None = None) -> list[object]:
+            """List economic indices."""
             return []
 
         async def get_exchange_rate_value(self, currency_code: str, rate_date: date) -> Decimal | None:
+            """Get exchange rate value."""
             return Decimal("1")
 
         async def get_economic_index_value(self, code: str, period_year: int, period_month: int) -> Decimal | None:
+            """Get economic index value."""
             return Decimal("100")
 
         async def refresh_rates(self, command: object) -> object:
+            """Refresh rates."""
             return command
 
         async def upsert_income_tax_brackets(self, brackets: list[object]) -> int:
+            """Handle upsert income tax brackets."""
             return len(brackets)
 
         async def get_period_detail(self, period_id: int) -> object:
+            """Get period detail."""
             return period_id
 
         async def list_period_summaries(self) -> list[object]:
+            """List period summaries."""
             return []
 
         async def get_income_tax_context(self, command: object) -> object:
+            """Get income tax context."""
             return command
 
         async def get_income_tax_bracket(self, payment_date: date, taxable_base_utm: Decimal) -> object:
+            """Get income tax bracket."""
             return object()
 
         async def save_computed_income_tax(self, result: object) -> object:
+            """Save computed income tax."""
             return result
 
     assert isinstance(ImportPayroll(StubRepository(), XlsxPayrollImporter()), ImportPayroll)
@@ -184,7 +208,9 @@ def test_dashboard_main_prints_rendered_html(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """Test dashboard main prints rendered html."""
     async def fake_build_dashboard_html() -> str:
+        """Handle fake build dashboard html."""
         return "<html>dashboard</html>"
 
     monkeypatch.setattr("payroll.interfaces.dashboard.app.build_dashboard_html", fake_build_dashboard_html)
@@ -195,6 +221,7 @@ def test_dashboard_main_prints_rendered_html(
 
 
 def test_xlsx_importer_transforms_and_reads_files() -> None:
+    """Test xlsx importer transforms and reads files."""
     source = pd.DataFrame(
         [
             {
@@ -223,11 +250,16 @@ def test_xlsx_importer_transforms_and_reads_files() -> None:
 
 @pytest.mark.asyncio
 async def test_chained_provider_returns_first_available_rate() -> None:
+    """Test chained provider returns first available rate."""
     class Provider:
+        """Provide provider."""
+
         def __init__(self, value: Decimal | None) -> None:
+            """Initialize the instance."""
             self.value = value
 
         async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
+            """Handle fetch rate."""
             assert currency_code == "USD"
             assert on == date(2026, 5, 1)
             return self.value
@@ -241,8 +273,12 @@ async def test_chained_provider_returns_first_available_rate() -> None:
 
 @pytest.mark.asyncio
 async def test_chained_provider_returns_none_when_all_providers_miss() -> None:
+    """Test chained provider returns none when all providers miss."""
     class Provider:
+        """Provide provider."""
+
         async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
+            """Handle fetch rate."""
             assert currency_code == "EUR"
             assert on == date(2026, 5, 2)
             return None
@@ -255,10 +291,12 @@ async def test_chained_provider_returns_none_when_all_providers_miss() -> None:
 
 
 def test_logger_is_available() -> None:
+    """Test logger is available."""
     assert logger is not None
 
 
 def test_cli_health_command() -> None:
+    """Test cli health command."""
     result = CliRunner().invoke(cli_app, ["health"])
 
     assert result.exit_code == 0
@@ -266,6 +304,7 @@ def test_cli_health_command() -> None:
 
 
 def test_importing_db_modules_exposes_expected_types() -> None:
+    """Test importing db modules exposes expected types."""
     base_module = importlib.import_module("payroll.infrastructure.db.base")
     session_module = importlib.import_module("payroll.infrastructure.db.session")
 
@@ -275,6 +314,7 @@ def test_importing_db_modules_exposes_expected_types() -> None:
 
 
 def test_package_modules_import() -> None:
+    """Test package modules import."""
     modules = [
         "payroll",
         "payroll.application",
@@ -301,9 +341,11 @@ def test_package_modules_import() -> None:
 
 
 def test_cli_module_runs_as_main(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test cli module runs as main."""
     called: list[bool] = []
 
     def fake_call(self: typer.Typer, *args: object, **kwargs: object) -> None:
+        """Handle fake call."""
         called.append(True)
 
     monkeypatch.setattr(typer.Typer, "__call__", fake_call)
@@ -318,7 +360,9 @@ def test_dashboard_module_runs_as_main(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """Test dashboard module runs as main."""
     def fake_run(coro: object) -> str:
+        """Handle fake run."""
         getattr(coro, "close")()
         return "<html>dashboard</html>"
 

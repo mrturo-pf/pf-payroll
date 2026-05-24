@@ -1,3 +1,5 @@
+"""Tests for test cli main."""
+
 from __future__ import annotations
 
 import asyncio
@@ -24,11 +26,14 @@ from payroll.domain.contributions import EmploymentContractKind, HealthInstituti
 
 @dataclass(frozen=True)
 class SamplePayload:
+    """Represent Sample Payload."""
+
     amount: Decimal
     when: date
 
 
 def sample_summary() -> PayrollSummaryDTO:
+    """Sample summary."""
     return PayrollSummaryDTO(
         period_id=7,
         employer_id=1,
@@ -44,6 +49,7 @@ def sample_summary() -> PayrollSummaryDTO:
 
 
 def sample_detail() -> PayrollPeriodDetailDTO:
+    """Sample detail."""
     return PayrollPeriodDetailDTO(
         id=7,
         employer_id=1,
@@ -64,6 +70,7 @@ def sample_detail() -> PayrollPeriodDetailDTO:
 
 
 def sample_pension_plan() -> PensionPlanDTO:
+    """Sample pension plan."""
     return PensionPlanDTO(
         id=1,
         institution_code="AFP_UNO",
@@ -75,6 +82,7 @@ def sample_pension_plan() -> PensionPlanDTO:
 
 
 def sample_health_plan() -> HealthPlanDTO:
+    """Sample health plan."""
     return HealthPlanDTO(
         id=2,
         institution_code="FONASA",
@@ -88,6 +96,7 @@ def sample_health_plan() -> HealthPlanDTO:
 
 
 def test_json_default_serializes_supported_values() -> None:
+    """Test json default serializes supported values."""
     assert cli_main._json_default(SamplePayload(amount=Decimal("1.5"), when=date(2026, 4, 30))) == {
         "amount": Decimal("1.5"),
         "when": date(2026, 4, 30),
@@ -98,25 +107,31 @@ def test_json_default_serializes_supported_values() -> None:
 
 
 def test_json_default_rejects_unknown_values() -> None:
+    """Test json default rejects unknown values."""
     with pytest.raises(TypeError):
         cli_main._json_default(object())
 
 
 def test_emit_json_prints_sorted_json(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test emit json prints sorted json."""
     cli_main._emit_json({"b": 2, "a": Decimal("1")})
 
     assert capsys.readouterr().out == '{\n  "a": "1",\n  "b": 2\n}\n'
 
 
 def test_run_command_returns_result() -> None:
+    """Test run command returns result."""
     async def coro() -> str:
+        """Handle coro."""
         return "ok"
 
     assert cli_main._run_command(coro()) == "ok"
 
 
 def test_run_command_converts_value_error_into_exit(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test run command converts value error into exit."""
     async def coro() -> str:
+        """Handle coro."""
         raise ValueError("boom")
 
     with pytest.raises(click.exceptions.Exit):
@@ -126,7 +141,9 @@ def test_run_command_converts_value_error_into_exit(capsys: pytest.CaptureFixtur
 
 
 def test_run_command_converts_os_error_into_exit(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test run command converts os error into exit."""
     async def coro() -> str:
+        """Handle coro."""
         raise OSError("disk error")
 
     with pytest.raises(click.exceptions.Exit):
@@ -136,6 +153,7 @@ def test_run_command_converts_os_error_into_exit(capsys: pytest.CaptureFixture[s
 
 
 def test_parse_optional_decimal_supports_valid_none_and_invalid_values(capsys: pytest.CaptureFixture[str]) -> None:
+    """Test parse optional decimal supports valid none and invalid values."""
     assert cli_main._parse_optional_decimal("uf_value_clp", None) is None
     assert cli_main._parse_optional_decimal("uf_value_clp", "39000.5") == Decimal("39000.5")
 
@@ -146,83 +164,122 @@ def test_parse_optional_decimal_supports_valid_none_and_invalid_values(capsys: p
 
 
 def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Test cli async helpers."""
     sample_file = tmp_path / "sample.csv"
     sample_file.write_text("period,employer\n")
 
     class FakeSessionContext:
+        """Test double for Session Context."""
+
         async def __aenter__(self) -> object:
+            """Enter the async context manager."""
             return "session"
 
         async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+            """Exit the async context manager."""
             return None
 
     class FakeImportPayroll:
+        """Test double for Import Payroll."""
+
         def __init__(self, repository: object, importer: object) -> None:
+            """Initialize the instance."""
             assert repository == "payroll-repo"
             assert importer == "importer"
 
         async def from_bytes(self, filename: str, content: bytes) -> object:
+            """Create from bytes."""
             assert filename == "sample.csv"
             assert content == b"period,employer\n"
             return {"imported": True}
 
     class FakePayrollQueries:
+        """Test double for Payroll Queries."""
+
         def __init__(self, repository: object) -> None:
+            """Initialize the instance."""
             assert repository == "payroll-repo"
 
         async def list_period_summaries(self) -> object:
+            """List period summaries."""
             return [sample_summary()]
 
         async def get_period_detail(self, period_id: int) -> object:
+            """Get period detail."""
             assert period_id == 7
             return sample_detail()
 
     class FakeReferenceDataQueries:
+        """Test double for Reference Data Queries."""
+
         def __init__(self, repository: object) -> None:
+            """Initialize the instance."""
             assert repository == "reference-repo"
 
         async def list_pension_plans(self) -> object:
+            """List pension plans."""
             return [sample_pension_plan()]
 
         async def list_health_plans(self) -> object:
+            """List health plans."""
             return [sample_health_plan()]
 
     class FakeAssignPlans:
+        """Test double for Assign Plans."""
+
         def __init__(self, repository: object) -> None:
+            """Initialize the instance."""
             assert repository == "payroll-repo"
 
         async def execute(self, command: object) -> object:
+            """Handle execute."""
             return command
 
     class FakeComputeContributions:
+        """Test double for Compute Contributions."""
+
         def __init__(self, payroll_repository: object, market_data_repository: object) -> None:
+            """Initialize the instance."""
             assert payroll_repository == "payroll-repo"
             assert market_data_repository == "market-repo"
 
         async def execute(self, command: object) -> object:
+            """Handle execute."""
             return command
 
     class FakeComputeIncomeTax:
+        """Test double for Compute Income Tax."""
+
         def __init__(self, payroll_repository: object, market_data_repository: object) -> None:
+            """Initialize the instance."""
             assert payroll_repository == "payroll-repo"
             assert market_data_repository == "market-repo"
 
         async def execute(self, command: object) -> object:
+            """Handle execute."""
             return command
 
     class FakeReviewPayrollPeriod:
+        """Test double for Review Payroll Period."""
+
         def __init__(self, repository: object) -> None:
+            """Initialize the instance."""
             assert repository == "payroll-repo"
 
         async def execute(self, command: object) -> object:
+            """Handle execute."""
             return command
 
     class FakeGeneratePayrollReport:
+        """Test double for Generate Payroll Report."""
+
         def __init__(self, repository: object, renderer: object) -> None:
+            """Initialize the instance."""
             assert repository == "payroll-repo"
             assert renderer == "renderer"
 
         async def execute(self, period_id: int) -> GeneratedPayrollReportDTO:
+            """Handle execute."""
             assert period_id == 7
             return GeneratedPayrollReportDTO(period_id=7, filename="payroll-period-7.pdf", content=b"%PDF")
 
@@ -253,28 +310,34 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
 
 def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test cli business commands."""
     source_file = tmp_path / "sample.csv"
     source_file.write_text("period,employer\n")
     report_path = tmp_path / "report.pdf"
 
     async def fake_import_payroll_async(file_path: Path) -> object:
+        """Handle fake import payroll async."""
         assert file_path == source_file
         return {"kind": "import", "file": file_path.name}
 
     async def fake_list_period_summaries_async() -> object:
+        """Handle fake list period summaries async."""
         return [sample_summary()]
 
     async def fake_get_period_detail_async(period_id: int) -> object:
+        """Handle fake get period detail async."""
         assert period_id == 7
         return sample_detail()
 
     async def fake_list_plan_snapshots_async() -> object:
+        """Handle fake list plan snapshots async."""
         return {
             "pension_plans": [sample_pension_plan()],
             "health_plans": [sample_health_plan()],
         }
 
     async def fake_assign_plans_async(period_id: int, pension_plan_id: int, health_plan_id: int) -> object:
+        """Handle fake assign plans async."""
         return {
             "period_id": period_id,
             "pension_plan_id": pension_plan_id,
@@ -287,6 +350,7 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         health_plan_id: int,
         uf_value_clp: Decimal | None,
     ) -> object:
+        """Handle fake compute contributions async."""
         return {
             "period_id": period_id,
             "pension_plan_id": pension_plan_id,
@@ -295,12 +359,15 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         }
 
     async def fake_compute_income_tax_async(period_id: int, utm_value_clp: Decimal | None) -> object:
+        """Handle fake compute income tax async."""
         return {"period_id": period_id, "utm_value_clp": utm_value_clp}
 
     async def fake_review_period_async(period_id: int) -> object:
+        """Handle fake review period async."""
         return {"period_id": period_id, "status": "reviewed"}
 
     async def fake_generate_payroll_report_async(period_id: int) -> GeneratedPayrollReportDTO:
+        """Handle fake generate payroll report async."""
         assert period_id == 7
         return GeneratedPayrollReportDTO(
             period_id=period_id,
@@ -373,7 +440,9 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_report_pdf_uses_default_output_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test report pdf uses default output path."""
     async def fake_generate_payroll_report_async(period_id: int) -> GeneratedPayrollReportDTO:
+        """Handle fake generate payroll report async."""
         assert period_id == 9
         return GeneratedPayrollReportDTO(period_id=9, filename="payroll-period-9.pdf", content=b"%PDF")
 

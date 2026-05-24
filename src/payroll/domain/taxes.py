@@ -7,6 +7,8 @@ from decimal import Decimal
 
 @dataclass(frozen=True, slots=True)
 class IncomeTaxBracket:
+    """Represent Income Tax Bracket."""
+
     valid_from: date
     valid_to: date | None
     lower_bound_utm: Decimal
@@ -17,6 +19,8 @@ class IncomeTaxBracket:
 
 @dataclass(frozen=True, slots=True)
 class IncomeTaxComputation:
+    """Represent Income Tax Computation."""
+
     taxable_income_clp: Decimal
     deductible_amount_clp: Decimal
     taxable_base_clp: Decimal

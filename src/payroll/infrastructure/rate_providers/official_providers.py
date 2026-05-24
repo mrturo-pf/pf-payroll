@@ -35,19 +35,23 @@ _BRACKET_UTM_QUANT = Decimal("0.0001")
 
 
 def _fetch_url(url: str, timeout_seconds: int) -> str:
+    """Handle fetch url."""
     with urlopen(url, timeout=timeout_seconds) as response:  # noqa: S310
         return response.read().decode(response.headers.get_content_charset() or "utf-8", errors="replace")
 
 
 def _parse_json_document(raw: str) -> dict[str, object]:
+    """Handle parse json document."""
     return json.loads(raw)
 
 
 def _parse_iso_date(raw: str) -> date:
+    """Handle parse iso date."""
     return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
 
 
 def _parse_chilean_decimal(raw: str) -> Decimal | None:
+    """Handle parse chilean decimal."""
     cleaned = raw.replace("\xa0", "").strip()
     if not cleaned:
         return None
@@ -56,10 +60,12 @@ def _parse_chilean_decimal(raw: str) -> Decimal | None:
 
 
 def _strip_html(raw: str) -> str:
+    """Handle strip html."""
     return re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", raw))).strip()
 
 
 def _parse_chilean_amount(raw: str) -> Decimal | None:
+    """Handle parse chilean amount."""
     cleaned = raw.replace("$", "").replace("-.-", "").replace("Y MÁS", "").replace("Y MAS", "").strip()
     if not cleaned:
         return None
@@ -67,6 +73,7 @@ def _parse_chilean_amount(raw: str) -> Decimal | None:
 
 
 def _extract_sii_rows(html: str) -> dict[int, list[str]]:
+    """Handle extract sii rows."""
     rows_by_month: dict[int, list[str]] = {}
     for row in re.findall(r"<tr[^>]*>(.*?)</tr>", html, flags=re.IGNORECASE | re.DOTALL):
         cells = [_strip_html(cell) for cell in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, flags=re.IGNORECASE | re.DOTALL)]
@@ -79,6 +86,7 @@ def _extract_sii_rows(html: str) -> dict[int, list[str]]:
 
 
 def _parse_month_heading(raw: str) -> date | None:
+    """Handle parse month heading."""
     match = re.search(r"([A-Za-zÁÉÍÓÚáéíóúñÑ]+)\s+(\d{4})", raw)
     if match is None:
         return None
@@ -89,6 +97,7 @@ def _parse_month_heading(raw: str) -> date | None:
 
 
 def _extract_income_tax_month_rows(html: str) -> dict[date, list[list[str]]]:
+    """Handle extract income tax month rows."""
     rows_by_month: dict[date, list[list[str]]] = {}
     for section in re.finditer(
         r"<h3>(.*?)</h3>\s*<div class=['\"]table-responsive['\"][^>]*>.*?<tbody>(.*?)</tbody>",
@@ -107,6 +116,7 @@ def _extract_income_tax_month_rows(html: str) -> dict[date, list[list[str]]]:
 
 
 def _quantize_bracket_utm(value: Decimal) -> Decimal:
+    """Handle quantize bracket utm."""
     return value.quantize(_BRACKET_UTM_QUANT)
 
 
@@ -114,6 +124,7 @@ def _build_monthly_income_tax_brackets(
     valid_from: date,
     rows: list[list[str]],
 ) -> list[IncomeTaxBracketWriteDTO]:
+    """Handle build monthly income tax brackets."""
     monthly_rows: list[list[str]] = []
     collecting = False
     for row in rows:
@@ -166,6 +177,8 @@ def _build_monthly_income_tax_brackets(
 
 
 class MindicadorRateProvider:
+    """Provide mindicador rate provider."""
+
     name = "mindicador"
     _CODE_MAP = {"UF": "uf", "UTM": "utm", "USD": "dolar", "EUR": "euro"}
 
@@ -175,11 +188,13 @@ class MindicadorRateProvider:
         timeout_seconds: int = 10,
         fetcher: Callable[[str, int], str] | None = None,
     ) -> None:
+        """Initialize the instance."""
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._fetcher = fetcher or _fetch_url
 
     async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
+        """Handle fetch rate."""
         indicator = self._CODE_MAP.get(currency_code.upper())
         if indicator is None:
             return None
@@ -206,6 +221,7 @@ class MindicadorRateProvider:
         return matching_values[0] if matching_values else None
 
     async def fetch_rate_entry(self, currency_code: str, on: date) -> ExchangeRateWriteDTO | None:
+        """Handle fetch rate entry."""
         value = await self.fetch_rate(currency_code, on)
         if value is None:
             return None
@@ -213,6 +229,8 @@ class MindicadorRateProvider:
 
 
 class SiiIndicatorsProvider:
+    """Provide sii indicators provider."""
+
     name = "sii"
 
     def __init__(
@@ -221,11 +239,13 @@ class SiiIndicatorsProvider:
         timeout_seconds: int = 10,
         fetcher: Callable[[str, int], str] | None = None,
     ) -> None:
+        """Initialize the instance."""
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._fetcher = fetcher or _fetch_url
 
     async def _get_rows(self, year: int) -> dict[int, list[str]]:
+        """Handle get rows."""
         url = f"{self._base_url}/valores_y_fechas/utm/utm{year}.htm"
         try:
             html = await asyncio.to_thread(self._fetcher, url, self._timeout_seconds)
@@ -234,6 +254,7 @@ class SiiIndicatorsProvider:
         return _extract_sii_rows(html)
 
     async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
+        """Handle fetch rate."""
         if currency_code.upper() != "UTM":
             return None
         row = (await self._get_rows(on.year)).get(on.month)
@@ -242,12 +263,14 @@ class SiiIndicatorsProvider:
         return _parse_chilean_decimal(row[1])
 
     async def fetch_rate_entry(self, currency_code: str, on: date) -> ExchangeRateWriteDTO | None:
+        """Handle fetch rate entry."""
         value = await self.fetch_rate(currency_code, on)
         if value is None:
             return None
         return ExchangeRateWriteDTO(currency_code=currency_code.upper(), rate_date=on, value_clp=value, source=self.name)
 
     async def fetch_index(self, code: str, period_year: int, period_month: int) -> EconomicIndexWriteDTO | None:
+        """Handle fetch index."""
         if code.upper() != "IPC_CL":
             return None
         row = (await self._get_rows(period_year)).get(period_month)
@@ -271,6 +294,8 @@ class SiiIndicatorsProvider:
 
 
 class SiiIncomeTaxBracketProvider:
+    """Provide sii income tax bracket provider."""
+
     name = "sii"
 
     def __init__(
@@ -279,11 +304,13 @@ class SiiIncomeTaxBracketProvider:
         timeout_seconds: int = 10,
         fetcher: Callable[[str, int], str] | None = None,
     ) -> None:
+        """Initialize the instance."""
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._fetcher = fetcher or _fetch_url
 
     async def fetch_income_tax_brackets(self, year: int) -> list[IncomeTaxBracketWriteDTO]:
+        """Handle fetch income tax brackets."""
         url = f"{self._base_url}/valores_y_fechas/impuesto_2da_categoria/impuesto{year}.htm"
         try:
             html = await asyncio.to_thread(self._fetcher, url, self._timeout_seconds)
@@ -297,6 +324,8 @@ class SiiIncomeTaxBracketProvider:
 
 
 class BcchSeriesProvider:
+    """Provide bcch series provider."""
+
     name = "bcch"
 
     def __init__(
@@ -308,6 +337,7 @@ class BcchSeriesProvider:
         timeout_seconds: int = 10,
         fetcher: Callable[[str, int], str] | None = None,
     ) -> None:
+        """Initialize the instance."""
         self._user = user
         self._password = password
         self._series_codes = {key.upper(): value for key, value in series_codes.items()}
@@ -316,6 +346,7 @@ class BcchSeriesProvider:
         self._fetcher = fetcher or _fetch_url
 
     async def _fetch_series(self, code: str, start: date, end: date) -> list[dict[str, object]]:
+        """Handle fetch series."""
         series_code = self._series_codes.get(code.upper())
         if not self._user or not self._password or not series_code:
             return []
@@ -344,6 +375,7 @@ class BcchSeriesProvider:
         return []
 
     async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
+        """Handle fetch rate."""
         observations = await self._fetch_series(currency_code, on, on)
         for observation in observations:
             raw_value = observation.get("value") or observation.get("Valor") or observation.get("obs_value")
@@ -353,12 +385,14 @@ class BcchSeriesProvider:
         return None
 
     async def fetch_rate_entry(self, currency_code: str, on: date) -> ExchangeRateWriteDTO | None:
+        """Handle fetch rate entry."""
         value = await self.fetch_rate(currency_code, on)
         if value is None:
             return None
         return ExchangeRateWriteDTO(currency_code=currency_code.upper(), rate_date=on, value_clp=value, source=self.name)
 
     async def fetch_index(self, code: str, period_year: int, period_month: int) -> EconomicIndexWriteDTO | None:
+        """Handle fetch index."""
         month_date = date(period_year, period_month, 1)
         observations = await self._fetch_series(code, month_date, month_date)
         for observation in observations:

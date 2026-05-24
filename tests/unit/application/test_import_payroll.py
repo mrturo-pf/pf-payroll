@@ -1,3 +1,5 @@
+"""Tests for test import payroll."""
+
 from datetime import date
 from decimal import Decimal
 
@@ -9,10 +11,14 @@ from payroll.domain.contributions import EmploymentContractKind
 
 
 class StubPayrollRepository:
+    """Test double for Payroll Repository."""
+
     def __init__(self) -> None:
+        """Initialize the instance."""
         self.rows: list[object] = []
 
     async def import_rows(self, rows: list[object]) -> ImportPayrollResultDTO:
+        """Import rows."""
         self.rows = rows
         return ImportPayrollResultDTO(
             imported_periods=1,
@@ -42,16 +48,21 @@ class StubPayrollRepository:
 
 
 class StubPayrollImporter:
+    """Test double for Payroll Importer."""
+
     def __init__(self, rows: list[ImportPayrollRowDTO]) -> None:
+        """Initialize the instance."""
         self.rows = rows
         self.calls: list[tuple[str, bytes]] = []
 
     def read_rows(self, filename: str, content: bytes) -> list[ImportPayrollRowDTO]:
+        """Read rows."""
         self.calls.append((filename, content))
         return self.rows
 
 
 def sample_rows() -> list[ImportPayrollRowDTO]:
+    """Sample rows."""
     return [
         ImportPayrollRowDTO(
             employer="ACME",
@@ -84,6 +95,7 @@ def sample_rows() -> list[ImportPayrollRowDTO]:
 
 @pytest.mark.asyncio
 async def test_import_payroll_reads_csv_and_builds_rows() -> None:
+    """Test import payroll reads csv and builds rows."""
     repository = StubPayrollRepository()
     importer = StubPayrollImporter(sample_rows())
     use_case = ImportPayroll(repository, importer)
@@ -102,6 +114,7 @@ async def test_import_payroll_reads_csv_and_builds_rows() -> None:
 
 @pytest.mark.asyncio
 async def test_import_payroll_rejects_empty_import() -> None:
+    """Test import payroll rejects empty import."""
     repository = StubPayrollRepository()
     use_case = ImportPayroll(repository, StubPayrollImporter([]))
 
@@ -111,6 +124,7 @@ async def test_import_payroll_rejects_empty_import() -> None:
 
 @pytest.mark.asyncio
 async def test_import_payroll_adds_net_pay_warning_without_rejecting_import() -> None:
+    """Test import payroll adds net pay warning without rejecting import."""
     repository = StubPayrollRepository()
     use_case = ImportPayroll(repository, StubPayrollImporter(sample_rows()))
 

@@ -1,3 +1,5 @@
+"""Tests for test payroll query use case."""
+
 from datetime import date
 from decimal import Decimal
 
@@ -9,7 +11,10 @@ from payroll.domain.contributions import EmploymentContractKind
 
 
 class StubPayrollRepository:
+    """Test double for Payroll Repository."""
+
     async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO | None:
+        """Get period detail."""
         if period_id == 404:
             return None
         return PayrollPeriodDetailDTO(
@@ -51,6 +56,7 @@ class StubPayrollRepository:
         )
 
     async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
+        """List period summaries."""
         return [
             PayrollSummaryDTO(
                 period_id=1,
@@ -69,6 +75,7 @@ class StubPayrollRepository:
 
 @pytest.mark.asyncio
 async def test_payroll_queries_return_detail_and_summary() -> None:
+    """Test payroll queries return detail and summary."""
     queries = PayrollQueries(StubPayrollRepository())
 
     detail = await queries.get_period_detail(1)
@@ -81,5 +88,6 @@ async def test_payroll_queries_return_detail_and_summary() -> None:
 
 @pytest.mark.asyncio
 async def test_payroll_queries_raise_for_missing_period() -> None:
+    """Test payroll queries raise for missing period."""
     with pytest.raises(ValueError, match="Payroll period 404 was not found."):
         await PayrollQueries(StubPayrollRepository()).get_period_detail(404)

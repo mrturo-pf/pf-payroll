@@ -1,3 +1,5 @@
+"""Tests for test dashboard app."""
+
 import asyncio
 from datetime import date
 from decimal import Decimal
@@ -19,6 +21,7 @@ from payroll.interfaces.dashboard.app import (
 
 
 def sample_summary() -> PayrollSummaryDTO:
+    """Sample summary."""
     return PayrollSummaryDTO(
         period_id=7,
         employer_id=1,
@@ -43,6 +46,7 @@ def sample_detail(
     health_plan_id: int | None = None,
     item_codes: list[str] | None = None,
 ) -> PayrollPeriodDetailDTO:
+    """Sample detail."""
     codes = item_codes or ["SALARY_BASE"]
     items = [
         PayrollItemDetailDTO(
@@ -75,6 +79,7 @@ def sample_detail(
 
 
 def sample_pension_plan() -> PensionPlanDTO:
+    """Sample pension plan."""
     return PensionPlanDTO(
         id=1,
         institution_code="AFP_UNO",
@@ -86,6 +91,7 @@ def sample_pension_plan() -> PensionPlanDTO:
 
 
 def sample_health_plan() -> HealthPlanDTO:
+    """Sample health plan."""
     return HealthPlanDTO(
         id=2,
         institution_code="FONASA",
@@ -99,12 +105,14 @@ def sample_health_plan() -> HealthPlanDTO:
 
 
 def test_dashboard_format_helpers() -> None:
+    """Test dashboard format helpers."""
     assert _format_clp(Decimal("1234567")) == "$1.234.567"
     assert _format_period(2026, 4) == "04/2026"
     assert _net_pay_check(sample_summary()) == ("Matches declared net pay", "matched")
 
 
 def test_missing_required_items_marks_every_pending_step() -> None:
+    """Test missing required items marks every pending step."""
     missing = _missing_required_items(sample_detail())
 
     assert missing == [
@@ -120,6 +128,7 @@ def test_missing_required_items_marks_every_pending_step() -> None:
 
 
 def test_next_action_prioritizes_assign_plans() -> None:
+    """Test next action prioritizes assign plans."""
     action, endpoint = _next_action(sample_detail())
 
     assert action == "Assign pension and health plans"
@@ -127,6 +136,7 @@ def test_next_action_prioritizes_assign_plans() -> None:
 
 
 def test_next_action_prioritizes_contributions_then_tax_then_review_then_pdf() -> None:
+    """Test next action prioritizes contributions then tax then review then pdf."""
     action, endpoint = _next_action(
         sample_detail(
             pension_plan_id=1,
@@ -192,6 +202,7 @@ def test_next_action_prioritizes_contributions_then_tax_then_review_then_pdf() -
 
 
 def test_assigned_plans_label_and_period_row() -> None:
+    """Test assigned plans label and period row."""
     detail = sample_detail(
         status="reviewed",
         pension_plan_id=1,
@@ -219,6 +230,7 @@ def test_assigned_plans_label_and_period_row() -> None:
 
 
 def test_render_dashboard_html_handles_empty_and_populated_states() -> None:
+    """Test render dashboard html handles empty and populated states."""
     empty_html = render_dashboard_html([], [], [])
     assert "No payroll periods available yet" in empty_html
     assert "No pension plans found." in empty_html
@@ -263,6 +275,7 @@ def test_render_dashboard_html_handles_empty_and_populated_states() -> None:
 
 
 def test_dashboard_renders_mismatch_and_missing_net_pay_states() -> None:
+    """Test dashboard renders mismatch and missing net pay states."""
     mismatch_summary = PayrollSummaryDTO(
         period_id=8,
         employer_id=1,
@@ -298,11 +311,16 @@ def test_dashboard_renders_mismatch_and_missing_net_pay_states() -> None:
 
 
 def test_build_dashboard_html_uses_queries_and_renders_result(monkeypatch) -> None:
+    """Test build dashboard html uses queries and renders result."""
     class FakeSessionContext:
+        """Test double for Session Context."""
+
         async def __aenter__(self) -> object:
+            """Enter the async context manager."""
             return object()
 
         async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+            """Exit the async context manager."""
             return None
 
     reviewed_detail = sample_detail(
@@ -321,24 +339,34 @@ def test_build_dashboard_html_uses_queries_and_renders_result(monkeypatch) -> No
     )
 
     class FakePayrollQueries:
+        """Test double for Payroll Queries."""
+
         def __init__(self, repository: object) -> None:
+            """Initialize the instance."""
             assert repository == "payroll-repo"
 
         async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
+            """List period summaries."""
             return [sample_summary()]
 
         async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO:
+            """Get period detail."""
             assert period_id == 7
             return reviewed_detail
 
     class FakeReferenceDataQueries:
+        """Test double for Reference Data Queries."""
+
         def __init__(self, repository: object) -> None:
+            """Initialize the instance."""
             assert repository == "reference-repo"
 
         async def list_pension_plans(self) -> list[PensionPlanDTO]:
+            """List pension plans."""
             return [sample_pension_plan()]
 
         async def list_health_plans(self) -> list[HealthPlanDTO]:
+            """List health plans."""
             return [sample_health_plan()]
 
     monkeypatch.setattr(dashboard_app, "SessionLocal", lambda: FakeSessionContext())

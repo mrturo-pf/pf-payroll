@@ -27,6 +27,7 @@ from payroll.infrastructure.db.models.reference_data import ContributionCapType
 
 
 def build_net_pay_warning(net_pay_difference_clp: Decimal | None) -> str | None:
+    """Build net pay warning."""
     if net_pay_difference_clp is None or net_pay_difference_clp == 0:
         return None
     return (
@@ -41,6 +42,7 @@ def build_payroll_summary_dto(
     employer_name: str,
     period: PayrollPeriodModel,
 ) -> PayrollSummaryDTO:
+    """Build payroll summary dto."""
     return PayrollSummaryDTO(
         period_id=summary.period_id,
         employer_id=summary.employer_id,
@@ -63,9 +65,11 @@ class SqlAlchemyPayrollRepositoryBase:
     """Common helpers shared across payroll repository concerns."""
 
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the instance."""
         self._session = session
 
     async def _refresh_summary_view(self) -> None:
+        """Handle refresh summary view."""
         await self._session.commit()
         await self._session.execute(text("REFRESH MATERIALIZED VIEW mv_payroll_summary"))
         await self._session.commit()
@@ -77,6 +81,7 @@ class SqlAlchemyPayrollRepositoryBase:
         payment_date: date,
         missing_message: str,
     ) -> ContributionCapModel:
+        """Handle get latest contribution cap."""
         result = await self._session.execute(
             select(ContributionCapModel)
             .where(ContributionCapModel.cap_type == cap_type)
@@ -95,6 +100,7 @@ class SqlAlchemyPayrollRepositoryBase:
         return cap_model
 
     async def _get_period(self, period_id: int) -> PayrollPeriodModel:
+        """Handle get period."""
         period_result = await self._session.execute(
             select(PayrollPeriodModel).where(PayrollPeriodModel.id == period_id)
         )
@@ -108,6 +114,7 @@ class SqlAlchemyPayrollRepositoryBase:
         plan_id: int,
         payment_date: date,
     ) -> tuple[PensionPlanModel, PensionInstitutionModel]:
+        """Handle get pension plan."""
         pension_result = await self._session.execute(
             select(PensionPlanModel, PensionInstitutionModel)
             .join(PensionInstitutionModel, PensionPlanModel.institution_id == PensionInstitutionModel.id)
@@ -130,6 +137,7 @@ class SqlAlchemyPayrollRepositoryBase:
         plan_id: int,
         payment_date: date,
     ) -> tuple[HealthPlanModel, HealthInstitutionModel]:
+        """Handle get health plan."""
         health_result = await self._session.execute(
             select(HealthPlanModel, HealthInstitutionModel)
             .join(HealthInstitutionModel, HealthPlanModel.institution_id == HealthInstitutionModel.id)

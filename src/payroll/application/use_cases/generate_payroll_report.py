@@ -14,10 +14,12 @@ class GeneratePayrollReport:
         repository: PayrollRepository,
         renderer: PayrollReportRenderer,
     ) -> None:
+        """Initialize the instance."""
         self._repository = repository
         self._renderer = renderer
 
     async def execute(self, period_id: int) -> GeneratedPayrollReportDTO:
+        """Handle execute."""
         detail = await self._repository.get_period_detail(period_id)
         if detail is None:
             raise PayrollPeriodNotFoundError(f"Payroll period {period_id} was not found.")

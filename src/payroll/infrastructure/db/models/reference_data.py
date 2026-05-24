@@ -12,20 +12,27 @@ from payroll.infrastructure.db.base import Base
 
 
 def enum_values(enum_cls: type[StrEnum]) -> list[str]:
+    """Handle enum values."""
     return [member.value for member in enum_cls]
 
 
 class ContributionCapType(StrEnum):
+    """Represent Contribution Cap Type."""
+
     PENSION_HEALTH = "pension_health"
     UNEMPLOYMENT = "unemployment"
 
 
 class PayrollConceptKind(StrEnum):
+    """Represent Payroll Concept Kind."""
+
     INCOME = "income"
     DISCOUNT = "discount"
 
 
 class CurrencyModel(Base):
+    """Represent Currency Model."""
+
     __tablename__ = "currencies"
 
     code: Mapped[str] = mapped_column(String(3), primary_key=True)
@@ -35,6 +42,8 @@ class CurrencyModel(Base):
 
 
 class ExchangeRateModel(Base):
+    """Represent Exchange Rate Model."""
+
     __tablename__ = "exchange_rates"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -46,6 +55,8 @@ class ExchangeRateModel(Base):
 
 
 class EconomicIndexModel(Base):
+    """Represent Economic Index Model."""
+
     __tablename__ = "economic_indices"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -61,6 +72,8 @@ class EconomicIndexModel(Base):
 
 
 class IncomeTaxBracketModel(Base):
+    """Represent Income Tax Bracket Model."""
+
     __tablename__ = "income_tax_brackets"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -73,6 +86,8 @@ class IncomeTaxBracketModel(Base):
 
 
 class PensionInstitutionModel(Base):
+    """Represent Pension Institution Model."""
+
     __tablename__ = "pension_institutions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -85,6 +100,8 @@ class PensionInstitutionModel(Base):
 
 
 class HealthInstitutionModel(Base):
+    """Represent Health Institution Model."""
+
     __tablename__ = "health_institutions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -100,6 +117,8 @@ class HealthInstitutionModel(Base):
 
 
 class PensionPlanModel(Base):
+    """Represent Pension Plan Model."""
+
     __tablename__ = "pension_plans"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -112,6 +131,8 @@ class PensionPlanModel(Base):
 
 
 class HealthPlanModel(Base):
+    """Represent Health Plan Model."""
+
     __tablename__ = "health_plans"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -125,6 +146,8 @@ class HealthPlanModel(Base):
 
 
 class ContributionCapModel(Base):
+    """Represent Contribution Cap Model."""
+
     __tablename__ = "contribution_caps"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -137,6 +160,8 @@ class ContributionCapModel(Base):
 
 
 class PayrollConceptModel(Base):
+    """Represent Payroll Concept Model."""
+
     __tablename__ = "payroll_concepts"
 
     id: Mapped[int] = mapped_column(primary_key=True)

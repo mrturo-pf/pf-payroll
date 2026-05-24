@@ -1,3 +1,5 @@
+"""Tests for test tax calculator."""
+
 from datetime import date
 from decimal import Decimal
 
@@ -6,6 +8,7 @@ from payroll.domain.taxes import IncomeTaxBracket
 
 
 def test_income_tax_calculator_applies_progressive_bracket() -> None:
+    """Test income tax calculator applies progressive bracket."""
     calculator = ChileanTaxCalculator()
     result = calculator.income_tax(
         taxable_income_clp=Decimal("1000000"),
@@ -29,6 +32,7 @@ def test_income_tax_calculator_applies_progressive_bracket() -> None:
 
 
 def test_income_tax_calculator_generates_positive_tax_when_base_exceeds_threshold() -> None:
+    """Test income tax calculator generates positive tax when base exceeds threshold."""
     calculator = ChileanTaxCalculator()
     result = calculator.income_tax(
         taxable_income_clp=Decimal("2500000"),

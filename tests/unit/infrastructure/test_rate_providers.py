@@ -1,3 +1,5 @@
+"""Tests for test rate providers."""
+
 from datetime import date
 from decimal import Decimal
 
@@ -25,6 +27,7 @@ from payroll.infrastructure.rate_providers.official_providers import (
 
 @pytest.mark.asyncio
 async def test_mindicador_rate_provider_parses_year_series_and_handles_unknown_indicator() -> None:
+    """Test mindicador rate provider parses year series and handles unknown indicator."""
     provider = MindicadorRateProvider(
         fetcher=lambda url, timeout: """
         {"serie":[
@@ -52,6 +55,7 @@ async def test_mindicador_rate_provider_parses_year_series_and_handles_unknown_i
 
 @pytest.mark.asyncio
 async def test_mindicador_rate_provider_returns_none_on_invalid_payload() -> None:
+    """Test mindicador rate provider returns none on invalid payload."""
     provider = MindicadorRateProvider(fetcher=lambda url, timeout: "{")
 
     assert await provider.fetch_rate("USD", date(2026, 1, 31)) is None
@@ -61,6 +65,7 @@ async def test_mindicador_rate_provider_returns_none_on_invalid_payload() -> Non
 
 @pytest.mark.asyncio
 async def test_sii_indicators_provider_parses_utm_and_ipc_rows() -> None:
+    """Test sii indicators provider parses utm and ipc rows."""
     html = """
     <table>
       <tr><th>Mes</th><th>UTM</th><th>UTA</th><th>IPC</th><th>Mensual</th><th>Acumulado</th><th>12 meses</th></tr>
@@ -99,6 +104,7 @@ async def test_sii_indicators_provider_parses_utm_and_ipc_rows() -> None:
 
 @pytest.mark.asyncio
 async def test_sii_indicators_provider_returns_none_for_blank_or_missing_rows() -> None:
+    """Test sii indicators provider returns none for blank or missing rows."""
     provider = SiiIndicatorsProvider(fetcher=lambda url, timeout: "<table><tr><td>Mayo</td><td>70.588</td><td></td><td></td></tr></table>")
     blank_ipc_provider = SiiIndicatorsProvider(
         fetcher=lambda url, timeout: "<table><tr><td>Mayo</td><td>70.588</td><td>847.056</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr></table>"
@@ -112,6 +118,7 @@ async def test_sii_indicators_provider_returns_none_for_blank_or_missing_rows() 
 
 @pytest.mark.asyncio
 async def test_sii_indicators_provider_handles_network_failures() -> None:
+    """Test sii indicators provider handles network failures."""
     provider = SiiIndicatorsProvider(fetcher=lambda url, timeout: (_ for _ in ()).throw(URLError("offline")))
 
     assert await provider.fetch_rate("UTM", date(2026, 1, 15)) is None
@@ -119,6 +126,7 @@ async def test_sii_indicators_provider_handles_network_failures() -> None:
 
 @pytest.mark.asyncio
 async def test_sii_income_tax_bracket_provider_parses_monthly_sections_into_utm_brackets() -> None:
+    """Test sii income tax bracket provider parses monthly sections into utm brackets."""
     html = """
     <div class='meses' id='mes_enero'>
       <h3>Enero 2026</h3>
@@ -166,6 +174,7 @@ async def test_sii_income_tax_bracket_provider_parses_monthly_sections_into_utm_
 
 @pytest.mark.asyncio
 async def test_sii_income_tax_bracket_provider_handles_missing_monthly_rows_and_network_failures() -> None:
+    """Test sii income tax bracket provider handles missing monthly rows and network failures."""
     provider = SiiIncomeTaxBracketProvider(fetcher=lambda url, timeout: "<h3>Enero 2026</h3><div class='table-responsive'><table><tbody></tbody></table></div>")
     failing = SiiIncomeTaxBracketProvider(fetcher=lambda url, timeout: (_ for _ in ()).throw(URLError("offline")))
 
@@ -175,6 +184,7 @@ async def test_sii_income_tax_bracket_provider_handles_missing_monthly_rows_and_
 
 @pytest.mark.asyncio
 async def test_bcch_series_provider_parses_supported_shapes_and_handles_missing_configuration() -> None:
+    """Test bcch series provider parses supported shapes and handles missing configuration."""
     provider = BcchSeriesProvider(
         user="user",
         password="pass",
@@ -209,6 +219,7 @@ async def test_bcch_series_provider_parses_supported_shapes_and_handles_missing_
 
 @pytest.mark.asyncio
 async def test_bcch_series_provider_handles_fetch_failures_and_empty_observations() -> None:
+    """Test bcch series provider handles fetch failures and empty observations."""
     failing = BcchSeriesProvider(
         user="user",
         password="pass",
@@ -236,28 +247,41 @@ async def test_bcch_series_provider_handles_fetch_failures_and_empty_observation
 
 @pytest.mark.asyncio
 async def test_chained_rate_and_index_providers_use_first_successful_source_and_swallow_failures() -> None:
+    """Test chained rate and index providers use first successful source and swallow failures."""
     class FailingFx:
+        """Represent Failing Fx."""
+
         name = "broken"
 
         async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
+            """Handle fetch rate."""
             raise RuntimeError("boom")
 
     class WorkingFx:
+        """Represent Working Fx."""
+
         name = "mindicador"
 
         async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
+            """Handle fetch rate."""
             return Decimal("950.12")
 
     class FailingIndex:
+        """Represent Failing Index."""
+
         name = "broken"
 
         async def fetch_index(self, code: str, period_year: int, period_month: int) -> EconomicIndexWriteDTO | None:
+            """Handle fetch index."""
             raise RuntimeError("boom")
 
     class WorkingIndex:
+        """Represent Working Index."""
+
         name = "sii"
 
         async def fetch_index(self, code: str, period_year: int, period_month: int) -> EconomicIndexWriteDTO | None:
+            """Handle fetch index."""
             return EconomicIndexWriteDTO(
                 code=code,
                 period_year=period_year,
@@ -287,14 +311,19 @@ async def test_chained_rate_and_index_providers_use_first_successful_source_and_
 
 @pytest.mark.asyncio
 async def test_chained_economic_index_provider_returns_none_when_all_providers_miss() -> None:
+    """Test chained economic index provider returns none when all providers miss."""
     class MissingIndex:
+        """Represent Missing Index."""
+
         async def fetch_index(self, code: str, period_year: int, period_month: int) -> EconomicIndexWriteDTO | None:
+            """Handle fetch index."""
             return None
 
     assert await ChainedEconomicIndexProvider([MissingIndex()]).fetch_index("IPC_CL", 2026, 1) is None
 
 
 def test_rate_provider_helpers_cover_local_fetch_and_edge_parsing(tmp_path: Path) -> None:
+    """Test rate provider helpers cover local fetch and edge parsing."""
     sample = tmp_path / "sample.json"
     sample.write_text('{"ok": true}', encoding="utf-8")
 

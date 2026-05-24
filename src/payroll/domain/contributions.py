@@ -7,17 +7,23 @@ from enum import StrEnum
 
 
 class HealthInstitutionKind(StrEnum):
+    """Represent Health Institution Kind."""
+
     FONASA = "fonasa"
     ISAPRE = "isapre"
 
 
 class EmploymentContractKind(StrEnum):
+    """Represent Employment Contract Kind."""
+
     INDEFINITE = "indefinite"
     FIXED_TERM = "fixed_term"
 
 
 @dataclass(frozen=True, slots=True)
 class PensionInstitution:
+    """Represent Pension Institution."""
+
     code: str
     name: str
     mandatory_rate: Decimal
@@ -25,6 +31,8 @@ class PensionInstitution:
 
 @dataclass(frozen=True, slots=True)
 class HealthInstitution:
+    """Represent Health Institution."""
+
     code: str
     name: str
     kind: HealthInstitutionKind
@@ -33,6 +41,8 @@ class HealthInstitution:
 
 @dataclass(frozen=True, slots=True)
 class ContributionCap:
+    """Represent Contribution Cap."""
+
     cap_type: str
     valid_from: date
     valid_to: date | None
@@ -41,6 +51,8 @@ class ContributionCap:
 
 @dataclass(frozen=True, slots=True)
 class PensionPlan:
+    """Represent Pension Plan."""
+
     id: int
     institution: PensionInstitution
     valid_from: date
@@ -50,6 +62,8 @@ class PensionPlan:
 
 @dataclass(frozen=True, slots=True)
 class HealthPlan:
+    """Represent Health Plan."""
+
     id: int
     institution: HealthInstitution
     valid_from: date
@@ -60,6 +74,8 @@ class HealthPlan:
 
 @dataclass(frozen=True, slots=True)
 class PensionContribution:
+    """Represent Pension Contribution."""
+
     institution_code: str
     taxable_clp: Decimal
     cap_clp: Decimal
@@ -70,6 +86,8 @@ class PensionContribution:
 
 @dataclass(frozen=True, slots=True)
 class HealthContribution:
+    """Represent Health Contribution."""
+
     institution_code: str
     institution_kind: HealthInstitutionKind
     taxable_clp: Decimal
@@ -83,6 +101,8 @@ class HealthContribution:
 
 @dataclass(frozen=True, slots=True)
 class UnemploymentContribution:
+    """Represent Unemployment Contribution."""
+
     contract_kind: EmploymentContractKind
     taxable_clp: Decimal
     cap_clp: Decimal

@@ -17,6 +17,8 @@ router = APIRouter(prefix="/reference-data", tags=["reference-data"])
 
 
 class CurrencyRead(BaseModel):
+    """Represent Currency Read."""
+
     code: str
     name: str
     is_fiat: bool
@@ -24,6 +26,8 @@ class CurrencyRead(BaseModel):
 
 
 class PensionInstitutionRead(BaseModel):
+    """Represent Pension Institution Read."""
+
     code: str
     name: str
     mandatory_rate: str
@@ -31,6 +35,8 @@ class PensionInstitutionRead(BaseModel):
 
 
 class HealthInstitutionRead(BaseModel):
+    """Represent Health Institution Read."""
+
     code: str
     name: str
     kind: str
@@ -39,6 +45,8 @@ class HealthInstitutionRead(BaseModel):
 
 
 class PensionPlanRead(BaseModel):
+    """Represent Pension Plan Read."""
+
     id: int
     institution_code: str
     institution_name: str
@@ -48,6 +56,8 @@ class PensionPlanRead(BaseModel):
 
 
 class HealthPlanRead(BaseModel):
+    """Represent Health Plan Read."""
+
     id: int
     institution_code: str
     institution_name: str
@@ -59,6 +69,8 @@ class HealthPlanRead(BaseModel):
 
 
 class ContributionCapRead(BaseModel):
+    """Represent Contribution Cap Read."""
+
     cap_type: str
     valid_from: date
     valid_to: date | None
@@ -66,6 +78,8 @@ class ContributionCapRead(BaseModel):
 
 
 class PayrollConceptRead(BaseModel):
+    """Represent Payroll Concept Read."""
+
     code: str
     name: str
     kind: str
@@ -73,6 +87,8 @@ class PayrollConceptRead(BaseModel):
 
 
 class IncomeTaxBracketRead(BaseModel):
+    """Represent Income Tax Bracket Read."""
+
     valid_from: date
     valid_to: date | None
     lower_bound_utm: str
@@ -82,10 +98,14 @@ class IncomeTaxBracketRead(BaseModel):
 
 
 class RefreshIncomeTaxBracketsRequest(BaseModel):
+    """Represent Refresh Income Tax Brackets Request."""
+
     year: int = Field(ge=1990, le=2100)
 
 
 class RefreshIncomeTaxBracketsResponse(BaseModel):
+    """Represent Refresh Income Tax Brackets Response."""
+
     year: int
     refreshed_months: int
     upserted_brackets: int
@@ -95,6 +115,7 @@ class RefreshIncomeTaxBracketsResponse(BaseModel):
 async def list_currencies(
     queries: ReferenceDataQueries = Depends(get_reference_data_queries),
 ) -> list[CurrencyRead]:
+    """List currencies."""
     return [CurrencyRead(**asdict(item)) for item in await queries.list_currencies()]
 
 
@@ -102,6 +123,7 @@ async def list_currencies(
 async def list_pension_institutions(
     queries: ReferenceDataQueries = Depends(get_reference_data_queries),
 ) -> list[PensionInstitutionRead]:
+    """List pension institutions."""
     return [
         PensionInstitutionRead(
             code=item.code,
@@ -117,6 +139,7 @@ async def list_pension_institutions(
 async def list_health_institutions(
     queries: ReferenceDataQueries = Depends(get_reference_data_queries),
 ) -> list[HealthInstitutionRead]:
+    """List health institutions."""
     return [
         HealthInstitutionRead(
             code=item.code,
@@ -133,6 +156,7 @@ async def list_health_institutions(
 async def list_pension_plans(
     queries: ReferenceDataQueries = Depends(get_reference_data_queries),
 ) -> list[PensionPlanRead]:
+    """List pension plans."""
     return [
         PensionPlanRead(
             id=item.id,
@@ -150,6 +174,7 @@ async def list_pension_plans(
 async def list_health_plans(
     queries: ReferenceDataQueries = Depends(get_reference_data_queries),
 ) -> list[HealthPlanRead]:
+    """List health plans."""
     return [
         HealthPlanRead(
             id=item.id,
@@ -169,6 +194,7 @@ async def list_health_plans(
 async def list_contribution_caps(
     queries: ReferenceDataQueries = Depends(get_reference_data_queries),
 ) -> list[ContributionCapRead]:
+    """List contribution caps."""
     return [
         ContributionCapRead(
             cap_type=item.cap_type,
@@ -184,6 +210,7 @@ async def list_contribution_caps(
 async def list_payroll_concepts(
     queries: ReferenceDataQueries = Depends(get_reference_data_queries),
 ) -> list[PayrollConceptRead]:
+    """List payroll concepts."""
     return [PayrollConceptRead(**asdict(item)) for item in await queries.list_payroll_concepts()]
 
 
@@ -191,6 +218,7 @@ async def list_payroll_concepts(
 async def list_income_tax_brackets(
     queries: ReferenceDataQueries = Depends(get_reference_data_queries),
 ) -> list[IncomeTaxBracketRead]:
+    """List income tax brackets."""
     return [
         IncomeTaxBracketRead(
             valid_from=item.valid_from,
@@ -209,6 +237,7 @@ async def refresh_income_tax_brackets(
     payload: RefreshIncomeTaxBracketsRequest,
     use_case: RefreshIncomeTaxBrackets = Depends(get_refresh_income_tax_brackets_use_case),
 ) -> RefreshIncomeTaxBracketsResponse:
+    """Refresh income tax brackets."""
     try:
         result = await use_case.execute(RefreshIncomeTaxBracketsCommandDTO(year=payload.year))
     except PayrollError as exc:

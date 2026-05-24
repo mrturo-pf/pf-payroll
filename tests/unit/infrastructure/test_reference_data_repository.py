@@ -1,3 +1,5 @@
+"""Tests for test reference data repository."""
+
 from collections.abc import AsyncIterator
 from datetime import date
 from decimal import Decimal
@@ -24,41 +26,56 @@ from payroll.interfaces.api import dependencies
 
 
 class FakeScalarResult:
+    """Test double for Scalar Result."""
+
     def __init__(self, rows: list[object]) -> None:
+        """Initialize the instance."""
         self._rows = rows
 
     def all(self) -> list[object]:
+        """Handle all."""
         return self._rows
 
 
 class FakeResult:
+    """Test double for Result."""
+
     def __init__(self, scalar_rows: list[object] | None = None, joined_rows: list[tuple[object, object]] | None = None) -> None:
+        """Initialize the instance."""
         self._scalar_rows = scalar_rows or []
         self._joined_rows = joined_rows or []
 
     def scalars(self) -> FakeScalarResult:
+        """Handle scalars."""
         return FakeScalarResult(self._scalar_rows)
 
     def all(self) -> list[tuple[object, object]]:
+        """Handle all."""
         return self._joined_rows
 
 
 class FakeSession:
+    """Test double for Session."""
+
     def __init__(self, results: list[FakeResult]) -> None:
+        """Initialize the instance."""
         self._results = results
         self.statements: list[object] = []
         self.commit_calls = 0
 
     async def execute(self, statement: object) -> FakeResult:
+        """Handle execute."""
         self.statements.append(statement)
         return self._results.pop(0)
 
     async def commit(self) -> None:
+        """Handle commit."""
         self.commit_calls += 1
 
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_reference_data_repository_maps_all_catalogs() -> None:
+    """Test sqlalchemy reference data repository maps all catalogs."""
     session = FakeSession(
         [
             FakeResult(scalar_rows=[SimpleNamespace(code="CLP", name="Peso chileno", is_fiat=True, unit_kind="currency")]),
@@ -153,14 +170,19 @@ async def test_sqlalchemy_reference_data_repository_maps_all_catalogs() -> None:
 
 @pytest.mark.asyncio
 async def test_api_dependencies_build_repository_queries_and_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test api dependencies build repository queries and session."""
     fake_session = object()
     exit_called = False
 
     class FakeSessionManager:
+        """Test double for Session Manager."""
+
         async def __aenter__(self) -> object:
+            """Enter the async context manager."""
             return fake_session
 
         async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+            """Exit the async context manager."""
             nonlocal exit_called
             exit_called = True
 
@@ -184,6 +206,7 @@ async def test_api_dependencies_build_repository_queries_and_session(monkeypatch
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_reference_data_repository_upserts_income_tax_brackets() -> None:
+    """Test sqlalchemy reference data repository upserts income tax brackets."""
     session = FakeSession([FakeResult()])
     repository = SqlAlchemyReferenceDataRepository(session)
 
@@ -207,6 +230,7 @@ async def test_sqlalchemy_reference_data_repository_upserts_income_tax_brackets(
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_reference_data_repository_returns_zero_when_no_brackets_are_provided() -> None:
+    """Test sqlalchemy reference data repository returns zero when no brackets are provided."""
     session = FakeSession([])
     repository = SqlAlchemyReferenceDataRepository(session)
 
@@ -216,6 +240,7 @@ async def test_sqlalchemy_reference_data_repository_returns_zero_when_no_bracket
 
 
 def test_reference_data_models_and_enums_are_declared() -> None:
+    """Test reference data models and enums are declared."""
     assert CurrencyModel.__tablename__ == "currencies"
     assert PensionInstitutionModel.__tablename__ == "pension_institutions"
     assert HealthInstitutionModel.__tablename__ == "health_institutions"

@@ -1,3 +1,5 @@
+"""Tests for test payroll queries."""
+
 from datetime import date
 from decimal import Decimal
 
@@ -14,7 +16,10 @@ from payroll.domain.contributions import EmploymentContractKind
 
 
 class FakePayrollQueries:
+    """Test double for Payroll Queries."""
+
     async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO:
+        """Get period detail."""
         assert period_id == 7
         return PayrollPeriodDetailDTO(
             id=7,
@@ -63,6 +68,7 @@ class FakePayrollQueries:
         )
 
     async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
+        """List period summaries."""
         return [
             PayrollSummaryDTO(
                 period_id=7,
@@ -80,6 +86,7 @@ class FakePayrollQueries:
 
 
 def test_payroll_query_endpoints() -> None:
+    """Test payroll query endpoints."""
     app.dependency_overrides[get_payroll_queries] = lambda: FakePayrollQueries()
     client = TestClient(app)
 
@@ -153,11 +160,16 @@ def test_payroll_query_endpoints() -> None:
 
 
 def test_payroll_detail_endpoint_surfaces_not_found() -> None:
+    """Test payroll detail endpoint surfaces not found."""
     class ErrorPayrollQueries:
+        """Represent the error payroll queries."""
+
         async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO:
+            """Get period detail."""
             raise PayrollPeriodNotFoundError("Payroll period 9 was not found.")
 
         async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
+            """List period summaries."""
             return []
 
     app.dependency_overrides[get_payroll_queries] = lambda: ErrorPayrollQueries()
@@ -174,8 +186,12 @@ def test_payroll_detail_endpoint_surfaces_not_found() -> None:
 
 @pytest.mark.asyncio
 async def test_payroll_detail_handler_maps_value_errors() -> None:
+    """Test payroll detail handler maps value errors."""
     class ErrorPayrollQueries:
+        """Represent the error payroll queries."""
+
         async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO:
+            """Get period detail."""
             raise PayrollPeriodNotFoundError("Payroll period 9 was not found.")
 
     with pytest.raises(HTTPException, match="Payroll period 9 was not found."):

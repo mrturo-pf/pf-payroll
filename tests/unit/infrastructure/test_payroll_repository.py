@@ -1,3 +1,5 @@
+"""Tests for test payroll repository."""
+
 from collections.abc import AsyncIterator
 from datetime import date
 from decimal import Decimal
@@ -28,14 +30,20 @@ from payroll.interfaces.api import dependencies
 
 
 class FakeScalarResult:
+    """Test double for Scalar Result."""
+
     def __init__(self, rows: list[object]) -> None:
+        """Initialize the instance."""
         self._rows = rows
 
     def all(self) -> list[object]:
+        """Handle all."""
         return self._rows
 
 
 class FakeResult:
+    """Test double for Result."""
+
     def __init__(
         self,
         scalar_rows: list[object] | None = None,
@@ -43,29 +51,38 @@ class FakeResult:
         first_row: object | None = None,
         joined_rows: list[tuple[object, object]] | None = None,
     ) -> None:
+        """Initialize the instance."""
         self._scalar_rows = scalar_rows or []
         self._scalar_one = scalar_one
         self._first_row = first_row
         self._joined_rows = joined_rows or []
 
     def scalars(self) -> FakeScalarResult:
+        """Handle scalars."""
         return FakeScalarResult(self._scalar_rows)
 
     def scalar_one_or_none(self) -> object | None:
+        """Handle scalar one or none."""
         return self._scalar_one
 
     def scalar_one(self) -> object:
+        """Handle scalar one."""
         return self._scalar_one
 
     def first(self) -> object | None:
+        """Handle first."""
         return self._first_row
 
     def all(self) -> list[tuple[object, object]]:
+        """Handle all."""
         return self._joined_rows
 
 
 class FakeSession:
+    """Test double for Session."""
+
     def __init__(self, results: list[FakeResult]) -> None:
+        """Initialize the instance."""
         self._results = results
         self.executed: list[object] = []
         self.added: list[object] = []
@@ -73,28 +90,34 @@ class FakeSession:
         self.commit_count = 0
 
     async def execute(self, statement: object) -> FakeResult:
+        """Handle execute."""
         self.executed.append(statement)
         if self._results:
             return self._results.pop(0)
         return FakeResult()
 
     def add(self, item: object) -> None:
+        """Handle add."""
         if getattr(item, "id", None) is None:
             item.id = 100 + len(self.added)  # type: ignore[attr-defined]
         self.added.append(item)
 
     def add_all(self, items: list[object]) -> None:
+        """Handle add all."""
         self.added.extend(items)
 
     async def flush(self) -> None:
+        """Handle flush."""
         self.flush_count += 1
 
     async def commit(self) -> None:
+        """Handle commit."""
         self.commit_count += 1
 
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
+    """Test sqlalchemy payroll repository imports rows."""
     employer = EmployerModel(id=10, name="ACME", started_at=date(2026, 1, 31))
     session = FakeSession(
         [
@@ -162,6 +185,7 @@ async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_returns_empty_result_for_no_rows() -> None:
+    """Test sqlalchemy payroll repository returns empty result for no rows."""
     session = FakeSession([])
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
@@ -174,6 +198,7 @@ async def test_sqlalchemy_payroll_repository_returns_empty_result_for_no_rows() 
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_creates_employer_and_replaces_existing_period_items() -> None:
+    """Test sqlalchemy payroll repository creates employer and replaces existing period items."""
     existing_period = PayrollPeriodModel(
         id=50,
         employer_id=10,
@@ -222,6 +247,7 @@ async def test_sqlalchemy_payroll_repository_creates_employer_and_replaces_exist
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_rejects_unknown_concepts() -> None:
+    """Test sqlalchemy payroll repository rejects unknown concepts."""
     session = FakeSession([FakeResult(scalar_rows=[])])
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
@@ -244,6 +270,7 @@ async def test_sqlalchemy_payroll_repository_rejects_unknown_concepts() -> None:
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_builds_contribution_context() -> None:
+    """Test sqlalchemy payroll repository builds contribution context."""
     period = PayrollPeriodModel(
         id=5,
         employer_id=10,
@@ -324,6 +351,7 @@ async def test_sqlalchemy_payroll_repository_builds_contribution_context() -> No
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_assigns_plans_to_period() -> None:
+    """Test sqlalchemy payroll repository assigns plans to period."""
     period = PayrollPeriodModel(
         id=5,
         employer_id=1,
@@ -388,6 +416,7 @@ async def test_sqlalchemy_payroll_repository_assigns_plans_to_period() -> None:
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_rejects_missing_period_for_contribution_context() -> None:
+    """Test sqlalchemy payroll repository rejects missing period for contribution context."""
     repository = SqlAlchemyPayrollRepository(FakeSession([FakeResult(scalar_one=None)]))  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="Payroll period 9 was not found."):
@@ -659,6 +688,7 @@ async def test_sqlalchemy_payroll_repository_rejects_missing_contribution_inputs
     results: list[FakeResult],
     message: str,
 ) -> None:
+    """Test sqlalchemy payroll repository rejects missing contribution inputs."""
     repository = SqlAlchemyPayrollRepository(FakeSession(results))  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match=message):
@@ -728,6 +758,7 @@ async def test_sqlalchemy_payroll_repository_rejects_invalid_assign_plans_inputs
     results: list[FakeResult],
     message: str,
 ) -> None:
+    """Test sqlalchemy payroll repository rejects invalid assign plans inputs."""
     repository = SqlAlchemyPayrollRepository(FakeSession(results))  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match=message):
@@ -736,6 +767,7 @@ async def test_sqlalchemy_payroll_repository_rejects_invalid_assign_plans_inputs
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_reviews_period() -> None:
+    """Test sqlalchemy payroll repository reviews period."""
     period = PayrollPeriodModel(
         id=5,
         employer_id=1,
@@ -811,6 +843,7 @@ async def test_sqlalchemy_payroll_repository_rejects_invalid_review_period_input
     present_codes: list[str],
     message: str,
 ) -> None:
+    """Test sqlalchemy payroll repository rejects invalid review period inputs."""
     results = [FakeResult(scalar_one=period)]
     if period.pension_plan_id is not None and period.health_plan_id is not None:
         results.append(FakeResult(scalar_rows=present_codes))
@@ -822,6 +855,7 @@ async def test_sqlalchemy_payroll_repository_rejects_invalid_review_period_input
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_saves_computed_contributions() -> None:
+    """Test sqlalchemy payroll repository saves computed contributions."""
     period = PayrollPeriodModel(
         id=5,
         employer_id=10,
@@ -895,6 +929,7 @@ async def test_sqlalchemy_payroll_repository_saves_computed_contributions() -> N
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_rejects_missing_period_when_saving_contributions() -> None:
+    """Test sqlalchemy payroll repository rejects missing period when saving contributions."""
     repository = SqlAlchemyPayrollRepository(FakeSession([FakeResult(scalar_one=None)]))  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="Payroll period 5 was not found."):
@@ -912,6 +947,7 @@ async def test_sqlalchemy_payroll_repository_rejects_missing_period_when_saving_
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_rejects_missing_concepts_when_saving_contributions() -> None:
+    """Test sqlalchemy payroll repository rejects missing concepts when saving contributions."""
     period = PayrollPeriodModel(
         id=5,
         employer_id=10,
@@ -944,6 +980,7 @@ async def test_sqlalchemy_payroll_repository_rejects_missing_concepts_when_savin
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary() -> None:
+    """Test sqlalchemy payroll repository returns period detail and summary."""
     period = PayrollPeriodModel(
         id=7,
         employer_id=1,
@@ -1006,6 +1043,7 @@ async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary()
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_returns_none_for_missing_period_detail() -> None:
+    """Test sqlalchemy payroll repository returns none for missing period detail."""
     repository = SqlAlchemyPayrollRepository(FakeSession([FakeResult(first_row=None)]))  # type: ignore[arg-type]
 
     assert await repository.get_period_detail(99) is None
@@ -1013,6 +1051,7 @@ async def test_sqlalchemy_payroll_repository_returns_none_for_missing_period_det
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_lists_period_summaries() -> None:
+    """Test sqlalchemy payroll repository lists period summaries."""
     employer = EmployerModel(id=1, name="ACME", started_at=date(2020, 1, 1))
     session = FakeSession(
         [
@@ -1059,6 +1098,7 @@ async def test_sqlalchemy_payroll_repository_lists_period_summaries() -> None:
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_builds_income_tax_context_and_bracket() -> None:
+    """Test sqlalchemy payroll repository builds income tax context and bracket."""
     period = PayrollPeriodModel(
         id=5,
         employer_id=1,
@@ -1104,6 +1144,7 @@ async def test_sqlalchemy_payroll_repository_builds_income_tax_context_and_brack
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_rejects_missing_period_for_income_tax_context() -> None:
+    """Test sqlalchemy payroll repository rejects missing period for income tax context."""
     repository = SqlAlchemyPayrollRepository(FakeSession([FakeResult(scalar_one=None)]))  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="Payroll period 5 was not found."):
@@ -1112,6 +1153,7 @@ async def test_sqlalchemy_payroll_repository_rejects_missing_period_for_income_t
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_returns_none_for_missing_income_tax_bracket() -> None:
+    """Test sqlalchemy payroll repository returns none for missing income tax bracket."""
     repository = SqlAlchemyPayrollRepository(FakeSession([FakeResult(scalar_one=None)]))  # type: ignore[arg-type]
 
     assert await repository.get_income_tax_bracket(date(2026, 1, 31), Decimal("20")) is None
@@ -1119,6 +1161,7 @@ async def test_sqlalchemy_payroll_repository_returns_none_for_missing_income_tax
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_saves_computed_income_tax() -> None:
+    """Test sqlalchemy payroll repository saves computed income tax."""
     period = PayrollPeriodModel(
         id=5,
         employer_id=10,
@@ -1151,6 +1194,7 @@ async def test_sqlalchemy_payroll_repository_saves_computed_income_tax() -> None
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_rejects_missing_period_when_saving_income_tax() -> None:
+    """Test sqlalchemy payroll repository rejects missing period when saving income tax."""
     repository = SqlAlchemyPayrollRepository(FakeSession([FakeResult(scalar_one=None)]))  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="Payroll period 5 was not found."):
@@ -1159,6 +1203,7 @@ async def test_sqlalchemy_payroll_repository_rejects_missing_period_when_saving_
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_rejects_missing_income_tax_concept() -> None:
+    """Test sqlalchemy payroll repository rejects missing income tax concept."""
     period = PayrollPeriodModel(
         id=5,
         employer_id=10,
@@ -1177,14 +1222,19 @@ async def test_sqlalchemy_payroll_repository_rejects_missing_income_tax_concept(
 
 @pytest.mark.asyncio
 async def test_api_dependencies_build_payroll_repository_and_use_case(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test api dependencies build payroll repository and use case."""
     fake_session = object()
     exited = False
 
     class FakeSessionManager:
+        """Test double for Session Manager."""
+
         async def __aenter__(self) -> object:
+            """Enter the async context manager."""
             return fake_session
 
         async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+            """Exit the async context manager."""
             nonlocal exited
             exited = True
 
@@ -1216,6 +1266,7 @@ async def test_api_dependencies_build_payroll_repository_and_use_case(monkeypatc
 
 
 def test_payroll_models_are_declared() -> None:
+    """Test payroll models are declared."""
     assert EmployerModel.__tablename__ == "employers"
     assert PayrollPeriodModel.__tablename__ == "payroll_periods"
     assert PayrollItemModel.__tablename__ == "payroll_items"

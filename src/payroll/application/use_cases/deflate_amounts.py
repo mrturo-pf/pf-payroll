@@ -15,11 +15,13 @@ class DeflateAmounts:
         market_data_repository: MarketDataRepository,
         calculator: DeflationCalculator | None = None,
     ) -> None:
+        """Initialize the instance."""
         self._payroll_repository = payroll_repository
         self._market_data_repository = market_data_repository
         self._calculator = calculator or DeflationCalculator()
 
     async def execute(self, command: DeflateAmountsCommandDTO) -> DeflateAmountsResultDTO:
+        """Handle execute."""
         detail = await self._payroll_repository.get_period_detail(command.period_id)
         if detail is None or detail.summary is None:
             raise PayrollSummaryNotFoundError(f"Payroll summary for period {command.period_id} was not found.")

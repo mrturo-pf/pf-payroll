@@ -1,3 +1,5 @@
+"""Tests for test generate payroll report."""
+
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
@@ -18,25 +20,34 @@ _DEFAULT_SUMMARY = object()
 
 
 class StubPayrollRepository:
+    """Test double for Payroll Repository."""
+
     def __init__(self, detail: PayrollPeriodDetailDTO | None) -> None:
+        """Initialize the instance."""
         self.detail = detail
 
     async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO | None:
+        """Get period detail."""
         assert period_id == 10
         return self.detail
 
 
 class StubRenderer:
+    """Test double for Renderer."""
+
     def __init__(self, content: bytes = b"%PDF-stub") -> None:
+        """Initialize the instance."""
         self.content = content
         self.received: PayrollPeriodDetailDTO | None = None
 
     def render_payroll_period(self, detail: PayrollPeriodDetailDTO) -> bytes:
+        """Render payroll period."""
         self.received = detail
         return self.content
 
 
 def reviewed_detail(summary: PayrollSummaryDTO | None | object = _DEFAULT_SUMMARY) -> PayrollPeriodDetailDTO:
+    """Handle reviewed detail."""
     return PayrollPeriodDetailDTO(
         id=10,
         employer_id=1,
@@ -82,6 +93,7 @@ def reviewed_detail(summary: PayrollSummaryDTO | None | object = _DEFAULT_SUMMAR
 
 @pytest.mark.asyncio
 async def test_generate_payroll_report_returns_filename_and_pdf_bytes() -> None:
+    """Test generate payroll report returns filename and pdf bytes."""
     renderer = StubRenderer()
     detail = reviewed_detail()
 
@@ -97,12 +109,14 @@ async def test_generate_payroll_report_returns_filename_and_pdf_bytes() -> None:
 
 @pytest.mark.asyncio
 async def test_generate_payroll_report_rejects_missing_period() -> None:
+    """Test generate payroll report rejects missing period."""
     with pytest.raises(ValueError, match="Payroll period 10 was not found."):
         await GeneratePayrollReport(StubPayrollRepository(None), StubRenderer()).execute(10)
 
 
 @pytest.mark.asyncio
 async def test_generate_payroll_report_requires_reviewed_status() -> None:
+    """Test generate payroll report requires reviewed status."""
     detail = replace(reviewed_detail(), status="actual")
 
     with pytest.raises(ValueError, match="must be reviewed before generating a report"):
@@ -111,5 +125,6 @@ async def test_generate_payroll_report_requires_reviewed_status() -> None:
 
 @pytest.mark.asyncio
 async def test_generate_payroll_report_requires_summary() -> None:
+    """Test generate payroll report requires summary."""
     with pytest.raises(ValueError, match="Payroll summary for period 10 was not found."):
         await GeneratePayrollReport(StubPayrollRepository(reviewed_detail(summary=None)), StubRenderer()).execute(10)

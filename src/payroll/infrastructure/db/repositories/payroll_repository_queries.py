@@ -15,6 +15,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
     """Read-only payroll queries."""
 
     async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO | None:
+        """Get period detail."""
         period_result = await self._session.execute(
             select(PayrollPeriodModel, EmployerModel)
             .join(EmployerModel, PayrollPeriodModel.employer_id == EmployerModel.id)
@@ -77,6 +78,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
         )
 
     async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
+        """List period summaries."""
         result = await self._session.execute(
             select(PayrollSummaryModel, EmployerModel, PayrollPeriodModel)
             .join(EmployerModel, PayrollSummaryModel.employer_id == EmployerModel.id)

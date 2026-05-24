@@ -18,6 +18,7 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
     """Persistence operations related to payroll imports."""
 
     async def import_rows(self, rows: list[ImportPayrollRowDTO]) -> ImportPayrollResultDTO:
+        """Import rows."""
         if not rows:
             return ImportPayrollResultDTO(imported_periods=0, imported_items=0, periods=[])
 

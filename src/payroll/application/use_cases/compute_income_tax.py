@@ -18,11 +18,13 @@ class ComputeIncomeTax:
         market_data_repository: MarketDataRepository,
         calculator: ChileanTaxCalculator | None = None,
     ) -> None:
+        """Initialize the instance."""
         self._repository = repository
         self._market_data_repository = market_data_repository
         self._calculator = calculator or ChileanTaxCalculator()
 
     async def execute(self, command: ComputeIncomeTaxCommandDTO) -> ComputeIncomeTaxResultDTO:
+        """Handle execute."""
         context = await self._repository.get_income_tax_context(command)
         utm_value_clp = await resolve_required_exchange_rate(
             provided_value=command.utm_value_clp,

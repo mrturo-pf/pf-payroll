@@ -13,12 +13,16 @@ from payroll.infrastructure.db.models.reference_data import PayrollConceptModel,
 
 
 class PayrollStatus(StrEnum):
+    """Represent Payroll Status."""
+
     PROJECTED = "projected"
     ACTUAL = "actual"
     REVIEWED = "reviewed"
 
 
 class EmployerModel(Base):
+    """Represent Employer Model."""
+
     __tablename__ = "employers"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -31,6 +35,8 @@ class EmployerModel(Base):
 
 
 class PayrollPeriodModel(Base):
+    """Represent Payroll Period Model."""
+
     __tablename__ = "payroll_periods"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -58,6 +64,8 @@ class PayrollPeriodModel(Base):
 
 
 class PayrollItemModel(Base):
+    """Represent Payroll Item Model."""
+
     __tablename__ = "payroll_items"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -71,6 +79,8 @@ class PayrollItemModel(Base):
 
 
 class PayrollSummaryModel(Base):
+    """Represent Payroll Summary Model."""
+
     __tablename__ = "mv_payroll_summary"
 
     period_id: Mapped[int] = mapped_column(primary_key=True)

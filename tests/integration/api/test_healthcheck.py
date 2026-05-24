@@ -1,9 +1,12 @@
+"""Tests for test healthcheck."""
+
 from fastapi.testclient import TestClient
 
 from payroll.interfaces.api.main import app
 
 
 def test_healthcheck() -> None:
+    """Test healthcheck."""
     client = TestClient(app)
 
     response = client.get("/health")

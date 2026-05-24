@@ -15,11 +15,13 @@ class ComputeContributions:
         market_data_repository: MarketDataRepository,
         calculator: ContributionCalculator | None = None,
     ) -> None:
+        """Initialize the instance."""
         self._repository = repository
         self._market_data_repository = market_data_repository
         self._calculator = calculator or ContributionCalculator()
 
     async def execute(self, command: ComputeContributionsCommandDTO) -> ComputeContributionsResultDTO:
+        """Handle execute."""
         context = await self._repository.get_contribution_context(command)
         uf_value_clp = await resolve_required_exchange_rate(
             provided_value=command.uf_value_clp,

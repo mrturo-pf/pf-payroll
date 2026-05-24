@@ -28,10 +28,14 @@ from payroll.infrastructure.db.models.reference_data import (
 
 
 class SqlAlchemyReferenceDataRepository:
+    """Provide sql alchemy reference data repository."""
+
     def __init__(self, session: AsyncSession) -> None:
+        """Initialize the instance."""
         self._session = session
 
     async def list_currencies(self) -> list[CurrencyDTO]:
+        """List currencies."""
         result = await self._session.execute(select(CurrencyModel).order_by(CurrencyModel.code))
         return [
             CurrencyDTO(
@@ -44,6 +48,7 @@ class SqlAlchemyReferenceDataRepository:
         ]
 
     async def list_pension_institutions(self) -> list[PensionInstitutionDTO]:
+        """List pension institutions."""
         result = await self._session.execute(
             select(PensionInstitutionModel).order_by(PensionInstitutionModel.name)
         )
@@ -58,6 +63,7 @@ class SqlAlchemyReferenceDataRepository:
         ]
 
     async def list_health_institutions(self) -> list[HealthInstitutionDTO]:
+        """List health institutions."""
         result = await self._session.execute(
             select(HealthInstitutionModel).order_by(HealthInstitutionModel.name)
         )
@@ -73,6 +79,7 @@ class SqlAlchemyReferenceDataRepository:
         ]
 
     async def list_pension_plans(self) -> list[PensionPlanDTO]:
+        """List pension plans."""
         result = await self._session.execute(
             select(PensionPlanModel, PensionInstitutionModel)
             .join(PensionInstitutionModel, PensionPlanModel.institution_id == PensionInstitutionModel.id)
@@ -91,6 +98,7 @@ class SqlAlchemyReferenceDataRepository:
         ]
 
     async def list_health_plans(self) -> list[HealthPlanDTO]:
+        """List health plans."""
         result = await self._session.execute(
             select(HealthPlanModel, HealthInstitutionModel)
             .join(HealthInstitutionModel, HealthPlanModel.institution_id == HealthInstitutionModel.id)
@@ -111,6 +119,7 @@ class SqlAlchemyReferenceDataRepository:
         ]
 
     async def list_contribution_caps(self) -> list[ContributionCapDTO]:
+        """List contribution caps."""
         result = await self._session.execute(
             select(ContributionCapModel).order_by(ContributionCapModel.cap_type, ContributionCapModel.valid_from)
         )
@@ -125,6 +134,7 @@ class SqlAlchemyReferenceDataRepository:
         ]
 
     async def list_payroll_concepts(self) -> list[PayrollConceptDTO]:
+        """List payroll concepts."""
         result = await self._session.execute(select(PayrollConceptModel).order_by(PayrollConceptModel.code))
         return [
             PayrollConceptDTO(
@@ -137,6 +147,7 @@ class SqlAlchemyReferenceDataRepository:
         ]
 
     async def list_income_tax_brackets(self) -> list[IncomeTaxBracketDTO]:
+        """List income tax brackets."""
         result = await self._session.execute(
             select(IncomeTaxBracketModel).order_by(
                 IncomeTaxBracketModel.valid_from.desc(),
@@ -156,6 +167,7 @@ class SqlAlchemyReferenceDataRepository:
         ]
 
     async def upsert_income_tax_brackets(self, brackets: list[IncomeTaxBracketWriteDTO]) -> int:
+        """Handle upsert income tax brackets."""
         if not brackets:
             return 0
 

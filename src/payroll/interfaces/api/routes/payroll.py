@@ -43,6 +43,8 @@ router = APIRouter(prefix="/payroll", tags=["payroll"])
 
 
 class ImportedPayrollPeriodRead(BaseModel):
+    """Represent Imported Payroll Period Read."""
+
     id: int
     employer: str
     period_year: int
@@ -58,23 +60,31 @@ class ImportedPayrollPeriodRead(BaseModel):
 
 
 class ImportPayrollResponse(BaseModel):
+    """Represent Import Payroll Response."""
+
     imported_periods: int
     imported_items: int
     periods: list[ImportedPayrollPeriodRead]
 
 
 class ComputeContributionsRequest(BaseModel):
+    """Represent Compute Contributions Request."""
+
     pension_plan_id: int
     health_plan_id: int
     uf_value_clp: Decimal | None = None
 
 
 class AssignPlansRequest(BaseModel):
+    """Represent Assign Plans Request."""
+
     pension_plan_id: int
     health_plan_id: int
 
 
 class AssignPlansResponse(BaseModel):
+    """Represent Assign Plans Response."""
+
     period_id: int
     payment_date: date
     pension_plan_id: int
@@ -82,12 +92,16 @@ class AssignPlansResponse(BaseModel):
 
 
 class ReviewPayrollPeriodResponse(BaseModel):
+    """Represent Review Payroll Period Response."""
+
     period_id: int
     payment_date: date
     status: str
 
 
 class PensionContributionRead(BaseModel):
+    """Represent Pension Contribution Read."""
+
     institution_code: str
     taxable_clp: str
     cap_clp: str
@@ -97,6 +111,8 @@ class PensionContributionRead(BaseModel):
 
 
 class HealthContributionRead(BaseModel):
+    """Represent Health Contribution Read."""
+
     institution_code: str
     institution_kind: str
     taxable_clp: str
@@ -109,6 +125,8 @@ class HealthContributionRead(BaseModel):
 
 
 class UnemploymentContributionRead(BaseModel):
+    """Represent Unemployment Contribution Read."""
+
     contract_kind: str
     taxable_clp: str
     cap_clp: str
@@ -120,6 +138,8 @@ class UnemploymentContributionRead(BaseModel):
 
 
 class ComputeContributionsResponse(BaseModel):
+    """Represent Compute Contributions Response."""
+
     period_id: int
     pension_plan_id: int
     health_plan_id: int
@@ -131,10 +151,14 @@ class ComputeContributionsResponse(BaseModel):
 
 
 class ComputeIncomeTaxRequest(BaseModel):
+    """Represent Compute Income Tax Request."""
+
     utm_value_clp: Decimal | None = None
 
 
 class ComputeIncomeTaxResponse(BaseModel):
+    """Represent Compute Income Tax Response."""
+
     period_id: int
     taxable_income_clp: str
     deductible_amount_clp: str
@@ -150,17 +174,23 @@ class ComputeIncomeTaxResponse(BaseModel):
 
 
 class DeflateAmountsRequest(BaseModel):
+    """Represent Deflate Amounts Request."""
+
     target_year: int
     target_month: int
     index_code: str = "IPC_CL"
 
 
 class DeflatedAmountRead(BaseModel):
+    """Represent Deflated Amount Read."""
+
     nominal_clp: str
     real_clp: str
 
 
 class DeflateAmountsResponse(BaseModel):
+    """Represent Deflate Amounts Response."""
+
     period_id: int
     index_code: str
     source_year: int
@@ -176,6 +206,8 @@ class DeflateAmountsResponse(BaseModel):
 
 
 class PayrollItemDetailRead(BaseModel):
+    """Represent Payroll Item Detail Read."""
+
     concept_code: str
     concept_name: str
     kind: str
@@ -185,6 +217,8 @@ class PayrollItemDetailRead(BaseModel):
 
 
 class PayrollSummaryRead(BaseModel):
+    """Represent Payroll Summary Read."""
+
     period_id: int
     employer_id: int
     employer_name: str
@@ -198,6 +232,8 @@ class PayrollSummaryRead(BaseModel):
 
 
 class PayrollPeriodDetailRead(BaseModel):
+    """Represent Payroll Period Detail Read."""
+
     id: int
     employer_id: int
     employer_name: str
@@ -216,6 +252,7 @@ class PayrollPeriodDetailRead(BaseModel):
 
 
 def to_payroll_summary_read(summary: PayrollSummaryDTO) -> PayrollSummaryRead:
+    """Convert to payroll summary read."""
     return PayrollSummaryRead(
         period_id=summary.period_id,
         employer_id=summary.employer_id,
@@ -231,10 +268,12 @@ def to_payroll_summary_read(summary: PayrollSummaryDTO) -> PayrollSummaryRead:
 
 
 def to_deflated_amount_read(amount: DeflatedAmountDTO) -> DeflatedAmountRead:
+    """Convert to deflated amount read."""
     return DeflatedAmountRead(nominal_clp=str(amount.nominal_clp), real_clp=str(amount.real_clp))
 
 
 def to_pdf_response(report: GeneratedPayrollReportDTO) -> Response:
+    """Convert to pdf response."""
     return Response(
         content=report.content,
         media_type="application/pdf",
@@ -247,6 +286,7 @@ async def import_payroll(
     file: UploadFile = File(...),
     use_case: ImportPayroll = Depends(get_import_payroll_use_case),
 ) -> ImportPayrollResponse:
+    """Import payroll."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="A payroll file name is required.")
 
@@ -266,6 +306,7 @@ async def import_payroll(
 async def list_payroll_summaries(
     queries: PayrollQueries = Depends(get_payroll_queries),
 ) -> list[PayrollSummaryRead]:
+    """List payroll summaries."""
     return [to_payroll_summary_read(item) for item in await queries.list_period_summaries()]
 
 
@@ -274,6 +315,7 @@ async def get_payroll_period(
     period_id: int = Path(..., gt=0),
     queries: PayrollQueries = Depends(get_payroll_queries),
 ) -> PayrollPeriodDetailRead:
+    """Get payroll period."""
     try:
         detail = await queries.get_period_detail(period_id)
     except PayrollError as exc:
@@ -316,6 +358,7 @@ async def get_payroll_report(
     period_id: int = Path(..., gt=0),
     use_case: GeneratePayrollReport = Depends(get_generate_payroll_report_use_case),
 ) -> Response:
+    """Get payroll report."""
     try:
         return to_pdf_response(await use_case.execute(period_id))
     except PayrollError as exc:
@@ -328,6 +371,7 @@ async def assign_plans(
     period_id: int = Path(..., gt=0),
     use_case: AssignPlans = Depends(get_assign_plans_use_case),
 ) -> AssignPlansResponse:
+    """Assign plans."""
     try:
         result = await use_case.execute(
             AssignPlansCommandDTO(
@@ -352,6 +396,7 @@ async def review_payroll_period(
     period_id: int = Path(..., gt=0),
     use_case: ReviewPayrollPeriod = Depends(get_review_payroll_period_use_case),
 ) -> ReviewPayrollPeriodResponse:
+    """Review payroll period."""
     try:
         result = await use_case.execute(ReviewPayrollPeriodCommandDTO(period_id=period_id))
     except PayrollError as exc:
@@ -370,6 +415,7 @@ async def compute_income_tax(
     period_id: int = Path(..., gt=0),
     use_case: ComputeIncomeTax = Depends(get_compute_income_tax_use_case),
 ) -> ComputeIncomeTaxResponse:
+    """Compute income tax."""
     try:
         result = await use_case.execute(
             ComputeIncomeTaxCommandDTO(
@@ -404,6 +450,7 @@ async def deflate_amounts(
     period_id: int = Path(..., gt=0),
     use_case: DeflateAmounts = Depends(get_deflate_amounts_use_case),
 ) -> DeflateAmountsResponse:
+    """Deflate amounts."""
     try:
         result = await use_case.execute(
             DeflateAmountsCommandDTO(
@@ -438,6 +485,7 @@ async def compute_contributions(
     period_id: int = Path(..., gt=0),
     use_case: ComputeContributions = Depends(get_compute_contributions_use_case),
 ) -> ComputeContributionsResponse:
+    """Compute contributions."""
     try:
         result = await use_case.execute(
             ComputeContributionsCommandDTO(

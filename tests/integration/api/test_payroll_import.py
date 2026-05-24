@@ -1,3 +1,5 @@
+"""Tests for test payroll import."""
+
 from datetime import date
 from decimal import Decimal
 from io import BytesIO
@@ -54,7 +56,10 @@ from payroll.interfaces.api.routes.payroll import (
 
 
 class FakeImportPayroll:
+    """Test double for Import Payroll."""
+
     async def from_bytes(self, filename: str, content: bytes) -> ImportPayrollResultDTO:
+        """Create from bytes."""
         assert filename == "sample.csv"
         assert b"salary_base" in content
         return ImportPayrollResultDTO(
@@ -80,7 +85,10 @@ class FakeImportPayroll:
 
 
 class FakeComputeContributions:
+    """Test double for Compute Contributions."""
+
     async def execute(self, command: object) -> ComputeContributionsResultDTO:
+        """Handle execute."""
         assert getattr(command, "period_id") == 5
         return ComputeContributionsResultDTO(
             period_id=5,
@@ -121,7 +129,10 @@ class FakeComputeContributions:
 
 
 class FakeAssignPlans:
+    """Test double for Assign Plans."""
+
     async def execute(self, command: object) -> AssignPlansResultDTO:
+        """Handle execute."""
         assert getattr(command, "period_id") == 5
         return AssignPlansResultDTO(
             period_id=5,
@@ -132,7 +143,10 @@ class FakeAssignPlans:
 
 
 class FakeComputeIncomeTax:
+    """Test double for Compute Income Tax."""
+
     async def execute(self, command: object) -> ComputeIncomeTaxResultDTO:
+        """Handle execute."""
         assert getattr(command, "period_id") == 5
         return ComputeIncomeTaxResultDTO(
             period_id=5,
@@ -153,7 +167,10 @@ class FakeComputeIncomeTax:
 
 
 class FakeReviewPayrollPeriod:
+    """Test double for Review Payroll Period."""
+
     async def execute(self, command: object) -> ReviewPayrollPeriodResultDTO:
+        """Handle execute."""
         assert getattr(command, "period_id") == 5
         return ReviewPayrollPeriodResultDTO(
             period_id=5,
@@ -163,7 +180,10 @@ class FakeReviewPayrollPeriod:
 
 
 class FakeGeneratePayrollReport:
+    """Test double for Generate Payroll Report."""
+
     async def execute(self, period_id: int) -> GeneratedPayrollReportDTO:
+        """Handle execute."""
         assert period_id == 5
         return GeneratedPayrollReportDTO(
             period_id=5,
@@ -173,7 +193,10 @@ class FakeGeneratePayrollReport:
 
 
 class FakeDeflateAmounts:
+    """Test double for Deflate Amounts."""
+
     async def execute(self, command: object) -> DeflateAmountsResultDTO:
+        """Handle execute."""
         assert getattr(command, "period_id") == 5
         return DeflateAmountsResultDTO(
             period_id=5,
@@ -192,6 +215,7 @@ class FakeDeflateAmounts:
 
 
 def test_payroll_import_endpoint() -> None:
+    """Test payroll import endpoint."""
     app.dependency_overrides[get_import_payroll_use_case] = lambda: FakeImportPayroll()
     client = TestClient(app)
 
@@ -234,8 +258,12 @@ def test_payroll_import_endpoint() -> None:
 
 
 def test_payroll_import_endpoint_requires_filename_and_surfaces_value_errors() -> None:
+    """Test payroll import endpoint requires filename and surfaces value errors."""
     class ErrorImportPayroll:
+        """Represent the error import payroll."""
+
         async def from_bytes(self, filename: str, content: bytes) -> ImportPayrollResultDTO:
+            """Create from bytes."""
             raise PayrollValidationError("bad payroll file")
 
     app.dependency_overrides[get_import_payroll_use_case] = lambda: ErrorImportPayroll()
@@ -254,11 +282,13 @@ def test_payroll_import_endpoint_requires_filename_and_surfaces_value_errors() -
 
 @pytest.mark.asyncio
 async def test_payroll_import_endpoint_rejects_empty_filename_in_handler() -> None:
+    """Test payroll import endpoint rejects empty filename in handler."""
     with pytest.raises(HTTPException, match="A payroll file name is required."):
         await import_payroll(UploadFile(file=BytesIO(b"noop"), filename=""), FakeImportPayroll())
 
 
 def test_compute_contributions_endpoint() -> None:
+    """Test compute contributions endpoint."""
     app.dependency_overrides[get_compute_contributions_use_case] = lambda: FakeComputeContributions()
     client = TestClient(app)
 
@@ -310,6 +340,7 @@ def test_compute_contributions_endpoint() -> None:
 
 
 def test_assign_plans_endpoint() -> None:
+    """Test assign plans endpoint."""
     app.dependency_overrides[get_assign_plans_use_case] = lambda: FakeAssignPlans()
     client = TestClient(app)
 
@@ -328,6 +359,7 @@ def test_assign_plans_endpoint() -> None:
 
 
 def test_review_payroll_period_endpoint() -> None:
+    """Test review payroll period endpoint."""
     app.dependency_overrides[get_review_payroll_period_use_case] = lambda: FakeReviewPayrollPeriod()
     client = TestClient(app)
 
@@ -345,6 +377,7 @@ def test_review_payroll_period_endpoint() -> None:
 
 
 def test_payroll_report_endpoint_returns_pdf() -> None:
+    """Test payroll report endpoint returns pdf."""
     app.dependency_overrides[get_generate_payroll_report_use_case] = lambda: FakeGeneratePayrollReport()
     client = TestClient(app)
 
@@ -360,8 +393,12 @@ def test_payroll_report_endpoint_returns_pdf() -> None:
 
 
 def test_assign_plans_endpoint_surfaces_domain_errors() -> None:
+    """Test assign plans endpoint surfaces domain errors."""
     class ErrorAssignPlans:
+        """Represent the error assign plans."""
+
         async def execute(self, command: object) -> AssignPlansResultDTO:
+            """Handle execute."""
             raise PayrollConflictError("invalid plan for period")
 
     app.dependency_overrides[get_assign_plans_use_case] = lambda: ErrorAssignPlans()
@@ -377,8 +414,12 @@ def test_assign_plans_endpoint_surfaces_domain_errors() -> None:
 
 
 def test_review_payroll_period_endpoint_surfaces_domain_errors() -> None:
+    """Test review payroll period endpoint surfaces domain errors."""
     class ErrorReviewPayrollPeriod:
+        """Represent the error review payroll period."""
+
         async def execute(self, command: object) -> ReviewPayrollPeriodResultDTO:
+            """Handle execute."""
             raise PayrollConflictError("period must have computed items before review")
 
     app.dependency_overrides[get_review_payroll_period_use_case] = lambda: ErrorReviewPayrollPeriod()
@@ -394,8 +435,12 @@ def test_review_payroll_period_endpoint_surfaces_domain_errors() -> None:
 
 
 def test_payroll_report_endpoint_surfaces_domain_errors() -> None:
+    """Test payroll report endpoint surfaces domain errors."""
     class ErrorGeneratePayrollReport:
+        """Represent the error generate payroll report."""
+
         async def execute(self, period_id: int) -> GeneratedPayrollReportDTO:
+            """Handle execute."""
             raise PayrollConflictError("period must be reviewed before generating a report")
 
     app.dependency_overrides[get_generate_payroll_report_use_case] = lambda: ErrorGeneratePayrollReport()
@@ -411,8 +456,12 @@ def test_payroll_report_endpoint_surfaces_domain_errors() -> None:
 
 
 def test_compute_contributions_endpoint_surfaces_domain_errors() -> None:
+    """Test compute contributions endpoint surfaces domain errors."""
     class ErrorComputeContributions:
+        """Represent the error compute contributions."""
+
         async def execute(self, command: object) -> ComputeContributionsResultDTO:
+            """Handle execute."""
             raise PayrollPeriodNotFoundError("period not found")
 
     app.dependency_overrides[get_compute_contributions_use_case] = lambda: ErrorComputeContributions()
@@ -431,6 +480,7 @@ def test_compute_contributions_endpoint_surfaces_domain_errors() -> None:
 
 
 def test_compute_income_tax_endpoint() -> None:
+    """Test compute income tax endpoint."""
     app.dependency_overrides[get_compute_income_tax_use_case] = lambda: FakeComputeIncomeTax()
     client = TestClient(app)
 
@@ -457,8 +507,12 @@ def test_compute_income_tax_endpoint() -> None:
 
 
 def test_compute_income_tax_endpoint_surfaces_domain_errors() -> None:
+    """Test compute income tax endpoint surfaces domain errors."""
     class ErrorComputeIncomeTax:
+        """Represent the error compute income tax."""
+
         async def execute(self, command: object) -> ComputeIncomeTaxResultDTO:
+            """Handle execute."""
             raise PayrollPeriodNotFoundError("tax data not found")
 
     app.dependency_overrides[get_compute_income_tax_use_case] = lambda: ErrorComputeIncomeTax()
@@ -474,6 +528,7 @@ def test_compute_income_tax_endpoint_surfaces_domain_errors() -> None:
 
 
 def test_deflate_amounts_endpoint() -> None:
+    """Test deflate amounts endpoint."""
     app.dependency_overrides[get_deflate_amounts_use_case] = lambda: FakeDeflateAmounts()
     client = TestClient(app)
 
@@ -500,8 +555,12 @@ def test_deflate_amounts_endpoint() -> None:
 
 
 def test_deflate_amounts_endpoint_surfaces_domain_errors() -> None:
+    """Test deflate amounts endpoint surfaces domain errors."""
     class ErrorDeflateAmounts:
+        """Represent the error deflate amounts."""
+
         async def execute(self, command: object) -> DeflateAmountsResultDTO:
+            """Handle execute."""
             raise EconomicIndexNotFoundError("missing IPC data")
 
     app.dependency_overrides[get_deflate_amounts_use_case] = lambda: ErrorDeflateAmounts()
@@ -518,8 +577,12 @@ def test_deflate_amounts_endpoint_surfaces_domain_errors() -> None:
 
 @pytest.mark.asyncio
 async def test_compute_income_tax_endpoint_maps_value_errors_in_handler() -> None:
+    """Test compute income tax endpoint maps value errors in handler."""
     class ErrorComputeIncomeTax:
+        """Represent the error compute income tax."""
+
         async def execute(self, command: object) -> ComputeIncomeTaxResultDTO:
+            """Handle execute."""
             raise PayrollValidationError("bad tax payload")
 
     with pytest.raises(HTTPException, match="bad tax payload"):
@@ -532,8 +595,12 @@ async def test_compute_income_tax_endpoint_maps_value_errors_in_handler() -> Non
 
 @pytest.mark.asyncio
 async def test_deflate_amounts_endpoint_maps_value_errors_in_handler() -> None:
+    """Test deflate amounts endpoint maps value errors in handler."""
     class ErrorDeflateAmounts:
+        """Represent the error deflate amounts."""
+
         async def execute(self, command: object) -> DeflateAmountsResultDTO:
+            """Handle execute."""
             raise PayrollValidationError("bad deflation payload")
 
     with pytest.raises(HTTPException, match="bad deflation payload"):
@@ -546,8 +613,12 @@ async def test_deflate_amounts_endpoint_maps_value_errors_in_handler() -> None:
 
 @pytest.mark.asyncio
 async def test_assign_plans_endpoint_maps_value_errors_in_handler() -> None:
+    """Test assign plans endpoint maps value errors in handler."""
     class ErrorAssignPlans:
+        """Represent the error assign plans."""
+
         async def execute(self, command: object) -> AssignPlansResultDTO:
+            """Handle execute."""
             raise PayrollValidationError("bad plan assignment")
 
     with pytest.raises(HTTPException, match="bad plan assignment"):
@@ -560,8 +631,12 @@ async def test_assign_plans_endpoint_maps_value_errors_in_handler() -> None:
 
 @pytest.mark.asyncio
 async def test_review_payroll_period_endpoint_maps_value_errors_in_handler() -> None:
+    """Test review payroll period endpoint maps value errors in handler."""
     class ErrorReviewPayrollPeriod:
+        """Represent the error review payroll period."""
+
         async def execute(self, command: object) -> ReviewPayrollPeriodResultDTO:
+            """Handle execute."""
             raise PayrollValidationError("bad review payload")
 
     with pytest.raises(HTTPException, match="bad review payload"):
@@ -573,8 +648,12 @@ async def test_review_payroll_period_endpoint_maps_value_errors_in_handler() -> 
 
 @pytest.mark.asyncio
 async def test_payroll_report_endpoint_maps_value_errors_in_handler() -> None:
+    """Test payroll report endpoint maps value errors in handler."""
     class ErrorGeneratePayrollReport:
+        """Represent the error generate payroll report."""
+
         async def execute(self, period_id: int) -> GeneratedPayrollReportDTO:
+            """Handle execute."""
             raise PayrollValidationError("bad report payload")
 
     with pytest.raises(HTTPException, match="bad report payload"):
@@ -586,8 +665,12 @@ async def test_payroll_report_endpoint_maps_value_errors_in_handler() -> None:
 
 @pytest.mark.asyncio
 async def test_compute_contributions_endpoint_maps_value_errors_in_handler() -> None:
+    """Test compute contributions endpoint maps value errors in handler."""
     class ErrorComputeContributions:
+        """Represent the error compute contributions."""
+
         async def execute(self, command: object) -> ComputeContributionsResultDTO:
+            """Handle execute."""
             raise PayrollValidationError("bad payload")
 
     with pytest.raises(HTTPException, match="bad payload"):

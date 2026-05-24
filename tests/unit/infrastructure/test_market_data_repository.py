@@ -1,3 +1,5 @@
+"""Tests for test market data repository."""
+
 from collections.abc import AsyncIterator
 from datetime import date
 from decimal import Decimal
@@ -14,43 +16,58 @@ from payroll.interfaces.api import dependencies
 
 
 class FakeScalarResult:
+    """Test double for Scalar Result."""
+
     def __init__(self, rows: list[object]) -> None:
+        """Initialize the instance."""
         self._rows = rows
 
     def all(self) -> list[object]:
+        """Handle all."""
         return self._rows
 
 
 class FakeResult:
+    """Test double for Result."""
+
     def __init__(self, scalar_rows: list[object] | None = None, scalar_one: object | None = None) -> None:
+        """Initialize the instance."""
         self._scalar_rows = scalar_rows or []
         self._scalar_one = scalar_one
 
     def scalars(self) -> FakeScalarResult:
+        """Handle scalars."""
         return FakeScalarResult(self._scalar_rows)
 
     def scalar_one_or_none(self) -> object | None:
+        """Handle scalar one or none."""
         return self._scalar_one
 
 
 class FakeSession:
+    """Test double for Session."""
+
     def __init__(self, results: list[FakeResult]) -> None:
+        """Initialize the instance."""
         self._results = results
         self.statements: list[object] = []
         self.commit_count = 0
 
     async def execute(self, statement: object) -> FakeResult:
+        """Handle execute."""
         self.statements.append(statement)
         if self._results:
             return self._results.pop(0)
         return FakeResult()
 
     async def commit(self) -> None:
+        """Handle commit."""
         self.commit_count += 1
 
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_market_data_repository_lists_rates_and_indices() -> None:
+    """Test sqlalchemy market data repository lists rates and indices."""
     session = FakeSession(
         [
             FakeResult(
@@ -92,6 +109,7 @@ async def test_sqlalchemy_market_data_repository_lists_rates_and_indices() -> No
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_market_data_repository_refreshes_entries_and_validates_currencies() -> None:
+    """Test sqlalchemy market data repository refreshes entries and validates currencies."""
     session = FakeSession([FakeResult(scalar_rows=["UF ", "USD"]), FakeResult(), FakeResult()])
     repository = SqlAlchemyMarketDataRepository(session)  # type: ignore[arg-type]
 
@@ -124,6 +142,7 @@ async def test_sqlalchemy_market_data_repository_refreshes_entries_and_validates
 
 @pytest.mark.asyncio
 async def test_sqlalchemy_market_data_repository_rejects_unknown_currencies() -> None:
+    """Test sqlalchemy market data repository rejects unknown currencies."""
     repository = SqlAlchemyMarketDataRepository(FakeSession([FakeResult(scalar_rows=["UF"])]))  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="Unknown currencies in exchange rates: UTM"):
@@ -142,14 +161,19 @@ async def test_sqlalchemy_market_data_repository_rejects_unknown_currencies() ->
 async def test_api_dependencies_build_market_data_repository_queries_use_case_and_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Test api dependencies build market data repository queries use case and session."""
     fake_session = object()
     exited = False
 
     class FakeSessionManager:
+        """Test double for Session Manager."""
+
         async def __aenter__(self) -> object:
+            """Enter the async context manager."""
             return fake_session
 
         async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+            """Exit the async context manager."""
             nonlocal exited
             exited = True
 
@@ -173,6 +197,7 @@ async def test_api_dependencies_build_market_data_repository_queries_use_case_an
 
 
 def test_market_data_models_are_declared() -> None:
+    """Test market data models are declared."""
     assert CurrencyModel.__tablename__ == "currencies"
     assert ExchangeRateModel.__tablename__ == "exchange_rates"
     assert EconomicIndexModel.__tablename__ == "economic_indices"

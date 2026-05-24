@@ -41,6 +41,7 @@ T = TypeVar("T")
 
 
 def _json_default(value: object) -> Any:
+    """Handle json default."""
     if not isinstance(value, type) and is_dataclass(value):
         return asdict(cast(Any, value))
     if isinstance(value, (date, Decimal)):
@@ -51,10 +52,12 @@ def _json_default(value: object) -> Any:
 
 
 def _emit_json(payload: object) -> None:
+    """Handle emit json."""
     typer.echo(json.dumps(payload, default=_json_default, indent=2, sort_keys=True))
 
 
 def _run_command(coro: Coroutine[Any, Any, T]) -> T:
+    """Handle run command."""
     try:
         return asyncio.run(coro)
     except (OSError, ValueError) as exc:
@@ -63,6 +66,7 @@ def _run_command(coro: Coroutine[Any, Any, T]) -> T:
 
 
 def _parse_optional_decimal(name: str, value: str | None) -> Decimal | None:
+    """Handle parse optional decimal."""
     if value is None:
         return None
     try:
@@ -73,24 +77,28 @@ def _parse_optional_decimal(name: str, value: str | None) -> Decimal | None:
 
 
 async def _import_payroll_async(file_path: Path) -> object:
+    """Handle import payroll async."""
     async with SessionLocal() as session:
         use_case = ImportPayroll(SqlAlchemyPayrollRepository(session), XlsxPayrollImporter())
         return await use_case.from_bytes(file_path.name, file_path.read_bytes())
 
 
 async def _list_period_summaries_async() -> object:
+    """Handle list period summaries async."""
     async with SessionLocal() as session:
         use_case = PayrollQueries(SqlAlchemyPayrollRepository(session))
         return await use_case.list_period_summaries()
 
 
 async def _get_period_detail_async(period_id: int) -> object:
+    """Handle get period detail async."""
     async with SessionLocal() as session:
         use_case = PayrollQueries(SqlAlchemyPayrollRepository(session))
         return await use_case.get_period_detail(period_id)
 
 
 async def _list_plan_snapshots_async() -> dict[str, object]:
+    """Handle list plan snapshots async."""
     async with SessionLocal() as session:
         use_case = ReferenceDataQueries(SqlAlchemyReferenceDataRepository(session))
         return {
@@ -100,6 +108,7 @@ async def _list_plan_snapshots_async() -> dict[str, object]:
 
 
 async def _assign_plans_async(period_id: int, pension_plan_id: int, health_plan_id: int) -> object:
+    """Handle assign plans async."""
     async with SessionLocal() as session:
         use_case = AssignPlans(SqlAlchemyPayrollRepository(session))
         return await use_case.execute(
@@ -117,6 +126,7 @@ async def _compute_contributions_async(
     health_plan_id: int,
     uf_value_clp: Decimal | None,
 ) -> object:
+    """Handle compute contributions async."""
     async with SessionLocal() as session:
         payroll_repository = SqlAlchemyPayrollRepository(session)
         market_data_repository = SqlAlchemyMarketDataRepository(session)
@@ -132,6 +142,7 @@ async def _compute_contributions_async(
 
 
 async def _compute_income_tax_async(period_id: int, utm_value_clp: Decimal | None) -> object:
+    """Handle compute income tax async."""
     async with SessionLocal() as session:
         payroll_repository = SqlAlchemyPayrollRepository(session)
         market_data_repository = SqlAlchemyMarketDataRepository(session)
@@ -145,12 +156,14 @@ async def _compute_income_tax_async(period_id: int, utm_value_clp: Decimal | Non
 
 
 async def _review_period_async(period_id: int) -> object:
+    """Handle review period async."""
     async with SessionLocal() as session:
         use_case = ReviewPayrollPeriod(SqlAlchemyPayrollRepository(session))
         return await use_case.execute(ReviewPayrollPeriodCommandDTO(period_id=period_id))
 
 
 async def _generate_payroll_report_async(period_id: int) -> GeneratedPayrollReportDTO:
+    """Handle generate payroll report async."""
     async with SessionLocal() as session:
         use_case = GeneratePayrollReport(
             SqlAlchemyPayrollRepository(session),
@@ -166,6 +179,7 @@ def main() -> None:
 
 @app.command()
 def health() -> None:
+    """Handle health."""
     typer.echo("ok")
 
 
@@ -173,26 +187,31 @@ def health() -> None:
 def import_payroll(
     file_path: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
 ) -> None:
+    """Import payroll."""
     _emit_json(_run_command(_import_payroll_async(file_path)))
 
 
 @app.command("summary")
 def list_summaries() -> None:
+    """List summaries."""
     _emit_json(_run_command(_list_period_summaries_async()))
 
 
 @app.command("period-detail")
 def period_detail(period_id: int) -> None:
+    """Handle period detail."""
     _emit_json(_run_command(_get_period_detail_async(period_id)))
 
 
 @app.command("plan-snapshots")
 def plan_snapshots() -> None:
+    """Handle plan snapshots."""
     _emit_json(_run_command(_list_plan_snapshots_async()))
 
 
 @app.command("assign-plans")
 def assign_plans(period_id: int, pension_plan_id: int, health_plan_id: int) -> None:
+    """Assign plans."""
     _emit_json(_run_command(_assign_plans_async(period_id, pension_plan_id, health_plan_id)))
 
 
@@ -203,6 +222,7 @@ def compute_contributions(
     health_plan_id: int,
     uf_value_clp: Annotated[str | None, typer.Option("--uf-value-clp")] = None,
 ) -> None:
+    """Compute contributions."""
     _emit_json(
         _run_command(
             _compute_contributions_async(
@@ -220,11 +240,13 @@ def compute_tax(
     period_id: int,
     utm_value_clp: Annotated[str | None, typer.Option("--utm-value-clp")] = None,
 ) -> None:
+    """Compute tax."""
     _emit_json(_run_command(_compute_income_tax_async(period_id, _parse_optional_decimal("utm_value_clp", utm_value_clp))))
 
 
 @app.command("review")
 def review(period_id: int) -> None:
+    """Review."""
     _emit_json(_run_command(_review_period_async(period_id)))
 
 
@@ -233,6 +255,7 @@ def report_pdf(
     period_id: int,
     output: Annotated[Path | None, typer.Option("--output", dir_okay=False, writable=True)] = None,
 ) -> None:
+    """Handle report pdf."""
     report: GeneratedPayrollReportDTO = _run_command(_generate_payroll_report_async(period_id))
     output_path = output or Path(report.filename)
     output_path.write_bytes(report.content)

@@ -39,6 +39,12 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.ruff.lint]
+extend-select = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
 [[tool.mypy.overrides]]
 module = ["pandas", "weasyprint"]
 ignore_missing_imports = true

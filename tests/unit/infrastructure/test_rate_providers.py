@@ -94,6 +94,46 @@ async def test_mindicador_rate_provider_returns_none_on_invalid_payload() -> Non
 
 
 @pytest.mark.asyncio
+async def test_mindicador_rate_provider_carries_previous_year_quote() -> None:
+    """Test mindicador carries forward the latest prior-year quote into January."""
+
+    def fetcher(url: str, timeout: int) -> str:
+        if url.endswith("/dolar/2025"):
+            return """
+            {"serie":[
+              {"fecha":"2025-12-31T03:00:00.000Z","valor":950.12}
+            ]}
+            """
+        if url.endswith("/dolar/2026"):
+            return """
+            {"serie":[
+              {"fecha":"2026-01-02T03:00:00.000Z","valor":960.34}
+            ]}
+            """
+        return '{"serie":[]}'
+
+    provider = MindicadorRateProvider(fetcher=fetcher)
+
+    assert await provider.fetch_rate("USD", date(2026, 1, 1)) == Decimal("950.12")
+    assert await provider.fetch_rate_entries(
+        "USD", [date(2026, 1, 1), date(2026, 1, 2)]
+    ) == [
+        ExchangeRateWriteDTO(
+            currency_code="USD",
+            rate_date=date(2026, 1, 1),
+            value_clp=Decimal("950.12"),
+            source="mindicador",
+        ),
+        ExchangeRateWriteDTO(
+            currency_code="USD",
+            rate_date=date(2026, 1, 2),
+            value_clp=Decimal("960.34"),
+            source="mindicador",
+        ),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_sii_indicators_provider_parses_utm_and_ipc_rows() -> None:
     """Test sii indicators provider parses utm and ipc rows."""
     html = """

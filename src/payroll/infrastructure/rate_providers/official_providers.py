@@ -283,19 +283,34 @@ class MindicadorRateProvider:
         self._series_cache[cache_key] = parsed_series
         return parsed_series
 
+    async def _get_latest_value_on_or_before(
+        self, indicator: str, on: date
+    ) -> Decimal | None:
+        """Get the latest available value on or before the requested date."""
+        series = await self._get_year_series(indicator, on.year)
+        matching_dates = [
+            series_date for series_date in sorted(series) if series_date <= on
+        ]
+        if matching_dates:
+            return series[matching_dates[-1]]
+
+        previous_year_series = await self._get_year_series(indicator, on.year - 1)
+        previous_year_dates = [
+            series_date
+            for series_date in previous_year_series
+            if series_date.year == on.year - 1
+        ]
+        if not previous_year_dates:
+            return None
+        latest_previous_year_date = max(previous_year_dates)
+        return previous_year_series[latest_previous_year_date]
+
     async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
         """Handle fetch rate."""
         indicator = self._CODE_MAP.get(currency_code.upper())
         if indicator is None:
             return None
-
-        series = await self._get_year_series(indicator, on.year)
-        matching_values = [
-            value
-            for series_date, value in sorted(series.items())
-            if series_date <= on and series_date.year == on.year
-        ]
-        return matching_values[-1] if matching_values else None
+        return await self._get_latest_value_on_or_before(indicator, on)
 
     async def fetch_rate_entry(
         self, currency_code: str, on: date
@@ -329,6 +344,11 @@ class MindicadorRateProvider:
         for year, year_dates in requested_dates_by_year.items():
             series = await self._get_year_series(indicator, year)
             current_value: Decimal | None = None
+            if year_dates:
+                first_requested_date = min(year_dates)
+                current_value = await self._get_latest_value_on_or_before(
+                    indicator, first_requested_date
+                )
             published_dates = sorted(series)
             published_index = 0
             for requested_date in sorted(year_dates):

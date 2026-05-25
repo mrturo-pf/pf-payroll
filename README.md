@@ -7,6 +7,11 @@ Personal financial suite for Chilean payroll simulation, tax calculation, and hi
 This repository implements a modular monolith for Chilean payroll operations with:
 
 - payroll import from CSV/XLSX
+- support for taxable imported income items such as legal gratuity, vacation
+  incentive, holiday bonus, availability bonus, legal gratuity adjustment,
+  prior salary difference, and annual bonus
+- support for imported discount items such as health insurance, bonus advances,
+  salary advances, and prior-month leave or absence adjustments
 - AFP, health, unemployment insurance, and income tax computation
 - payroll period review and PDF generation
 - FastAPI API, Typer CLI, and an operational HTML dashboard
@@ -64,7 +69,7 @@ import -> assign plans -> compute contributions -> compute tax -> review -> repo
 | --- | --- |
 | [`docs/getting-started.md`](docs/getting-started.md) | Installation, first run, and basic validation. |
 | [`docs/interfaces.md`](docs/interfaces.md) | Complete API endpoint inventory, CLI commands, and dashboard usage. |
-| [`docs/payroll-workflow.md`](docs/payroll-workflow.md) | End-to-end payroll flow, import format, and examples. |
+| [`docs/payroll-workflow.md`](docs/payroll-workflow.md) | End-to-end payroll flow, full CSV/XLSX import format, supported taxable income columns, and examples. |
 | [`docs/local-development.md`](docs/local-development.md) | Rancher Desktop database workflow, Adminer, testing, linting, and cleanup. |
 | [`architectural-report.md`](architectural-report.md) | Architecture report and target design. |
 

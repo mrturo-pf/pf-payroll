@@ -319,6 +319,30 @@ def test_xlsx_payroll_importer_maps_health_insurance_columns() -> None:
     assert rows[1].amount_clp == Decimal("46139")
 
 
+def test_xlsx_payroll_importer_maps_additional_taxable_income_columns() -> None:
+    """Test importer maps additional taxable income columns."""
+    rows = XlsxPayrollImporter().read_rows(
+        "sample.csv",
+        (
+            b"period,employer,payment_date,employment_contract_kind,"
+            b"vacation_incentive,holiday_bonus,availability_bonus,"
+            b"legal_gratuity_adjustment,prior_salary_difference,annual_bonus,net_pay\n"
+            b"Jan/2026,ACME,31/01/2026,indefinite,1000,2000,3000,4000,5000,6000,21000\n"
+        ),
+    )
+
+    assert [row.concept_code for row in rows] == [
+        "VACATION_INCENTIVE",
+        "HOLIDAY_BONUS",
+        "AVAILABILITY_BONUS",
+        "LEGAL_GRATUITY_ADJUSTMENT",
+        "PRIOR_SALARY_DIFFERENCE",
+        "ANNUAL_BONUS",
+    ]
+    assert all(row.amount_clp > Decimal("0") for row in rows)
+    assert all(row.expected_net_pay_clp == Decimal("21000") for row in rows)
+
+
 def test_xlsx_payroll_importer_maps_prior_month_leave_absence_discount() -> None:
     """Test importer maps the prior-month leave or absence discount column."""
     rows = XlsxPayrollImporter().read_rows(
@@ -333,3 +357,25 @@ def test_xlsx_payroll_importer_maps_prior_month_leave_absence_discount() -> None
     assert len(rows) == 1
     assert rows[0].concept_code == "PRIOR_MONTH_LEAVE_ABSENCE_DISCOUNT"
     assert rows[0].amount_clp == Decimal("2933")
+
+
+def test_xlsx_payroll_importer_maps_bonus_advance_discount_columns() -> None:
+    """Test importer maps bonus advance discount columns."""
+    rows = XlsxPayrollImporter().read_rows(
+        "sample.csv",
+        (
+            b"period,employer,payment_date,employment_contract_kind,"
+            b"vacation_bonus_advance,holiday_bonus_advance,annual_bonus_advance,"
+            b"salary_advance,net_pay\n"
+            b"Jan/2026,ACME,31/01/2026,indefinite,1000,2000,3000,4000,-10000\n"
+        ),
+    )
+
+    assert [row.concept_code for row in rows] == [
+        "VACATION_BONUS_ADVANCE",
+        "HOLIDAY_BONUS_ADVANCE",
+        "ANNUAL_BONUS_ADVANCE",
+        "SALARY_ADVANCE",
+    ]
+    assert all(row.amount_clp > Decimal("0") for row in rows)
+    assert all(row.expected_net_pay_clp == Decimal("-10000") for row in rows)

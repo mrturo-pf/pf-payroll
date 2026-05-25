@@ -42,14 +42,19 @@ from payroll.infrastructure.db.repositories.payroll_repository import (
 from payroll.infrastructure.db.repositories.reference_data_repository import (
     SqlAlchemyReferenceDataRepository,
 )
-from payroll.infrastructure.db.session import SessionLocal
 from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
 from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import (
     WeasyPrintPayrollReportRenderer,
 )
 from payroll.interfaces.api.dependencies import build_market_data_sync_use_case
+from payroll.interfaces.session import SessionLocal, open_session
 
 app = typer.Typer(help="Payroll CLI")
+
+
+def _open_session():
+    """Open a session using the local factory."""
+    return open_session(SessionLocal)
 
 
 def _json_default(value: object) -> Any:
@@ -90,7 +95,7 @@ def _parse_optional_decimal(name: str, value: str | None) -> Decimal | None:
 
 async def _import_payroll_async(file_path: Path) -> object:
     """Handle import payroll async."""
-    async with SessionLocal() as session:
+    async with _open_session() as session:
         use_case = ImportPayroll(
             SqlAlchemyPayrollRepository(session), XlsxPayrollImporter()
         )
@@ -124,21 +129,21 @@ async def _import_payroll_async(file_path: Path) -> object:
 
 async def _list_period_summaries_async() -> object:
     """Handle list period summaries async."""
-    async with SessionLocal() as session:
+    async with _open_session() as session:
         use_case = PayrollQueries(SqlAlchemyPayrollRepository(session))
         return await use_case.list_period_summaries()
 
 
 async def _get_period_detail_async(period_id: int) -> object:
     """Handle get period detail async."""
-    async with SessionLocal() as session:
+    async with _open_session() as session:
         use_case = PayrollQueries(SqlAlchemyPayrollRepository(session))
         return await use_case.get_period_detail(period_id)
 
 
 async def _list_plan_snapshots_async() -> dict[str, object]:
     """Handle list plan snapshots async."""
-    async with SessionLocal() as session:
+    async with _open_session() as session:
         use_case = ReferenceDataQueries(SqlAlchemyReferenceDataRepository(session))
         return {
             "pension_plans": await use_case.list_pension_plans(),
@@ -150,7 +155,7 @@ async def _assign_plans_async(
     period_id: int, pension_plan_id: int, health_plan_id: int
 ) -> object:
     """Handle assign plans async."""
-    async with SessionLocal() as session:
+    async with _open_session() as session:
         use_case = AssignPlans(SqlAlchemyPayrollRepository(session))
         return await use_case.execute(
             AssignPlansCommandDTO(
@@ -168,7 +173,7 @@ async def _compute_contributions_async(
     uf_value_clp: Decimal | None,
 ) -> object:
     """Handle compute contributions async."""
-    async with SessionLocal() as session:
+    async with _open_session() as session:
         payroll_repository = SqlAlchemyPayrollRepository(session)
         market_data_repository = SqlAlchemyMarketDataRepository(session)
         use_case = ComputeContributions(payroll_repository, market_data_repository)
@@ -186,7 +191,7 @@ async def _compute_income_tax_async(
     period_id: int, utm_value_clp: Decimal | None
 ) -> object:
     """Handle compute income tax async."""
-    async with SessionLocal() as session:
+    async with _open_session() as session:
         payroll_repository = SqlAlchemyPayrollRepository(session)
         market_data_repository = SqlAlchemyMarketDataRepository(session)
         use_case = ComputeIncomeTax(payroll_repository, market_data_repository)
@@ -200,7 +205,7 @@ async def _compute_income_tax_async(
 
 async def _review_period_async(period_id: int) -> object:
     """Handle review period async."""
-    async with SessionLocal() as session:
+    async with _open_session() as session:
         use_case = ReviewPayrollPeriod(SqlAlchemyPayrollRepository(session))
         return await use_case.execute(
             ReviewPayrollPeriodCommandDTO(period_id=period_id)
@@ -209,7 +214,7 @@ async def _review_period_async(period_id: int) -> object:
 
 async def _generate_payroll_report_async(period_id: int) -> GeneratedPayrollReportDTO:
     """Handle generate payroll report async."""
-    async with SessionLocal() as session:
+    async with _open_session() as session:
         use_case = GeneratePayrollReport(
             SqlAlchemyPayrollRepository(session),
             WeasyPrintPayrollReportRenderer(),

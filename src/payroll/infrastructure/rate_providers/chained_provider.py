@@ -2,6 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
+from collections.abc import Awaitable, Callable, Hashable
 
 import structlog
 
@@ -12,6 +13,63 @@ from payroll.application.ports.rate_provider import (
 )
 
 log = structlog.get_logger(__name__)
+
+
+def _provider_name(provider: object) -> str:
+    """Get a provider name for logs and source fields."""
+    return getattr(provider, "name", provider.__class__.__name__.lower())
+
+
+def _log_provider_failure(provider: object, exc: Exception) -> None:
+    """Log a provider failure."""
+    log.warning("provider_failed", provider=_provider_name(provider), error=str(exc))
+
+
+async def _fetch_first_match[P, TEntry](
+    providers: list[P],
+    fetcher: Callable[[P], Awaitable[TEntry | None]],
+) -> tuple[P, TEntry] | None:
+    """Fetch the first non-empty value from the fallback providers."""
+    for provider in providers:
+        try:
+            value = await fetcher(provider)
+        except Exception as exc:
+            _log_provider_failure(provider, exc)
+            continue
+        if value is not None:
+            return provider, value
+    return None
+
+
+async def _fetch_remaining_entries[P, TKey: Hashable, TEntry](
+    providers: list[P],
+    requested_items: list[TKey],
+    fetcher: Callable[[P, list[TKey]], Awaitable[list[TEntry]]],
+    key_fn: Callable[[TEntry], TKey],
+) -> list[TEntry]:
+    """Fetch entries while keeping the original request order."""
+    remaining_items = list(dict.fromkeys(requested_items))
+    entries_by_key: dict[TKey, TEntry] = {}
+    for provider in providers:
+        if not remaining_items:
+            break
+        try:
+            entries = await fetcher(provider, remaining_items)
+        except Exception as exc:
+            _log_provider_failure(provider, exc)
+            continue
+        provided_keys = {key_fn(entry) for entry in entries}
+        entries_by_key.update({key_fn(entry): entry for entry in entries})
+        remaining_items = [
+            requested_item
+            for requested_item in remaining_items
+            if requested_item not in provided_keys
+        ]
+    return [
+        entries_by_key[requested_item]
+        for requested_item in requested_items
+        if requested_item in entries_by_key
+    ]
 
 
 class ChainedFxProvider:
@@ -32,65 +90,31 @@ class ChainedFxProvider:
         self, currency_code: str, on: date
     ) -> ExchangeRateWriteDTO | None:
         """Handle fetch rate entry."""
-        for provider in self._providers:
-            try:
-                value = await provider.fetch_rate(currency_code, on)
-            except Exception as exc:
-                log.warning(
-                    "provider_failed",
-                    provider=getattr(
-                        provider, "name", provider.__class__.__name__.lower()
-                    ),
-                    error=str(exc),
-                )
-                continue
-            if value is not None:
-                return ExchangeRateWriteDTO(
-                    currency_code=currency_code,
-                    rate_date=on,
-                    value_clp=value,
-                    source=getattr(
-                        provider, "name", provider.__class__.__name__.lower()
-                    ),
-                )
+        match = await _fetch_first_match(
+            self._providers, lambda provider: provider.fetch_rate(currency_code, on)
+        )
+        if match is not None:
+            provider, value = match
+            return ExchangeRateWriteDTO(
+                currency_code=currency_code,
+                rate_date=on,
+                value_clp=value,
+                source=_provider_name(provider),
+            )
         return None
 
     async def fetch_rate_entries(
         self, currency_code: str, requested_dates: list[date]
     ) -> list[ExchangeRateWriteDTO]:
         """Handle fetch rate entries."""
-        remaining_dates = list(dict.fromkeys(requested_dates))
-        entries_by_date: dict[date, ExchangeRateWriteDTO] = {}
-
-        for provider in self._providers:
-            if not remaining_dates:
-                break
-            try:
-                entries = await provider.fetch_rate_entries(
-                    currency_code, remaining_dates
-                )
-            except Exception as exc:
-                log.warning(
-                    "provider_failed",
-                    provider=getattr(
-                        provider, "name", provider.__class__.__name__.lower()
-                    ),
-                    error=str(exc),
-                )
-                continue
-            provided_dates = {entry.rate_date for entry in entries}
-            entries_by_date.update({entry.rate_date: entry for entry in entries})
-            remaining_dates = [
-                requested_date
-                for requested_date in remaining_dates
-                if requested_date not in provided_dates
-            ]
-
-        return [
-            entries_by_date[requested_date]
-            for requested_date in requested_dates
-            if requested_date in entries_by_date
-        ]
+        return await _fetch_remaining_entries(
+            self._providers,
+            requested_dates,
+            lambda provider, remaining_dates: provider.fetch_rate_entries(
+                currency_code, remaining_dates
+            ),
+            lambda entry: entry.rate_date,
+        )
 
 
 class ChainedEconomicIndexProvider:
@@ -106,57 +130,24 @@ class ChainedEconomicIndexProvider:
         self, code: str, period_year: int, period_month: int
     ) -> EconomicIndexWriteDTO | None:
         """Handle fetch index."""
-        for provider in self._providers:
-            try:
-                value = await provider.fetch_index(code, period_year, period_month)
-            except Exception as exc:
-                log.warning(
-                    "provider_failed",
-                    provider=getattr(
-                        provider, "name", provider.__class__.__name__.lower()
-                    ),
-                    error=str(exc),
-                )
-                continue
-            if value is not None:
-                return value
+        match = await _fetch_first_match(
+            self._providers,
+            lambda provider: provider.fetch_index(code, period_year, period_month),
+        )
+        if match is not None:
+            _, value = match
+            return value
         return None
 
     async def fetch_indices(
         self, code: str, requested_periods: list[tuple[int, int]]
     ) -> list[EconomicIndexWriteDTO]:
         """Handle fetch indices."""
-        remaining_periods = list(dict.fromkeys(requested_periods))
-        entries_by_period: dict[tuple[int, int], EconomicIndexWriteDTO] = {}
-
-        for provider in self._providers:
-            if not remaining_periods:
-                break
-            try:
-                entries = await provider.fetch_indices(code, remaining_periods)
-            except Exception as exc:
-                log.warning(
-                    "provider_failed",
-                    provider=getattr(
-                        provider, "name", provider.__class__.__name__.lower()
-                    ),
-                    error=str(exc),
-                )
-                continue
-            provided_periods = {
-                (entry.period_year, entry.period_month) for entry in entries
-            }
-            entries_by_period.update(
-                {(entry.period_year, entry.period_month): entry for entry in entries}
-            )
-            remaining_periods = [
-                requested_period
-                for requested_period in remaining_periods
-                if requested_period not in provided_periods
-            ]
-
-        return [
-            entries_by_period[requested_period]
-            for requested_period in requested_periods
-            if requested_period in entries_by_period
-        ]
+        return await _fetch_remaining_entries(
+            self._providers,
+            requested_periods,
+            lambda provider, remaining_periods: provider.fetch_indices(
+                code, remaining_periods
+            ),
+            lambda entry: (entry.period_year, entry.period_month),
+        )

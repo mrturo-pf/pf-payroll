@@ -51,13 +51,13 @@ from payroll.infrastructure.db.repositories.payroll_repository import (
 from payroll.infrastructure.db.repositories.reference_data_repository import (
     SqlAlchemyReferenceDataRepository,
 )
-from payroll.infrastructure.db.session import SessionLocal
 from payroll.config import settings
+from payroll.interfaces.session import SessionLocal, open_session
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
     """Get session."""
-    async with SessionLocal() as session:
+    async with open_session(SessionLocal) as session:
         yield session
 
 

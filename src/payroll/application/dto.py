@@ -22,6 +22,33 @@ PayrollStatusKind = Literal["projected", "actual", "reviewed"]
 
 
 @dataclass(frozen=True, slots=True)
+class PayrollPeriodRangeFields:
+    """Share the common payroll period range fields."""
+
+    period_year: int
+    period_month: int
+    start_date: date
+    end_date: date
+
+
+@dataclass(frozen=True, slots=True)
+class PayrollPeriodDetailFields:
+    """Share the common payroll period detail fields."""
+
+    id: int
+    employer_id: int
+    employer_name: str
+    employer_tax_id: str | None
+    employer_country_code: str
+    employer_started_at: date
+    employer_ended_at: date | None
+    period_year: int
+    period_month: int
+    payment_date: date
+    worked_days: int
+
+
+@dataclass(frozen=True, slots=True)
 class MoneyDTO:
     """Represent Money DTO."""
 
@@ -393,20 +420,9 @@ class PayrollSummaryDTO:
 
 
 @dataclass(frozen=True, slots=True)
-class PayrollPeriodDetailDTO:
+class PayrollPeriodDetailDTO(PayrollPeriodDetailFields):
     """Represent Payroll Period Detail DTO."""
 
-    id: int
-    employer_id: int
-    employer_name: str
-    employer_tax_id: str | None
-    employer_country_code: str
-    employer_started_at: date
-    employer_ended_at: date | None
-    period_year: int
-    period_month: int
-    payment_date: date
-    worked_days: int
     status: PayrollStatusKind
     employment_contract_kind: EmploymentContractKind
     pension_plan_id: int | None
@@ -417,13 +433,9 @@ class PayrollPeriodDetailDTO:
 
 
 @dataclass(frozen=True, slots=True)
-class PayrollPeriodRangeDTO:
+class PayrollPeriodRangeDTO(PayrollPeriodRangeFields):
     """Represent a payroll period date range."""
 
-    period_year: int
-    period_month: int
-    start_date: date
-    end_date: date
     is_current: bool
     inferred: bool
 

@@ -2,6 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
+from collections.abc import Set as AbstractSet
 
 from sqlalchemy import delete, func, or_, select
 
@@ -51,6 +52,82 @@ from payroll.shared.constants import (
 
 class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
     """Write and calculation-context payroll operations."""
+
+    async def _get_taxable_income_clp(self, period_id: int) -> Decimal:
+        """Return taxable income for the given period."""
+        result = await self._session.execute(
+            select(func.coalesce(func.sum(PayrollItemModel.amount_clp), 0))
+            .join(
+                PayrollConceptModel,
+                PayrollItemModel.concept_id == PayrollConceptModel.id,
+            )
+            .where(PayrollItemModel.period_id == period_id)
+            .where(PayrollConceptModel.kind == PayrollConceptKind.INCOME)
+            .where(PayrollConceptModel.is_taxable.is_(True))
+        )
+        return Decimal(result.scalar_one())
+
+    async def _get_deductible_amount_clp(self, period_id: int) -> Decimal:
+        """Return deductible income-tax amount for the given period."""
+        result = await self._session.execute(
+            select(func.coalesce(func.sum(PayrollItemModel.amount_clp), 0))
+            .join(
+                PayrollConceptModel,
+                PayrollItemModel.concept_id == PayrollConceptModel.id,
+            )
+            .where(PayrollItemModel.period_id == period_id)
+            .where(PayrollConceptModel.code.in_(INCOME_TAX_DEDUCTIBLE_CONCEPT_CODES))
+        )
+        return Decimal(result.scalar_one())
+
+    async def _get_concepts(
+        self, concept_codes: AbstractSet[str], *, missing_message: str
+    ) -> dict[str, PayrollConceptModel]:
+        """Load payroll concepts by code and ensure all requested codes exist."""
+        concept_result = await self._session.execute(
+            select(PayrollConceptModel).where(
+                PayrollConceptModel.code.in_(concept_codes)
+            )
+        )
+        concepts = {concept.code: concept for concept in concept_result.scalars().all()}
+        missing_codes = sorted(concept_codes - set(concepts))
+        if missing_codes:
+            raise PayrollNotFoundError(f"{missing_message}: {', '.join(missing_codes)}")
+        return concepts
+
+    async def _get_concept(
+        self, concept_code: str, *, missing_message: str
+    ) -> PayrollConceptModel:
+        """Load a single payroll concept by code."""
+        concept_result = await self._session.execute(
+            select(PayrollConceptModel).where(PayrollConceptModel.code == concept_code)
+        )
+        concept = concept_result.scalar_one_or_none()
+        if concept is None:
+            raise PayrollNotFoundError(f"{missing_message}: {concept_code}")
+        return concept
+
+    async def _replace_period_item(
+        self,
+        *,
+        period_id: int,
+        concept: PayrollConceptModel,
+        amount_clp: Decimal,
+    ) -> None:
+        """Replace a period item for the given concept."""
+        await self._session.execute(
+            delete(PayrollItemModel).where(
+                PayrollItemModel.period_id == period_id,
+                PayrollItemModel.concept_id == concept.id,
+            )
+        )
+        self._session.add(
+            PayrollItemModel(
+                period_id=period_id,
+                concept_id=concept.id,
+                amount_clp=amount_clp,
+            )
+        )
 
     async def assign_plans(
         self, command: AssignPlansCommandDTO
@@ -144,17 +221,7 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
             ),
         )
 
-        taxable_result = await self._session.execute(
-            select(func.coalesce(func.sum(PayrollItemModel.amount_clp), 0))
-            .join(
-                PayrollConceptModel,
-                PayrollItemModel.concept_id == PayrollConceptModel.id,
-            )
-            .where(PayrollItemModel.period_id == period.id)
-            .where(PayrollConceptModel.kind == PayrollConceptKind.INCOME)
-            .where(PayrollConceptModel.is_taxable.is_(True))
-        )
-        taxable_income_clp = Decimal(taxable_result.scalar_one())
+        taxable_income_clp = await self._get_taxable_income_clp(period.id)
 
         return ContributionComputationContextDTO(
             period_id=period.id,
@@ -206,18 +273,10 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
         """Save computed contributions."""
         period = await self._get_period(result.period_id)
 
-        concept_result = await self._session.execute(
-            select(PayrollConceptModel).where(
-                PayrollConceptModel.code.in_(COMPUTED_CONTRIBUTION_CONCEPT_CODES)
-            )
+        concepts = await self._get_concepts(
+            COMPUTED_CONTRIBUTION_CONCEPT_CODES,
+            missing_message="Missing payroll concepts for computed contributions",
         )
-        concepts = {concept.code: concept for concept in concept_result.scalars().all()}
-        missing_codes = sorted(COMPUTED_CONTRIBUTION_CONCEPT_CODES - set(concepts))
-        if missing_codes:
-            raise PayrollNotFoundError(
-                "Missing payroll concepts for computed contributions: "
-                f"{', '.join(missing_codes)}"
-            )
 
         period.pension_plan_id = result.pension_plan_id
         period.health_plan_id = result.health_plan_id
@@ -230,34 +289,30 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
                 ),
             )
         )
-        self._session.add_all(
-            [
-                PayrollItemModel(
-                    period_id=result.period_id,
-                    concept_id=concepts["PENSION_BASE"].id,
-                    amount_clp=result.pension.base_amount_clp,
-                ),
-                PayrollItemModel(
-                    period_id=result.period_id,
-                    concept_id=concepts["PENSION_ADDITIONAL"].id,
-                    amount_clp=result.pension.additional_amount_clp,
-                ),
-                PayrollItemModel(
-                    period_id=result.period_id,
-                    concept_id=concepts["HEALTH_BASE"].id,
-                    amount_clp=result.health.base_amount_clp,
-                ),
-                PayrollItemModel(
-                    period_id=result.period_id,
-                    concept_id=concepts["HEALTH_ADDITIONAL_UF"].id,
-                    amount_clp=result.health.additional_amount_clp,
-                ),
-                PayrollItemModel(
-                    period_id=result.period_id,
-                    concept_id=concepts["UNEMPLOYMENT_INSURANCE"].id,
-                    amount_clp=result.unemployment.employee_amount_clp,
-                ),
-            ]
+        await self._replace_period_item(
+            period_id=result.period_id,
+            concept=concepts["PENSION_BASE"],
+            amount_clp=result.pension.base_amount_clp,
+        )
+        await self._replace_period_item(
+            period_id=result.period_id,
+            concept=concepts["PENSION_ADDITIONAL"],
+            amount_clp=result.pension.additional_amount_clp,
+        )
+        await self._replace_period_item(
+            period_id=result.period_id,
+            concept=concepts["HEALTH_BASE"],
+            amount_clp=result.health.base_amount_clp,
+        )
+        await self._replace_period_item(
+            period_id=result.period_id,
+            concept=concepts["HEALTH_ADDITIONAL_UF"],
+            amount_clp=result.health.additional_amount_clp,
+        )
+        await self._replace_period_item(
+            period_id=result.period_id,
+            concept=concepts["UNEMPLOYMENT_INSURANCE"],
+            amount_clp=result.unemployment.employee_amount_clp,
         )
 
         await self._reconcile_period_net_pay(period, refresh_summary_view=True)
@@ -276,21 +331,11 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
                 f"{period.payment_date.isoformat()}."
             ),
         )
-        taxable_result = await self._session.execute(
-            select(func.coalesce(func.sum(PayrollItemModel.amount_clp), 0))
-            .join(
-                PayrollConceptModel,
-                PayrollItemModel.concept_id == PayrollConceptModel.id,
-            )
-            .where(PayrollItemModel.period_id == period.id)
-            .where(PayrollConceptModel.kind == PayrollConceptKind.INCOME)
-            .where(PayrollConceptModel.is_taxable.is_(True))
-        )
-
+        taxable_income_clp = await self._get_taxable_income_clp(period.id)
         return UnemploymentComputationContextDTO(
             period_id=period.id,
             payment_date=period.payment_date,
-            taxable_income_clp=Decimal(taxable_result.scalar_one()),
+            taxable_income_clp=taxable_income_clp,
             employment_contract_kind=period.employment_contract_kind,
             unemployment_cap=ContributionCap(
                 cap_type=unemployment_cap_model.cap_type.value,
@@ -306,30 +351,14 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
     ) -> ComputeUnemploymentInsuranceResultDTO:
         """Save computed unemployment insurance."""
         period = await self._get_period(result.period_id)
-        concept_result = await self._session.execute(
-            select(PayrollConceptModel).where(
-                PayrollConceptModel.code == "UNEMPLOYMENT_INSURANCE"
-            )
+        concept = await self._get_concept(
+            "UNEMPLOYMENT_INSURANCE",
+            missing_message="Missing payroll concept for computed contributions",
         )
-        concept = concept_result.scalar_one_or_none()
-        if concept is None:
-            raise PayrollNotFoundError(
-                "Missing payroll concept for computed contributions: "
-                "UNEMPLOYMENT_INSURANCE"
-            )
-
-        await self._session.execute(
-            delete(PayrollItemModel).where(
-                PayrollItemModel.period_id == result.period_id,
-                PayrollItemModel.concept_id == concept.id,
-            )
-        )
-        self._session.add(
-            PayrollItemModel(
-                period_id=result.period_id,
-                concept_id=concept.id,
-                amount_clp=result.unemployment.employee_amount_clp,
-            )
+        await self._replace_period_item(
+            period_id=result.period_id,
+            concept=concept,
+            amount_clp=result.unemployment.employee_amount_clp,
         )
 
         await self._reconcile_period_net_pay(period, refresh_summary_view=True)
@@ -341,31 +370,11 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
         """Get income tax context."""
         period = await self._get_period(command.period_id)
 
-        taxable_income_result = await self._session.execute(
-            select(func.coalesce(func.sum(PayrollItemModel.amount_clp), 0))
-            .join(
-                PayrollConceptModel,
-                PayrollItemModel.concept_id == PayrollConceptModel.id,
-            )
-            .where(PayrollItemModel.period_id == period.id)
-            .where(PayrollConceptModel.kind == PayrollConceptKind.INCOME)
-            .where(PayrollConceptModel.is_taxable.is_(True))
-        )
-        deductible_result = await self._session.execute(
-            select(func.coalesce(func.sum(PayrollItemModel.amount_clp), 0))
-            .join(
-                PayrollConceptModel,
-                PayrollItemModel.concept_id == PayrollConceptModel.id,
-            )
-            .where(PayrollItemModel.period_id == period.id)
-            .where(PayrollConceptModel.code.in_(INCOME_TAX_DEDUCTIBLE_CONCEPT_CODES))
-        )
-
         return IncomeTaxContextDTO(
             period_id=period.id,
             payment_date=period.payment_date,
-            taxable_income_clp=Decimal(taxable_income_result.scalar_one()),
-            deductible_amount_clp=Decimal(deductible_result.scalar_one()),
+            taxable_income_clp=await self._get_taxable_income_clp(period.id),
+            deductible_amount_clp=await self._get_deductible_amount_clp(period.id),
         )
 
     async def get_income_tax_bracket(
@@ -413,30 +422,14 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
         """Save computed income tax."""
         period = await self._get_period(result.period_id)
 
-        concept_result = await self._session.execute(
-            select(PayrollConceptModel).where(
-                PayrollConceptModel.code == INCOME_TAX_CONCEPT_CODE
-            )
+        concept = await self._get_concept(
+            INCOME_TAX_CONCEPT_CODE,
+            missing_message="Missing payroll concept for computed income tax",
         )
-        concept = concept_result.scalar_one_or_none()
-        if concept is None:
-            raise PayrollNotFoundError(
-                "Missing payroll concept for computed income tax: "
-                f"{INCOME_TAX_CONCEPT_CODE}"
-            )
-
-        await self._session.execute(
-            delete(PayrollItemModel).where(
-                PayrollItemModel.period_id == result.period_id,
-                PayrollItemModel.concept_id == concept.id,
-            )
-        )
-        self._session.add(
-            PayrollItemModel(
-                period_id=result.period_id,
-                concept_id=concept.id,
-                amount_clp=result.tax.tax_clp,
-            )
+        await self._replace_period_item(
+            period_id=result.period_id,
+            concept=concept,
+            amount_clp=result.tax.tax_clp,
         )
 
         await self._reconcile_period_net_pay(period, refresh_summary_view=True)

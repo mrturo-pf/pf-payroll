@@ -8,9 +8,10 @@ from payroll.application.ports.repositories import (
     MarketDataRepository,
     PayrollRepository,
 )
-from payroll.application.services.exchange_rates import resolve_required_exchange_rate
+from payroll.application.services.exchange_rates import (
+    resolve_month_end_uf_exchange_rate,
+)
 from payroll.domain.contribution_calculator import ContributionCalculator
-from payroll.shared.dates import last_day_of_month
 
 
 class ComputeContributions:
@@ -32,11 +33,9 @@ class ComputeContributions:
     ) -> ComputeContributionsResultDTO:
         """Handle execute."""
         context = await self._repository.get_contribution_context(command)
-        month_end_rate_date = last_day_of_month(context.payment_date)
-        month_end_uf_value_clp = await resolve_required_exchange_rate(
+        month_end_uf_value_clp = await resolve_month_end_uf_exchange_rate(
             provided_value=command.uf_value_clp,
-            currency_code="UF",
-            rate_date=month_end_rate_date,
+            payment_date=context.payment_date,
             market_data_repository=self._market_data_repository,
         )
 

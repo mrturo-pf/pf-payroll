@@ -8,9 +8,10 @@ from payroll.application.ports.repositories import (
     MarketDataRepository,
     PayrollRepository,
 )
-from payroll.application.services.exchange_rates import resolve_required_exchange_rate
+from payroll.application.services.exchange_rates import (
+    resolve_month_end_uf_exchange_rate,
+)
 from payroll.domain.contribution_calculator import ContributionCalculator
-from payroll.shared.dates import last_day_of_month
 
 
 class ComputeUnemploymentInsurance:
@@ -32,10 +33,9 @@ class ComputeUnemploymentInsurance:
     ) -> ComputeUnemploymentInsuranceResultDTO:
         """Handle execute."""
         context = await self._repository.get_unemployment_context(command)
-        uf_value_clp = await resolve_required_exchange_rate(
+        uf_value_clp = await resolve_month_end_uf_exchange_rate(
             provided_value=command.uf_value_clp,
-            currency_code="UF",
-            rate_date=last_day_of_month(context.payment_date),
+            payment_date=context.payment_date,
             market_data_repository=self._market_data_repository,
         )
         unemployment = self._calculator.unemployment(

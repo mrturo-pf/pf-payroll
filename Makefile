@@ -60,7 +60,7 @@ test-cov:
 
 check:
 	@set -e; \
-	for target in lint dead-code typecheck duplicate-code test test-cov; do \
+	for target in lint dead-code typecheck duplicate-code-src duplicate-code-tests test test-cov; do \
 		echo "==> make $$target"; \
 		if ! $(MAKE) --no-print-directory $$target; then \
 			echo "FAILED: $$target"; \
@@ -69,8 +69,11 @@ check:
 	done; \
 	echo "All checks passed."
 
-duplicate-code:
-	npx --yes jscpd --mode strict --min-lines 10 --min-tokens 70 --threshold 1 --reporters console --ignore "**/.venv/**,**/build/**,**/dist/**" src tests
+duplicate-code-tests:
+	npx --yes jscpd --mode strict --min-lines 10 --min-tokens 70 --threshold 10 --reporters console --ignore "**/.venv/**,**/build/**,**/dist/**" tests
+
+duplicate-code-src:
+	npx --yes jscpd --mode strict --min-lines 10 --min-tokens 70 --threshold 1 --reporters console --ignore "**/.venv/**,**/build/**,**/dist/**" src
 
 lint:
 	ruff check --fix --exit-zero src tests

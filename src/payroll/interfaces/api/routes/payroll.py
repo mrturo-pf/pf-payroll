@@ -7,6 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Path, Request, UploadFile
 from fastapi.responses import Response
+from dataclasses import dataclass
 from pydantic import BaseModel
 
 from payroll.application.errors import PayrollError
@@ -18,6 +19,8 @@ from payroll.application.dto import (
     DeflateAmountsCommandDTO,
     DeflatedAmountDTO,
     ComputeIncomeTaxCommandDTO,
+    PayrollPeriodDetailFields,
+    PayrollPeriodRangeFields,
     PayrollPeriodRangeDTO,
     PayrollSummaryDTO,
 )
@@ -242,30 +245,17 @@ class PayrollSummaryRead(BaseModel):
     net_pay_clp: str
 
 
-class PayrollPeriodRangeRead(BaseModel):
+@dataclass(frozen=True, slots=True)
+class PayrollPeriodRangeRead(PayrollPeriodRangeFields):
     """Represent Payroll Period Range Read."""
 
-    period_year: int
-    period_month: int
-    start_date: date
-    end_date: date
     position: Literal["previous", "current", "future"]
 
 
-class PayrollPeriodDetailRead(BaseModel):
+@dataclass(frozen=True, slots=True)
+class PayrollPeriodDetailRead(PayrollPeriodDetailFields):
     """Represent Payroll Period Detail Read."""
 
-    id: int
-    employer_id: int
-    employer_name: str
-    employer_tax_id: str | None
-    employer_country_code: str
-    employer_started_at: date
-    employer_ended_at: date | None
-    period_year: int
-    period_month: int
-    payment_date: date
-    worked_days: int
     status: str
     employment_contract_kind: str
     pension_plan_id: int | None

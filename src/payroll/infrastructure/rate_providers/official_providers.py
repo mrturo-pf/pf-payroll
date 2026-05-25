@@ -9,10 +9,11 @@ from calendar import monthrange
 from datetime import date, datetime
 from decimal import Decimal
 from html import unescape
-from collections.abc import Callable
+from collections.abc import Callable, Hashable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
+from typing import TypeVar
 
 from payroll.application.dto import (
     EconomicIndexWriteDTO,
@@ -36,6 +37,8 @@ _MONTHS = {
 }
 _MONTHLY_EXEMPT_LIMIT_UTM = Decimal("13.5")
 _BRACKET_UTM_QUANT = Decimal("0.0001")
+TKey = TypeVar("TKey", bound=Hashable)
+TEntry = TypeVar("TEntry")
 
 
 def _fetch_url(url: str, timeout_seconds: int) -> str:
@@ -95,6 +98,59 @@ def _parse_chilean_amount(raw: str) -> Decimal | None:
     if not cleaned:
         return None
     return _parse_chilean_decimal(cleaned)
+
+
+def _build_exchange_rate_entry(
+    currency_code: str, rate_date: date, value_clp: Decimal, source: str
+) -> ExchangeRateWriteDTO:
+    """Build an exchange-rate write DTO."""
+    return ExchangeRateWriteDTO(
+        currency_code=currency_code.upper(),
+        rate_date=rate_date,
+        value_clp=value_clp,
+        source=source,
+    )
+
+
+def _extract_observation_value(observation: dict[str, object]) -> Decimal | None:
+    """Extract a decimal value from a market-data observation."""
+    raw_value = (
+        observation.get("value")
+        or observation.get("Valor")
+        or observation.get("obs_value")
+    )
+    if raw_value is None:
+        return None
+    return Decimal(str(raw_value).replace(",", "."))
+
+
+def _group_dates_by_year(requested_dates: list[date]) -> dict[int, list[date]]:
+    """Group requested dates by year."""
+    grouped_dates: dict[int, list[date]] = {}
+    for requested_date in requested_dates:
+        grouped_dates.setdefault(requested_date.year, []).append(requested_date)
+    return grouped_dates
+
+
+def _group_periods_by_year(
+    requested_periods: list[tuple[int, int]],
+) -> dict[int, list[int]]:
+    """Group requested periods by year."""
+    grouped_periods: dict[int, list[int]] = {}
+    for period_year, period_month in requested_periods:
+        grouped_periods.setdefault(period_year, []).append(period_month)
+    return grouped_periods
+
+
+def _ordered_entries[TKey: Hashable, TEntry](
+    entries_by_key: dict[TKey, TEntry], requested_keys: list[TKey]
+) -> list[TEntry]:
+    """Return the requested entries preserving their original order."""
+    return [
+        entries_by_key[requested_key]
+        for requested_key in requested_keys
+        if requested_key in entries_by_key
+    ]
 
 
 def _extract_sii_rows(html: str) -> dict[int, list[str]]:
@@ -335,13 +391,7 @@ class MindicadorRateProvider:
             return []
 
         entries_by_date: dict[date, ExchangeRateWriteDTO] = {}
-        requested_dates_by_year: dict[int, list[date]] = {}
-        for requested_date in requested_dates:
-            requested_dates_by_year.setdefault(requested_date.year, []).append(
-                requested_date
-            )
-
-        for year, year_dates in requested_dates_by_year.items():
+        for year, year_dates in _group_dates_by_year(requested_dates).items():
             series = await self._get_year_series(indicator, year)
             current_value: Decimal | None = None
             if year_dates:
@@ -360,18 +410,11 @@ class MindicadorRateProvider:
                     published_index += 1
                 if current_value is None:
                     continue
-                entries_by_date[requested_date] = ExchangeRateWriteDTO(
-                    currency_code=currency_code.upper(),
-                    rate_date=requested_date,
-                    value_clp=current_value,
-                    source=self.name,
+                entries_by_date[requested_date] = _build_exchange_rate_entry(
+                    currency_code, requested_date, current_value, self.name
                 )
 
-        return [
-            entries_by_date[requested_date]
-            for requested_date in requested_dates
-            if requested_date in entries_by_date
-        ]
+        return _ordered_entries(entries_by_date, requested_dates)
 
 
 class SiiIndicatorsProvider:
@@ -437,13 +480,7 @@ class SiiIndicatorsProvider:
             return []
 
         entries_by_date: dict[date, ExchangeRateWriteDTO] = {}
-        requested_dates_by_year: dict[int, list[date]] = {}
-        for requested_date in requested_dates:
-            requested_dates_by_year.setdefault(requested_date.year, []).append(
-                requested_date
-            )
-
-        for year, year_dates in requested_dates_by_year.items():
+        for year, year_dates in _group_dates_by_year(requested_dates).items():
             rows = await self._get_rows(year)
             for requested_date in year_dates:
                 row = rows.get(requested_date.month)
@@ -452,18 +489,11 @@ class SiiIndicatorsProvider:
                 value = _parse_chilean_decimal(row[1])
                 if value is None:
                     continue
-                entries_by_date[requested_date] = ExchangeRateWriteDTO(
-                    currency_code=currency_code.upper(),
-                    rate_date=requested_date,
-                    value_clp=value,
-                    source=self.name,
+                entries_by_date[requested_date] = _build_exchange_rate_entry(
+                    currency_code, requested_date, value, self.name
                 )
 
-        return [
-            entries_by_date[requested_date]
-            for requested_date in requested_dates
-            if requested_date in entries_by_date
-        ]
+        return _ordered_entries(entries_by_date, requested_dates)
 
     async def fetch_index(
         self, code: str, period_year: int, period_month: int
@@ -498,11 +528,9 @@ class SiiIndicatorsProvider:
             return []
 
         entries_by_period: dict[tuple[int, int], EconomicIndexWriteDTO] = {}
-        requested_periods_by_year: dict[int, list[int]] = {}
-        for period_year, period_month in requested_periods:
-            requested_periods_by_year.setdefault(period_year, []).append(period_month)
-
-        for period_year, period_months in requested_periods_by_year.items():
+        for period_year, period_months in _group_periods_by_year(
+            requested_periods
+        ).items():
             rows = await self._get_rows(period_year)
             for period_month in period_months:
                 row = rows.get(period_month)
@@ -524,11 +552,7 @@ class SiiIndicatorsProvider:
                     source=self.name,
                 )
 
-        return [
-            entries_by_period[requested_period]
-            for requested_period in requested_periods
-            if requested_period in entries_by_period
-        ]
+        return _ordered_entries(entries_by_period, requested_periods)
 
 
 class SiiIncomeTaxBracketProvider:
@@ -630,14 +654,10 @@ class BcchSeriesProvider:
         """Handle fetch rate."""
         observations = await self._fetch_series(currency_code, on, on)
         for observation in observations:
-            raw_value = (
-                observation.get("value")
-                or observation.get("Valor")
-                or observation.get("obs_value")
-            )
-            if raw_value is None:
+            value = _extract_observation_value(observation)
+            if value is None:
                 continue
-            return Decimal(str(raw_value).replace(",", "."))
+            return value
         return None
 
     async def fetch_rate_entry(
@@ -666,25 +686,24 @@ class BcchSeriesProvider:
         )
         values_by_date: dict[date, Decimal] = {}
         for observation in observations:
-            raw_value = (
-                observation.get("value")
-                or observation.get("Valor")
-                or observation.get("obs_value")
-            )
             observation_date = _extract_observation_date(observation)
-            if raw_value is None or observation_date is None:
+            value = _extract_observation_value(observation)
+            if value is None or observation_date is None:
                 continue
-            values_by_date[observation_date] = Decimal(str(raw_value).replace(",", "."))
-        return [
-            ExchangeRateWriteDTO(
-                currency_code=currency_code.upper(),
-                rate_date=requested_date,
-                value_clp=values_by_date[requested_date],
-                source=self.name,
-            )
-            for requested_date in requested_dates
-            if requested_date in values_by_date
-        ]
+            values_by_date[observation_date] = value
+        return _ordered_entries(
+            {
+                requested_date: _build_exchange_rate_entry(
+                    currency_code,
+                    requested_date,
+                    values_by_date[requested_date],
+                    self.name,
+                )
+                for requested_date in requested_dates
+                if requested_date in values_by_date
+            },
+            requested_dates,
+        )
 
     async def fetch_index(
         self, code: str, period_year: int, period_month: int

@@ -23,6 +23,21 @@ class PayrollStatus(StrEnum):
     REVIEWED = "reviewed"
 
 
+class EmployerPaymentDateRule(StrEnum):
+    """Represent supported employer payment-date rules."""
+
+    LAST_BUSINESS_DAY_OF_MONTH = "last_business_day_of_month"
+    FIXED_DAY_OF_MONTH = "fixed_day_of_month"
+    CALENDAR_DAYS_BEFORE_END_OF_MONTH = "calendar_days_before_end_of_month"
+
+
+class EmployerFixedDayRoll(StrEnum):
+    """Represent fixed-day fallback behavior for non-business dates."""
+
+    PREVIOUS_BUSINESS_DAY = "previous_business_day"
+    NEXT_BUSINESS_DAY = "next_business_day"
+
+
 class EmployerModel(Base):
     """Represent Employer Model."""
 
@@ -34,6 +49,26 @@ class EmployerModel(Base):
     country_code: Mapped[str] = mapped_column(String(2), default="CL")
     started_at: Mapped[date] = mapped_column(Date)
     ended_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    payment_date_rule: Mapped[EmployerPaymentDateRule] = mapped_column(
+        SAEnum(
+            EmployerPaymentDateRule,
+            name="employer_payment_date_rule",
+            values_callable=enum_values,
+        ),
+        default=EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH,
+    )
+    payment_month_offset: Mapped[int] = mapped_column(default=0)
+    payment_day_of_month: Mapped[int | None] = mapped_column(nullable=True)
+    payment_business_day_offset: Mapped[int] = mapped_column(default=0)
+    payment_calendar_day_offset: Mapped[int] = mapped_column(default=0)
+    payment_fixed_day_roll: Mapped[EmployerFixedDayRoll] = mapped_column(
+        SAEnum(
+            EmployerFixedDayRoll,
+            name="employer_fixed_day_roll",
+            values_callable=enum_values,
+        ),
+        default=EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY,
+    )
 
     payroll_periods: Mapped[list["PayrollPeriodModel"]] = relationship(
         back_populates="employer"

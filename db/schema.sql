@@ -120,14 +120,77 @@ EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
+DO $$ BEGIN
+    CREATE TYPE employer_payment_date_rule AS ENUM (
+        'last_business_day_of_month',
+        'fixed_day_of_month',
+        'calendar_days_before_end_of_month'
+    );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_type enum_type
+        JOIN pg_enum enum_value ON enum_type.oid = enum_value.enumtypid
+        WHERE enum_type.typname = 'employer_payment_date_rule'
+          AND enum_value.enumlabel = 'calendar_days_before_end_of_month'
+    ) THEN
+        ALTER TYPE employer_payment_date_rule
+        ADD VALUE 'calendar_days_before_end_of_month';
+    END IF;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE employer_fixed_day_roll AS ENUM (
+        'previous_business_day',
+        'next_business_day'
+    );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
 CREATE TABLE IF NOT EXISTS employers (
-    id           BIGSERIAL PRIMARY KEY,
-    name         VARCHAR(120) NOT NULL UNIQUE,
-    tax_id       VARCHAR(32),
-    country_code CHAR(2)      NOT NULL DEFAULT 'CL',
-    started_at   DATE         NOT NULL,
-    ended_at     DATE
+    id                          BIGSERIAL PRIMARY KEY,
+    name                        VARCHAR(120)               NOT NULL UNIQUE,
+    tax_id                      VARCHAR(32),
+    country_code                CHAR(2)                    NOT NULL DEFAULT 'CL',
+    started_at                  DATE                       NOT NULL,
+    ended_at                    DATE,
+    payment_date_rule           employer_payment_date_rule NOT NULL
+        DEFAULT 'last_business_day_of_month',
+    payment_month_offset        SMALLINT                   NOT NULL DEFAULT 0
+        CHECK (payment_month_offset >= 0),
+    payment_day_of_month        SMALLINT
+        CHECK (payment_day_of_month BETWEEN 1 AND 31),
+    payment_business_day_offset SMALLINT                   NOT NULL DEFAULT 0
+        CHECK (payment_business_day_offset >= 0),
+    payment_calendar_day_offset SMALLINT                   NOT NULL DEFAULT 0
+        CHECK (payment_calendar_day_offset >= 0),
+    payment_fixed_day_roll      employer_fixed_day_roll    NOT NULL
+        DEFAULT 'previous_business_day'
 );
+
+ALTER TABLE employers
+    ADD COLUMN IF NOT EXISTS payment_date_rule employer_payment_date_rule NOT NULL
+        DEFAULT 'last_business_day_of_month';
+ALTER TABLE employers
+    ADD COLUMN IF NOT EXISTS payment_month_offset SMALLINT NOT NULL DEFAULT 0
+        CHECK (payment_month_offset >= 0);
+ALTER TABLE employers
+    ADD COLUMN IF NOT EXISTS payment_day_of_month SMALLINT
+        CHECK (payment_day_of_month BETWEEN 1 AND 31);
+ALTER TABLE employers
+    ADD COLUMN IF NOT EXISTS payment_business_day_offset SMALLINT NOT NULL DEFAULT 0
+        CHECK (payment_business_day_offset >= 0);
+ALTER TABLE employers
+    ADD COLUMN IF NOT EXISTS payment_calendar_day_offset SMALLINT NOT NULL DEFAULT 0
+        CHECK (payment_calendar_day_offset >= 0);
+ALTER TABLE employers
+    ADD COLUMN IF NOT EXISTS payment_fixed_day_roll employer_fixed_day_roll
+        NOT NULL DEFAULT 'previous_business_day';
 
 CREATE TABLE IF NOT EXISTS payroll_periods (
     id              BIGSERIAL PRIMARY KEY,

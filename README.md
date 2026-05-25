@@ -12,6 +12,8 @@ This repository implements a modular monolith for Chilean payroll operations wit
   prior salary difference
 - support for imported discount items such as health insurance, bonus advances,
   salary advances, and prior-month leave or absence adjustments
+- employer-level payment-date configuration for future payroll projections, with
+  a default rule of the last Chilean business day of the remuneration month
 - AFP, health, unemployment insurance, and income tax computation
 - payroll period review and PDF generation
 - FastAPI API, Typer CLI, and an operational HTML dashboard

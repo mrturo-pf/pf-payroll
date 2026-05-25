@@ -27,7 +27,11 @@ from payroll.infrastructure.db.models import (
     PayrollPeriodModel,
     PayrollSummaryModel,
 )
-from payroll.infrastructure.db.models.payroll import PayrollStatus
+from payroll.infrastructure.db.models.payroll import (
+    EmployerFixedDayRoll,
+    EmployerPaymentDateRule,
+    PayrollStatus,
+)
 from payroll.infrastructure.db.models.reference_data import (
     ContributionCapModel,
     ContributionCapType,
@@ -276,7 +280,24 @@ async def test_sa_payroll_repository_closes_previous_open_ended_employer() -> No
         ]
     )
 
+    created_employer = next(
+        item
+        for item in session.added
+        if isinstance(item, EmployerModel) and item.name == "NewCo"
+    )
     assert previous_employer.ended_at == date(2026, 1, 30)
+    assert (
+        created_employer.payment_date_rule
+        is EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH
+    )
+    assert created_employer.payment_month_offset == 0
+    assert created_employer.payment_day_of_month is None
+    assert created_employer.payment_business_day_offset == 0
+    assert created_employer.payment_calendar_day_offset == 0
+    assert (
+        created_employer.payment_fixed_day_roll
+        is EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY
+    )
 
 
 @pytest.mark.asyncio

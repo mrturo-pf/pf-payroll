@@ -67,6 +67,28 @@ make db-up DB_CONTAINER=my-payroll-db DB_PORT=5433 DB_PASSWORD=secret
 
 The schema lives in `db/schema.sql`, the default catalog data in `db/seed.sql`, the real operational bootstrap data in `db/seed_real.sql`, and test-only fixtures in `db/seed_test.sql`.
 
+Employer payment-date rules are currently configured **directly in the
+`employers` table**. New employers default to:
+
+- `payment_date_rule = 'last_business_day_of_month'`
+- `payment_month_offset = 0`
+- `payment_business_day_offset = 0`
+- `payment_calendar_day_offset = 0`
+- `payment_day_of_month = NULL`
+- `payment_fixed_day_roll = 'previous_business_day'`
+
+Examples:
+
+- last business day of the remuneration month: keep the defaults
+- penultimate business day: set `payment_business_day_offset = 1`
+- day 28 of the remuneration month: set `payment_date_rule = 'fixed_day_of_month'`
+  and `payment_day_of_month = 28`
+- day 5 of the following month: set `payment_date_rule = 'fixed_day_of_month'`,
+  `payment_month_offset = 1`, and `payment_day_of_month = 5`
+- 7 calendar days before month end: set
+  `payment_date_rule = 'calendar_days_before_end_of_month'` and
+  `payment_calendar_day_offset = 7`
+
 ## Adminer
 
 Start Adminer:

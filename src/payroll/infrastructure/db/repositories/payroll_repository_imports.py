@@ -19,6 +19,8 @@ from payroll.infrastructure.db.models import (
     PayrollConceptModel,
 )
 from payroll.infrastructure.db.models.payroll import (
+    EmployerFixedDayRoll,
+    EmployerPaymentDateRule,
     PayrollItemModel,
     PayrollPeriodModel,
     PayrollStatus,
@@ -128,6 +130,14 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                 employer = EmployerModel(
                     name=employer_name,
                     started_at=first_row.payment_date,
+                    payment_date_rule=(
+                        EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH
+                    ),
+                    payment_month_offset=0,
+                    payment_day_of_month=None,
+                    payment_business_day_offset=0,
+                    payment_calendar_day_offset=0,
+                    payment_fixed_day_roll=(EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY),
                 )
                 self._session.add(employer)
                 await self._session.flush()

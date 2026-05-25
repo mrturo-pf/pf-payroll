@@ -326,8 +326,8 @@ def test_xlsx_payroll_importer_maps_additional_taxable_income_columns() -> None:
         (
             b"period,employer,payment_date,employment_contract_kind,"
             b"vacation_incentive,holiday_bonus,availability_bonus,"
-            b"legal_gratuity_adjustment,prior_salary_difference,annual_bonus,net_pay\n"
-            b"Jan/2026,ACME,31/01/2026,indefinite,1000,2000,3000,4000,5000,6000,21000\n"
+            b"legal_gratuity_adjustment,prior_salary_difference,net_pay\n"
+            b"Jan/2026,ACME,31/01/2026,indefinite,1000,2000,3000,4000,5000,15000\n"
         ),
     )
 
@@ -337,10 +337,9 @@ def test_xlsx_payroll_importer_maps_additional_taxable_income_columns() -> None:
         "AVAILABILITY_BONUS",
         "LEGAL_GRATUITY_ADJUSTMENT",
         "PRIOR_SALARY_DIFFERENCE",
-        "ANNUAL_BONUS",
     ]
     assert all(row.amount_clp > Decimal("0") for row in rows)
-    assert all(row.expected_net_pay_clp == Decimal("21000") for row in rows)
+    assert all(row.expected_net_pay_clp == Decimal("15000") for row in rows)
 
 
 def test_xlsx_payroll_importer_maps_prior_month_leave_absence_discount() -> None:
@@ -365,17 +364,15 @@ def test_xlsx_payroll_importer_maps_bonus_advance_discount_columns() -> None:
         "sample.csv",
         (
             b"period,employer,payment_date,employment_contract_kind,"
-            b"vacation_bonus_advance,holiday_bonus_advance,annual_bonus_advance,"
-            b"salary_advance,net_pay\n"
-            b"Jan/2026,ACME,31/01/2026,indefinite,1000,2000,3000,4000,-10000\n"
+            b"vacation_bonus_advance,holiday_bonus_advance,salary_advance,net_pay\n"
+            b"Jan/2026,ACME,31/01/2026,indefinite,1000,2000,4000,-7000\n"
         ),
     )
 
     assert [row.concept_code for row in rows] == [
         "VACATION_BONUS_ADVANCE",
         "HOLIDAY_BONUS_ADVANCE",
-        "ANNUAL_BONUS_ADVANCE",
         "SALARY_ADVANCE",
     ]
     assert all(row.amount_clp > Decimal("0") for row in rows)
-    assert all(row.expected_net_pay_clp == Decimal("-10000") for row in rows)
+    assert all(row.expected_net_pay_clp == Decimal("-7000") for row in rows)

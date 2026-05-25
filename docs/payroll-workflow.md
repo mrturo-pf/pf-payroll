@@ -193,9 +193,9 @@ Jan/2026,ACME,2026-01-31,indefinite,1000000
 Full CSV:
 
 ```csv
-period,employer,payment_date,worked_days,employment_contract_kind,salary_base,monthly_legal_gratuity,teleworking_refund,health_insurance_employer_contribution,vacation_incentive,holiday_bonus,availability_bonus,legal_gratuity_adjustment,prior_salary_difference,annual_bonus,pension_base,pension_additional,health_base,health_plan_additional,health_insurance,vacation_bonus_advance,holiday_bonus_advance,annual_bonus_advance,salary_advance,prior_month_leave_absence_discount,net_pay
-Jan/2026,ACME,2026-01-31,30,indefinite,1000000,250000,50000,10030,0,0,45000,0,0,0,100000,25000,70000,87500,12000,5000,0,0,15000,3000,1130030
-Feb/2026,ACME,2026-02-28,28,fixed_term,1000000,250000,50000,10030,0,0,45000,0,15000,0,100000,25000,70000,87500,12000,0,10000,0,5000,3000,1150030
+period,employer,payment_date,worked_days,employment_contract_kind,salary_base,monthly_legal_gratuity,teleworking_refund,health_insurance_employer_contribution,vacation_incentive,holiday_bonus,availability_bonus,legal_gratuity_adjustment,prior_salary_difference,pension_base,pension_additional,health_base,health_plan_additional,health_insurance,vacation_bonus_advance,holiday_bonus_advance,salary_advance,prior_month_leave_absence_discount,net_pay
+Jan/2026,ACME,2026-01-31,30,indefinite,1000000,250000,50000,10030,0,0,45000,0,0,100000,25000,70000,87500,12000,5000,0,15000,3000,1130030
+Feb/2026,ACME,2026-02-28,28,fixed_term,1000000,250000,50000,10030,0,0,45000,0,15000,100000,25000,70000,87500,12000,0,10000,5000,3000,1150030
 ```
 
 Supported payroll amount columns:
@@ -209,7 +209,6 @@ Supported payroll amount columns:
 - `availability_bonus`
 - `legal_gratuity_adjustment`
 - `prior_salary_difference`
-- `annual_bonus`
 - `pension_base`
 - `pension_additional`
 - `health_base`
@@ -217,7 +216,6 @@ Supported payroll amount columns:
 - `health_insurance`
 - `vacation_bonus_advance`
 - `holiday_bonus_advance`
-- `annual_bonus_advance`
 - `salary_advance`
 - `prior_month_leave_absence_discount`
 
@@ -234,15 +232,15 @@ Column semantics:
 - `health_insurance_employer_contribution` imports an additional **taxable**
   income item, so it affects derived unemployment insurance and income tax.
 - `vacation_incentive`, `holiday_bonus`, `availability_bonus`,
-  `legal_gratuity_adjustment`, `prior_salary_difference`, and `annual_bonus`
-  import additional **taxable** income items, so they also affect derived
-  unemployment insurance and income tax.
+  `legal_gratuity_adjustment`, and `prior_salary_difference` import additional
+  **taxable** income items, so they also affect derived unemployment insurance
+  and income tax.
 - `health_insurance` imports an extra discount item for payroll deductions such
   as grouped complementary health-insurance charges; it affects net pay but is
   not treated as a mandatory social-security deduction.
-- `vacation_bonus_advance`, `holiday_bonus_advance`, `annual_bonus_advance`,
-  and `salary_advance` import advance discount items; they affect net pay only
-  and are not treated as mandatory social-security deductions.
+- `vacation_bonus_advance`, `holiday_bonus_advance`, and `salary_advance`
+  import advance discount items; they affect net pay only and are not treated
+  as mandatory social-security deductions.
 - `prior_month_leave_absence_discount` imports carry-over payroll discounts such
   as prior-month leave or absence adjustments; it affects net pay only.
 

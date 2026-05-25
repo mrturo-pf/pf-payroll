@@ -8,8 +8,8 @@ This repository implements a modular monolith for Chilean payroll operations wit
 
 - payroll import from CSV/XLSX
 - support for taxable imported income items such as legal gratuity, vacation
-  incentive, holiday bonus, availability bonus, legal gratuity adjustment,
-  prior salary difference, and annual bonus
+  incentive, holiday bonus, availability bonus, legal gratuity adjustment, and
+  prior salary difference
 - support for imported discount items such as health insurance, bonus advances,
   salary advances, and prior-month leave or absence adjustments
 - AFP, health, unemployment insurance, and income tax computation

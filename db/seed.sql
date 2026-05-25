@@ -114,7 +114,6 @@ INSERT INTO payroll_concepts (code, name, kind, is_taxable) VALUES
         TRUE
     ),
     ('PRIOR_SALARY_DIFFERENCE', 'Prior Salary Difference', 'income', TRUE),
-    ('ANNUAL_BONUS', 'Annual Bonus', 'income', TRUE),
     ('PENSION_BASE', 'Mandatory Pension Contribution', 'discount', FALSE),
     ('PENSION_ADDITIONAL', 'Additional Pension Contribution', 'discount', FALSE),
     ('HEALTH_BASE', 'Mandatory Health Contribution', 'discount', FALSE),
@@ -122,7 +121,6 @@ INSERT INTO payroll_concepts (code, name, kind, is_taxable) VALUES
     ('HEALTH_INSURANCE', 'Health Insurance', 'discount', FALSE),
     ('VACATION_BONUS_ADVANCE', 'Vacation Bonus Advance', 'discount', FALSE),
     ('HOLIDAY_BONUS_ADVANCE', 'Holiday Bonus Advance', 'discount', FALSE),
-    ('ANNUAL_BONUS_ADVANCE', 'Annual Bonus Advance', 'discount', FALSE),
     ('SALARY_ADVANCE', 'Salary Advance', 'discount', FALSE),
     (
         'PRIOR_MONTH_LEAVE_ABSENCE_DISCOUNT',

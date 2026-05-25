@@ -58,6 +58,20 @@ test:
 test-cov:
 	pytest --cov=src/payroll --cov-report=term-missing --cov-fail-under=100
 
+check:
+	@set -e; \
+	for target in lint dead-code typecheck duplicate-code test test-cov; do \
+		echo "==> make $$target"; \
+		if ! $(MAKE) --no-print-directory $$target; then \
+			echo "FAILED: $$target"; \
+			exit 1; \
+		fi; \
+	done; \
+	echo "All checks passed."
+
+duplicate-code:
+	npx --yes jscpd --mode strict --min-lines 10 --min-tokens 70 --threshold 1 --reporters console --ignore "**/.venv/**,**/build/**,**/dist/**" src tests
+
 lint:
 	ruff check --fix --exit-zero src tests
 	ruff format src tests

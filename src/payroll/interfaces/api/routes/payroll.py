@@ -3,6 +3,7 @@
 from dataclasses import asdict, replace
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Path, Request, UploadFile
 from fastapi.responses import Response
@@ -248,8 +249,7 @@ class PayrollPeriodRangeRead(BaseModel):
     period_month: int
     start_date: date
     end_date: date
-    is_current: bool
-    inferred: bool
+    position: Literal["previous", "current", "future"]
 
 
 class PayrollPeriodDetailRead(BaseModel):
@@ -291,11 +291,30 @@ def to_payroll_summary_read(summary: PayrollSummaryDTO) -> PayrollSummaryRead:
     )
 
 
-def to_payroll_period_range_read(
-    period_range: PayrollPeriodRangeDTO,
-) -> PayrollPeriodRangeRead:
-    """Convert to payroll period range read."""
-    return PayrollPeriodRangeRead(**asdict(period_range))
+def to_payroll_period_range_reads(
+    period_ranges: list[PayrollPeriodRangeDTO],
+) -> list[PayrollPeriodRangeRead]:
+    """Convert payroll period ranges to API reads with relative positions."""
+    current_index = next(
+        (index for index, item in enumerate(period_ranges) if item.is_current),
+        None,
+    )
+    return [
+        PayrollPeriodRangeRead(
+            period_year=item.period_year,
+            period_month=item.period_month,
+            start_date=item.start_date,
+            end_date=item.end_date,
+            position=(
+                "current"
+                if item.is_current
+                else "previous"
+                if current_index is not None and index < current_index
+                else "future"
+            ),
+        )
+        for index, item in enumerate(period_ranges)
+    ]
 
 
 def to_deflated_amount_read(amount: DeflatedAmountDTO) -> DeflatedAmountRead:
@@ -362,10 +381,7 @@ async def list_payroll_period_ranges(
     queries: PayrollQueries = Depends(get_payroll_queries),
 ) -> list[PayrollPeriodRangeRead]:
     """List payroll period date ranges around the current period."""
-    return [
-        to_payroll_period_range_read(item)
-        for item in await queries.list_period_ranges()
-    ]
+    return to_payroll_period_range_reads(await queries.list_period_ranges())
 
 
 @router.get("/{period_id}", response_model=PayrollPeriodDetailRead)

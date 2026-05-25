@@ -92,9 +92,17 @@ source .venv/bin/activate
 make lint
 make dead-code
 make typecheck
-make test
-make test-cov
 ```
+
+Run the full validation flow:
+
+```bash
+source .venv/bin/activate
+make check
+```
+
+`make check` runs `lint`, `dead-code`, `typecheck`, `duplicate-code`, `test`,
+and `test-cov` in that order and stops on the first failure.
 
 Validation and standards enforcement are split as follows:
 

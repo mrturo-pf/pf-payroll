@@ -1725,6 +1725,7 @@ async def test_sqlalchemy_payroll_repository_lists_period_ranges() -> None:
     session = FakeSession(
         [
             FakeResult(first_row=(current_period, current_employer)),
+            FakeResult(first_row=None),
             FakeResult(scalar_rows=[previous_period]),
         ]
     )
@@ -1796,6 +1797,56 @@ async def test_sqlalchemy_payroll_repository_applies_effective_processing_dates(
     assert result[13].start_date == date(2026, 5, 23)
     assert result[13].end_date == date(2026, 6, 22)
     assert result[13].inferred is True
+
+
+@pytest.mark.asyncio
+async def test_sqlalchemy_payroll_repository_extends_current_period_until_today() -> (
+    None
+):
+    """Test a pending next payroll extends the current period through today."""
+    current_period = PayrollPeriodModel(
+        id=17,
+        employer_id=1,
+        period_year=2026,
+        period_month=4,
+        payment_date=date(2026, 4, 29),
+        status=PayrollStatus.ACTUAL,
+        declared_net_pay_clp=Decimal("2978086"),
+    )
+    current_employer = EmployerModel(
+        id=1,
+        name="WALMART-CHILE",
+        country_code="CL",
+        started_at=date(2024, 11, 18),
+        payment_date_rule=EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH,
+        payment_month_offset=0,
+        payment_day_of_month=None,
+        payment_business_day_offset=1,
+        payment_calendar_day_offset=0,
+        payment_effective_on_processing_next_day=True,
+        payment_fixed_day_roll=EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY,
+    )
+    pending_next_period = SimpleNamespace(id=18)
+    session = FakeSession(
+        [
+            FakeResult(first_row=(current_period, current_employer)),
+            FakeResult(first_row=pending_next_period),
+            FakeResult(scalar_rows=[]),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_period_ranges(today=date(2026, 5, 25))
+
+    assert result[12].period_year == 2026
+    assert result[12].period_month == 4
+    assert result[12].start_date == date(2026, 4, 29)
+    assert result[12].end_date == date(2026, 5, 25)
+    assert result[12].is_current is True
+    assert result[13].period_year == 2026
+    assert result[13].period_month == 5
+    assert result[13].start_date == date(2026, 5, 26)
+    assert result[13].end_date == date(2026, 6, 25)
 
 
 @pytest.mark.asyncio

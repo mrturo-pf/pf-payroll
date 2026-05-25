@@ -38,6 +38,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
     ) -> list[PayrollPeriodRangeDTO]:
         """List the current period plus 12 previous and 12 next date ranges."""
         reference_date = today or date.today()
+        has_pending_next_period = False
         current_result = await self._session.execute(
             select(PayrollPeriodModel, EmployerModel)
             .join(EmployerModel, PayrollPeriodModel.employer_id == EmployerModel.id)
@@ -79,6 +80,18 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             )
             current_fixed_day_roll = current_employer.payment_fixed_day_roll.value
             current_inferred = False
+            pending_next_result = await self._session.execute(
+                select(PayrollPeriodModel.id)
+                .where(PayrollPeriodModel.employer_id == current_employer.id)
+                .where(PayrollPeriodModel.payment_date > current_start)
+                .where(PayrollPeriodModel.declared_net_pay_clp.is_(None))
+                .order_by(
+                    PayrollPeriodModel.payment_date.asc(),
+                    PayrollPeriodModel.id.asc(),
+                )
+                .limit(1)
+            )
+            has_pending_next_period = pending_next_result.first() is not None
 
         previous_result = await self._session.execute(
             select(PayrollPeriodModel)
@@ -150,26 +163,33 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             PayrollPeriodRangeDTO(
                 period_year=period_month.year,
                 period_month=period_month.month,
-                start_date=resolve_payment_date(
-                    period_month.year,
-                    period_month.month,
-                    country_code=current_country_code,
-                    payment_date_rule=current_rule,
-                    payment_month_offset=current_month_offset,
-                    payment_day_of_month=current_day_of_month,
-                    payment_business_day_offset=current_business_day_offset,
-                    payment_calendar_day_offset=current_calendar_day_offset,
-                    payment_effective_on_processing_next_day=(
-                        current_effective_on_processing_next_day
-                    ),
-                    payment_fixed_day_roll=current_fixed_day_roll,
+                start_date=(
+                    reference_date + timedelta(days=1)
+                    if has_pending_next_period and month_offset == 1
+                    else resolve_payment_date(
+                        period_month.year,
+                        period_month.month,
+                        country_code=current_country_code,
+                        payment_date_rule=current_rule,
+                        payment_month_offset=current_month_offset,
+                        payment_day_of_month=current_day_of_month,
+                        payment_business_day_offset=current_business_day_offset,
+                        payment_calendar_day_offset=current_calendar_day_offset,
+                        payment_effective_on_processing_next_day=(
+                            current_effective_on_processing_next_day
+                        ),
+                        payment_fixed_day_roll=current_fixed_day_roll,
+                    )
                 ),
                 end_date=date(period_month.year, period_month.month, 1),
                 is_current=False,
                 inferred=True,
             )
-            for period_month in (
-                add_months(date(current_year, current_month, 1), month_offset)
+            for month_offset, period_month in (
+                (
+                    month_offset,
+                    add_months(date(current_year, current_month, 1), month_offset),
+                )
                 for month_offset in range(1, 13)
             )
         ]

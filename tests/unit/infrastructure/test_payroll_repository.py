@@ -1688,6 +1688,93 @@ async def test_sqlalchemy_payroll_repository_lists_period_summaries() -> None:
 
 
 @pytest.mark.asyncio
+async def test_sqlalchemy_payroll_repository_lists_period_ranges() -> None:
+    """Test payroll period ranges use the latest paid payroll and employer rule."""
+    current_period = PayrollPeriodModel(
+        id=17,
+        employer_id=1,
+        period_year=2026,
+        period_month=3,
+        payment_date=date(2026, 3, 28),
+        status=PayrollStatus.ACTUAL,
+        declared_net_pay_clp=Decimal("2978086"),
+    )
+    current_employer = EmployerModel(
+        id=1,
+        name="WALMART-CHILE",
+        country_code="CL",
+        started_at=date(2024, 11, 18),
+        payment_date_rule=EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH,
+        payment_month_offset=0,
+        payment_day_of_month=None,
+        payment_business_day_offset=1,
+        payment_calendar_day_offset=0,
+        payment_fixed_day_roll=EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY,
+    )
+    previous_period = PayrollPeriodModel(
+        id=16,
+        employer_id=1,
+        period_year=2026,
+        period_month=2,
+        payment_date=date(2026, 2, 26),
+        status=PayrollStatus.ACTUAL,
+        declared_net_pay_clp=Decimal("2983237"),
+    )
+    session = FakeSession(
+        [
+            FakeResult(first_row=(current_period, current_employer)),
+            FakeResult(scalar_rows=[previous_period]),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_period_ranges(today=date(2026, 3, 31))
+
+    assert "declared_net_pay_clp IS NOT NULL" in str(session.executed[0])
+    assert "payment_date <=" in str(session.executed[0])
+    assert len(result) == 25
+    assert result[11].period_year == 2026
+    assert result[11].period_month == 2
+    assert result[11].start_date == date(2026, 2, 26)
+    assert result[11].end_date == date(2026, 3, 27)
+    assert result[11].inferred is False
+    assert result[12].is_current is True
+    assert result[12].start_date == date(2026, 3, 28)
+    assert result[12].end_date == date(2026, 4, 28)
+    assert result[13].period_year == 2026
+    assert result[13].period_month == 4
+    assert result[13].start_date == date(2026, 4, 29)
+    assert result[13].end_date == date(2026, 5, 27)
+    assert result[0].inferred is True
+    assert result[0].start_date == date(2025, 3, 31)
+
+
+@pytest.mark.asyncio
+async def test_sqlalchemy_payroll_repository_lists_period_ranges_without_current() -> (
+    None
+):
+    """Test payroll period ranges fall back to the current calendar month."""
+    session = FakeSession(
+        [
+            FakeResult(first_row=None),
+            FakeResult(scalar_rows=[]),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_period_ranges(today=date(2026, 1, 15))
+
+    assert len(result) == 25
+    assert result[12].period_year == 2026
+    assert result[12].period_month == 1
+    assert result[12].start_date == date(2026, 1, 30)
+    assert result[12].end_date == date(2026, 2, 26)
+    assert result[12].is_current is True
+    assert result[12].inferred is True
+    assert result[13].start_date == date(2026, 2, 27)
+
+
+@pytest.mark.asyncio
 async def test_sa_payroll_repository_builds_income_tax_context_and_bracket() -> None:
     """Test sqlalchemy payroll repository builds income tax context and bracket."""
     period = PayrollPeriodModel(

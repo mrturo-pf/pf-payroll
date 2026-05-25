@@ -8,6 +8,7 @@ import pytest
 from payroll.application.dto import (
     PayrollItemDetailDTO,
     PayrollPeriodDetailDTO,
+    PayrollPeriodRangeDTO,
     PayrollSummaryDTO,
 )
 from payroll.application.use_cases.payroll_queries import PayrollQueries
@@ -78,6 +79,21 @@ class StubPayrollRepository:
             )
         ]
 
+    async def list_period_ranges(
+        self, *, today: date | None = None
+    ) -> list[PayrollPeriodRangeDTO]:
+        """List period ranges."""
+        return [
+            PayrollPeriodRangeDTO(
+                period_year=(today or date(2026, 1, 15)).year,
+                period_month=(today or date(2026, 1, 15)).month,
+                start_date=date(2026, 1, 31),
+                end_date=date(2026, 2, 27),
+                is_current=True,
+                inferred=False,
+            )
+        ]
+
 
 @pytest.mark.asyncio
 async def test_payroll_queries_return_detail_and_summary() -> None:
@@ -97,3 +113,22 @@ async def test_payroll_queries_raise_for_missing_period() -> None:
     """Test payroll queries raise for missing period."""
     with pytest.raises(ValueError, match="Payroll period 404 was not found."):
         await PayrollQueries(StubPayrollRepository()).get_period_detail(404)
+
+
+@pytest.mark.asyncio
+async def test_payroll_queries_return_period_ranges() -> None:
+    """Test payroll queries return payroll period date ranges."""
+    result = await PayrollQueries(StubPayrollRepository()).list_period_ranges(
+        today=date(2026, 1, 15)
+    )
+
+    assert result == [
+        PayrollPeriodRangeDTO(
+            period_year=2026,
+            period_month=1,
+            start_date=date(2026, 1, 31),
+            end_date=date(2026, 2, 27),
+            is_current=True,
+            inferred=False,
+        )
+    ]

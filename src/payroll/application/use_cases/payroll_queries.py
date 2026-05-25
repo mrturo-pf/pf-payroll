@@ -3,7 +3,13 @@
 from dataclasses import dataclass
 
 from payroll.application.errors import PayrollPeriodNotFoundError
-from payroll.application.dto import PayrollPeriodDetailDTO, PayrollSummaryDTO
+from datetime import date
+
+from payroll.application.dto import (
+    PayrollPeriodDetailDTO,
+    PayrollPeriodRangeDTO,
+    PayrollSummaryDTO,
+)
 from payroll.application.ports.repositories import PayrollRepository
 
 
@@ -25,3 +31,9 @@ class PayrollQueries:
     async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
         """List period summaries."""
         return await self.repository.list_period_summaries()
+
+    async def list_period_ranges(
+        self, *, today: date | None = None
+    ) -> list[PayrollPeriodRangeDTO]:
+        """List payroll period date ranges around the current period."""
+        return await self.repository.list_period_ranges(today=today)

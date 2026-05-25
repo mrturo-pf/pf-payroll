@@ -1,10 +1,13 @@
 """Query-oriented payroll repository operations."""
 
+from datetime import date, timedelta
+
 from sqlalchemy import select
 
 from payroll.application.dto import (
     PayrollItemDetailDTO,
     PayrollPeriodDetailDTO,
+    PayrollPeriodRangeDTO,
     PayrollSummaryDTO,
 )
 from payroll.infrastructure.db.models import (
@@ -15,6 +18,8 @@ from payroll.infrastructure.db.models import (
     PayrollSummaryModel,
 )
 from payroll.infrastructure.db.models.payroll import (
+    EmployerFixedDayRoll,
+    EmployerPaymentDateRule,
     PayrollItemModel,
     PayrollPeriodModel,
 )
@@ -22,10 +27,175 @@ from payroll.infrastructure.db.repositories.payroll_repository_shared import (
     SqlAlchemyPayrollRepositoryBase,
     build_payroll_summary_dto,
 )
+from payroll.shared.dates import add_months, resolve_payment_date
 
 
 class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
     """Read-only payroll queries."""
+
+    async def list_period_ranges(
+        self, *, today: date | None = None
+    ) -> list[PayrollPeriodRangeDTO]:
+        """List the current period plus 12 previous and 12 next date ranges."""
+        reference_date = today or date.today()
+        current_result = await self._session.execute(
+            select(PayrollPeriodModel, EmployerModel)
+            .join(EmployerModel, PayrollPeriodModel.employer_id == EmployerModel.id)
+            .where(PayrollPeriodModel.declared_net_pay_clp.is_not(None))
+            .where(PayrollPeriodModel.payment_date <= reference_date)
+            .order_by(
+                PayrollPeriodModel.payment_date.desc(),
+                PayrollPeriodModel.id.desc(),
+            )
+            .limit(1)
+        )
+        current_row = current_result.first()
+        if current_row is None:
+            current_year = reference_date.year
+            current_month = reference_date.month
+            current_start = resolve_payment_date(current_year, current_month)
+            current_country_code = "CL"
+            current_rule = EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH.value
+            current_month_offset = 0
+            current_day_of_month = None
+            current_business_day_offset = 0
+            current_calendar_day_offset = 0
+            current_fixed_day_roll = EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY.value
+            current_inferred = True
+        else:
+            current_period, current_employer = current_row
+            current_year = current_period.period_year
+            current_month = current_period.period_month
+            current_start = current_period.payment_date
+            current_country_code = current_employer.country_code
+            current_rule = current_employer.payment_date_rule.value
+            current_month_offset = current_employer.payment_month_offset
+            current_day_of_month = current_employer.payment_day_of_month
+            current_business_day_offset = current_employer.payment_business_day_offset
+            current_calendar_day_offset = current_employer.payment_calendar_day_offset
+            current_fixed_day_roll = current_employer.payment_fixed_day_roll.value
+            current_inferred = False
+
+        previous_result = await self._session.execute(
+            select(PayrollPeriodModel)
+            .where(PayrollPeriodModel.payment_date < current_start)
+            .order_by(
+                PayrollPeriodModel.payment_date.desc(),
+                PayrollPeriodModel.id.desc(),
+            )
+            .limit(12)
+        )
+        previous_periods = list(previous_result.scalars().all())
+        previous_ranges = [
+            PayrollPeriodRangeDTO(
+                period_year=period.period_year,
+                period_month=period.period_month,
+                start_date=period.payment_date,
+                end_date=period.payment_date,
+                is_current=False,
+                inferred=False,
+            )
+            for period in reversed(previous_periods)
+        ]
+
+        if len(previous_ranges) < 12:
+            if previous_ranges:
+                seed_month = add_months(
+                    date(
+                        previous_ranges[0].period_year,
+                        previous_ranges[0].period_month,
+                        1,
+                    ),
+                    -1,
+                )
+            else:
+                seed_month = add_months(date(current_year, current_month, 1), -1)
+            inferred_previous: list[PayrollPeriodRangeDTO] = []
+            for extra_offset in range(12 - len(previous_ranges)):
+                inferred_month = add_months(
+                    seed_month, -(12 - len(previous_ranges) - 1) + extra_offset
+                )
+                inferred_previous.append(
+                    PayrollPeriodRangeDTO(
+                        period_year=inferred_month.year,
+                        period_month=inferred_month.month,
+                        start_date=resolve_payment_date(
+                            inferred_month.year,
+                            inferred_month.month,
+                        ),
+                        end_date=resolve_payment_date(
+                            inferred_month.year,
+                            inferred_month.month,
+                        ),
+                        is_current=False,
+                        inferred=True,
+                    )
+                )
+            previous_ranges = inferred_previous + previous_ranges
+
+        current_range = PayrollPeriodRangeDTO(
+            period_year=current_year,
+            period_month=current_month,
+            start_date=current_start,
+            end_date=current_start,
+            is_current=True,
+            inferred=current_inferred,
+        )
+
+        future_ranges = [
+            PayrollPeriodRangeDTO(
+                period_year=period_month.year,
+                period_month=period_month.month,
+                start_date=resolve_payment_date(
+                    period_month.year,
+                    period_month.month,
+                    country_code=current_country_code,
+                    payment_date_rule=current_rule,
+                    payment_month_offset=current_month_offset,
+                    payment_day_of_month=current_day_of_month,
+                    payment_business_day_offset=current_business_day_offset,
+                    payment_calendar_day_offset=current_calendar_day_offset,
+                    payment_fixed_day_roll=current_fixed_day_roll,
+                ),
+                end_date=date(period_month.year, period_month.month, 1),
+                is_current=False,
+                inferred=True,
+            )
+            for period_month in (
+                add_months(date(current_year, current_month, 1), month_offset)
+                for month_offset in range(1, 13)
+            )
+        ]
+        trailing_start = resolve_payment_date(
+            add_months(date(current_year, current_month, 1), 13).year,
+            add_months(date(current_year, current_month, 1), 13).month,
+            country_code=current_country_code,
+            payment_date_rule=current_rule,
+            payment_month_offset=current_month_offset,
+            payment_day_of_month=current_day_of_month,
+            payment_business_day_offset=current_business_day_offset,
+            payment_calendar_day_offset=current_calendar_day_offset,
+            payment_fixed_day_roll=current_fixed_day_roll,
+        )
+        all_ranges = previous_ranges + [current_range] + future_ranges
+        completed_ranges: list[PayrollPeriodRangeDTO] = []
+        for index, period_range in enumerate(all_ranges):
+            next_start = (
+                all_ranges[index + 1].start_date
+                if index + 1 < len(all_ranges)
+                else trailing_start
+            )
+            completed_ranges.append(
+                PayrollPeriodRangeDTO(
+                    period_year=period_range.period_year,
+                    period_month=period_range.period_month,
+                    start_date=period_range.start_date,
+                    end_date=next_start - timedelta(days=1),
+                    is_current=period_range.is_current,
+                    inferred=period_range.inferred,
+                )
+            )
+        return completed_ranges
 
     async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO | None:
         """Get period detail."""

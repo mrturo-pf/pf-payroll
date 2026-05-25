@@ -11,6 +11,7 @@ from payroll.application.errors import PayrollPeriodNotFoundError
 from payroll.application.dto import (
     PayrollItemDetailDTO,
     PayrollPeriodDetailDTO,
+    PayrollPeriodRangeDTO,
     PayrollSummaryDTO,
 )
 from payroll.interfaces.api.dependencies import get_payroll_queries
@@ -91,6 +92,27 @@ class FakePayrollQueries:
             )
         ]
 
+    async def list_period_ranges(self) -> list[PayrollPeriodRangeDTO]:
+        """List period ranges."""
+        return [
+            PayrollPeriodRangeDTO(
+                period_year=2025,
+                period_month=12,
+                start_date=date(2025, 12, 31),
+                end_date=date(2026, 1, 30),
+                is_current=False,
+                inferred=True,
+            ),
+            PayrollPeriodRangeDTO(
+                period_year=2026,
+                period_month=1,
+                start_date=date(2026, 1, 31),
+                end_date=date(2026, 2, 27),
+                is_current=True,
+                inferred=False,
+            ),
+        ]
+
 
 def test_payroll_query_endpoints() -> None:
     """Test payroll query endpoints."""
@@ -98,11 +120,31 @@ def test_payroll_query_endpoints() -> None:
     client = TestClient(app)
 
     try:
+        range_response = client.get("/payroll/period-range")
         summary_response = client.get("/payroll/summary")
         detail_response = client.get("/payroll/7")
     finally:
         app.dependency_overrides.clear()
 
+    assert range_response.status_code == 200
+    assert range_response.json() == [
+        {
+            "period_year": 2025,
+            "period_month": 12,
+            "start_date": "2025-12-31",
+            "end_date": "2026-01-30",
+            "is_current": False,
+            "inferred": True,
+        },
+        {
+            "period_year": 2026,
+            "period_month": 1,
+            "start_date": "2026-01-31",
+            "end_date": "2026-02-27",
+            "is_current": True,
+            "inferred": False,
+        },
+    ]
     assert summary_response.status_code == 200
     assert summary_response.json() == [
         {

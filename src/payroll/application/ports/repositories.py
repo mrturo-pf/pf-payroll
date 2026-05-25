@@ -26,6 +26,7 @@ from payroll.application.dto import (
     ImportPayrollResultDTO,
     ImportPayrollRowDTO,
     PayrollPeriodDetailDTO,
+    PayrollPeriodRangeDTO,
     PayrollConceptDTO,
     PayrollSummaryDTO,
     PensionInstitutionDTO,
@@ -140,6 +141,12 @@ class PayrollRepository(Protocol):
 
     async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
         """List period summaries."""
+        ...
+
+    async def list_period_ranges(
+        self, *, today: date | None = None
+    ) -> list[PayrollPeriodRangeDTO]:
+        """List payroll period date ranges around the current period."""
         ...
 
     async def get_income_tax_context(

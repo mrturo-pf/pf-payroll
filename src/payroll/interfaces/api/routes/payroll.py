@@ -17,6 +17,7 @@ from payroll.application.dto import (
     DeflateAmountsCommandDTO,
     DeflatedAmountDTO,
     ComputeIncomeTaxCommandDTO,
+    PayrollPeriodRangeDTO,
     PayrollSummaryDTO,
 )
 from payroll.interfaces.api.errors import to_http_exception
@@ -240,6 +241,17 @@ class PayrollSummaryRead(BaseModel):
     net_pay_clp: str
 
 
+class PayrollPeriodRangeRead(BaseModel):
+    """Represent Payroll Period Range Read."""
+
+    period_year: int
+    period_month: int
+    start_date: date
+    end_date: date
+    is_current: bool
+    inferred: bool
+
+
 class PayrollPeriodDetailRead(BaseModel):
     """Represent Payroll Period Detail Read."""
 
@@ -277,6 +289,13 @@ def to_payroll_summary_read(summary: PayrollSummaryDTO) -> PayrollSummaryRead:
         total_discounts_clp=str(summary.total_discounts_clp),
         net_pay_clp=str(summary.net_pay_clp),
     )
+
+
+def to_payroll_period_range_read(
+    period_range: PayrollPeriodRangeDTO,
+) -> PayrollPeriodRangeRead:
+    """Convert to payroll period range read."""
+    return PayrollPeriodRangeRead(**asdict(period_range))
 
 
 def to_deflated_amount_read(amount: DeflatedAmountDTO) -> DeflatedAmountRead:
@@ -335,6 +354,17 @@ async def list_payroll_summaries(
     """List payroll summaries."""
     return [
         to_payroll_summary_read(item) for item in await queries.list_period_summaries()
+    ]
+
+
+@router.get("/period-range", response_model=list[PayrollPeriodRangeRead])
+async def list_payroll_period_ranges(
+    queries: PayrollQueries = Depends(get_payroll_queries),
+) -> list[PayrollPeriodRangeRead]:
+    """List payroll period date ranges around the current period."""
+    return [
+        to_payroll_period_range_read(item)
+        for item in await queries.list_period_ranges()
     ]
 
 

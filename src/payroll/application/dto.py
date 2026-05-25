@@ -417,6 +417,18 @@ class PayrollPeriodDetailDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class PayrollPeriodRangeDTO:
+    """Represent a payroll period date range."""
+
+    period_year: int
+    period_month: int
+    start_date: date
+    end_date: date
+    is_current: bool
+    inferred: bool
+
+
+@dataclass(frozen=True, slots=True)
 class GeneratedPayrollReportDTO:
     """Represent Generated Payroll Report DTO."""
 

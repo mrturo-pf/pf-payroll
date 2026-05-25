@@ -47,6 +47,22 @@ def last_business_day_of_month(value: date, *, country_code: str = "CL") -> date
     return previous_business_day(last_day_of_month(value), country_code=country_code)
 
 
+def resolve_effective_payment_date(
+    scheduled_payment_date: date,
+    *,
+    country_code: str = "CL",
+    payment_effective_on_processing_next_day: bool = False,
+) -> date:
+    """Return the effective payment date after optional prior-day processing."""
+    if not payment_effective_on_processing_next_day:
+        return scheduled_payment_date
+    processing_date = previous_business_day(
+        scheduled_payment_date - timedelta(days=1),
+        country_code=country_code,
+    )
+    return processing_date + timedelta(days=1)
+
+
 def resolve_payment_date(
     period_year: int,
     period_month: int,
@@ -57,6 +73,7 @@ def resolve_payment_date(
     payment_day_of_month: int | None = None,
     payment_business_day_offset: int = 0,
     payment_calendar_day_offset: int = 0,
+    payment_effective_on_processing_next_day: bool = False,
     payment_fixed_day_roll: str = "previous_business_day",
 ) -> date:
     """Resolve the employer payment date for a remuneration month."""
@@ -68,18 +85,44 @@ def resolve_payment_date(
             target_month.month,
             min(day, last_day_of_month(target_month).day),
         )
-        if payment_fixed_day_roll == "next_business_day":
-            return next_business_day(candidate, country_code=country_code)
-        return previous_business_day(candidate, country_code=country_code)
+        scheduled_payment_date = (
+            next_business_day(candidate, country_code=country_code)
+            if payment_fixed_day_roll == "next_business_day"
+            else previous_business_day(candidate, country_code=country_code)
+        )
+        return resolve_effective_payment_date(
+            scheduled_payment_date,
+            country_code=country_code,
+            payment_effective_on_processing_next_day=(
+                payment_effective_on_processing_next_day
+            ),
+        )
 
     if payment_date_rule == "calendar_days_before_end_of_month":
-        return last_day_of_month(target_month) - timedelta(
+        scheduled_payment_date = last_day_of_month(target_month) - timedelta(
             days=payment_calendar_day_offset
         )
-
-    candidate = last_business_day_of_month(target_month, country_code=country_code)
-    for _ in range(payment_business_day_offset):
-        candidate = previous_business_day(
-            candidate - timedelta(days=1), country_code=country_code
+        return resolve_effective_payment_date(
+            scheduled_payment_date,
+            country_code=country_code,
+            payment_effective_on_processing_next_day=(
+                payment_effective_on_processing_next_day
+            ),
         )
-    return candidate
+
+    scheduled_payment_date = last_business_day_of_month(
+        target_month,
+        country_code=country_code,
+    )
+    for _ in range(payment_business_day_offset):
+        scheduled_payment_date = previous_business_day(
+            scheduled_payment_date - timedelta(days=1),
+            country_code=country_code,
+        )
+    return resolve_effective_payment_date(
+        scheduled_payment_date,
+        country_code=country_code,
+        payment_effective_on_processing_next_day=(
+            payment_effective_on_processing_next_day
+        ),
+    )

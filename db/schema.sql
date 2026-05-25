@@ -169,6 +169,7 @@ CREATE TABLE IF NOT EXISTS employers (
         CHECK (payment_business_day_offset >= 0),
     payment_calendar_day_offset SMALLINT                   NOT NULL DEFAULT 0
         CHECK (payment_calendar_day_offset >= 0),
+    payment_effective_on_processing_next_day BOOLEAN       NOT NULL DEFAULT FALSE,
     payment_fixed_day_roll      employer_fixed_day_roll    NOT NULL
         DEFAULT 'previous_business_day'
 );
@@ -188,6 +189,9 @@ ALTER TABLE employers
 ALTER TABLE employers
     ADD COLUMN IF NOT EXISTS payment_calendar_day_offset SMALLINT NOT NULL DEFAULT 0
         CHECK (payment_calendar_day_offset >= 0);
+ALTER TABLE employers
+    ADD COLUMN IF NOT EXISTS payment_effective_on_processing_next_day BOOLEAN
+        NOT NULL DEFAULT FALSE;
 ALTER TABLE employers
     ADD COLUMN IF NOT EXISTS payment_fixed_day_roll employer_fixed_day_roll
         NOT NULL DEFAULT 'previous_business_day';

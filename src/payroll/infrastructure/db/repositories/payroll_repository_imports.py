@@ -137,6 +137,7 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                     payment_day_of_month=None,
                     payment_business_day_offset=0,
                     payment_calendar_day_offset=0,
+                    payment_effective_on_processing_next_day=False,
                     payment_fixed_day_roll=(EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY),
                 )
                 self._session.add(employer)

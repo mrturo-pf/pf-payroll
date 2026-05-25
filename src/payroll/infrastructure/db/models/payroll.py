@@ -61,6 +61,9 @@ class EmployerModel(Base):
     payment_day_of_month: Mapped[int | None] = mapped_column(nullable=True)
     payment_business_day_offset: Mapped[int] = mapped_column(default=0)
     payment_calendar_day_offset: Mapped[int] = mapped_column(default=0)
+    payment_effective_on_processing_next_day: Mapped[bool] = mapped_column(
+        default=False
+    )
     payment_fixed_day_roll: Mapped[EmployerFixedDayRoll] = mapped_column(
         SAEnum(
             EmployerFixedDayRoll,

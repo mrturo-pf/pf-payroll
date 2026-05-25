@@ -74,6 +74,7 @@ Employer payment-date rules are currently configured **directly in the
 - `payment_month_offset = 0`
 - `payment_business_day_offset = 0`
 - `payment_calendar_day_offset = 0`
+- `payment_effective_on_processing_next_day = FALSE`
 - `payment_day_of_month = NULL`
 - `payment_fixed_day_roll = 'previous_business_day'`
 
@@ -88,6 +89,11 @@ Examples:
 - 7 calendar days before month end: set
   `payment_date_rule = 'calendar_days_before_end_of_month'` and
   `payment_calendar_day_offset = 7`
+- when the employer initiates the transfer on the previous business day and it
+  settles on the next calendar day, set
+  `payment_effective_on_processing_next_day = TRUE`; this only shifts inferred
+  payment dates when non-business gaps exist between processing and the nominal
+  payment date
 
 ## Adminer
 

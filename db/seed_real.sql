@@ -30,6 +30,7 @@ INSERT INTO employers (
     payment_day_of_month,
     payment_business_day_offset,
     payment_calendar_day_offset,
+    payment_effective_on_processing_next_day,
     payment_fixed_day_roll
 ) VALUES
     (
@@ -42,6 +43,7 @@ INSERT INTO employers (
         NULL,
         0,
         0,
+        FALSE,
         'previous_business_day'
     ),
     (
@@ -54,6 +56,7 @@ INSERT INTO employers (
         NULL,
         0,
         7,
+        TRUE,
         'previous_business_day'
     ),
     (
@@ -66,6 +69,7 @@ INSERT INTO employers (
         NULL,
         1,
         0,
+        TRUE,
         'previous_business_day'
     )
 ON CONFLICT (name) DO UPDATE
@@ -78,4 +82,5 @@ SET
     payment_day_of_month = EXCLUDED.payment_day_of_month,
     payment_business_day_offset = EXCLUDED.payment_business_day_offset,
     payment_calendar_day_offset = EXCLUDED.payment_calendar_day_offset,
+    payment_effective_on_processing_next_day = EXCLUDED.payment_effective_on_processing_next_day,
     payment_fixed_day_roll = EXCLUDED.payment_fixed_day_roll;

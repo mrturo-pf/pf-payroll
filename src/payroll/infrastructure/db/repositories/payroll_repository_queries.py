@@ -60,6 +60,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             current_day_of_month = None
             current_business_day_offset = 0
             current_calendar_day_offset = 0
+            current_effective_on_processing_next_day = False
             current_fixed_day_roll = EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY.value
             current_inferred = True
         else:
@@ -73,6 +74,9 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             current_day_of_month = current_employer.payment_day_of_month
             current_business_day_offset = current_employer.payment_business_day_offset
             current_calendar_day_offset = current_employer.payment_calendar_day_offset
+            current_effective_on_processing_next_day = (
+                current_employer.payment_effective_on_processing_next_day
+            )
             current_fixed_day_roll = current_employer.payment_fixed_day_roll.value
             current_inferred = False
 
@@ -155,6 +159,9 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                     payment_day_of_month=current_day_of_month,
                     payment_business_day_offset=current_business_day_offset,
                     payment_calendar_day_offset=current_calendar_day_offset,
+                    payment_effective_on_processing_next_day=(
+                        current_effective_on_processing_next_day
+                    ),
                     payment_fixed_day_roll=current_fixed_day_roll,
                 ),
                 end_date=date(period_month.year, period_month.month, 1),
@@ -175,6 +182,9 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             payment_day_of_month=current_day_of_month,
             payment_business_day_offset=current_business_day_offset,
             payment_calendar_day_offset=current_calendar_day_offset,
+            payment_effective_on_processing_next_day=(
+                current_effective_on_processing_next_day
+            ),
             payment_fixed_day_roll=current_fixed_day_roll,
         )
         all_ranges = previous_ranges + [current_range] + future_ranges

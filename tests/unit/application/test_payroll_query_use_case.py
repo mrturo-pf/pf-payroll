@@ -89,6 +89,7 @@ class StubPayrollRepository:
                 period_month=(today or date(2026, 1, 15)).month,
                 start_date=date(2026, 1, 31),
                 end_date=date(2026, 2, 27),
+                net_pay_clp=Decimal("830000"),
                 is_current=True,
                 inferred=False,
             )
@@ -128,6 +129,7 @@ async def test_payroll_queries_return_period_ranges() -> None:
             period_month=1,
             start_date=date(2026, 1, 31),
             end_date=date(2026, 2, 27),
+            net_pay_clp=Decimal("830000"),
             is_current=True,
             inferred=False,
         )

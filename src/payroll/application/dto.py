@@ -436,6 +436,7 @@ class PayrollPeriodDetailDTO(PayrollPeriodDetailFields):
 class PayrollPeriodRangeDTO(PayrollPeriodRangeFields):
     """Represent a payroll period date range."""
 
+    net_pay_clp: Decimal | None
     is_current: bool
     inferred: bool
 

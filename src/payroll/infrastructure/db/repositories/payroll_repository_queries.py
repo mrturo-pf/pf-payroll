@@ -55,6 +55,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             current_year = reference_date.year
             current_month = reference_date.month
             current_start = resolve_payment_date(current_year, current_month)
+            current_net_pay_clp = None
             current_country_code = "CL"
             current_rule = EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH.value
             current_month_offset = 0
@@ -75,6 +76,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             current_day_of_month = current_employer.payment_day_of_month
             current_business_day_offset = current_employer.payment_business_day_offset
             current_calendar_day_offset = current_employer.payment_calendar_day_offset
+            current_net_pay_clp = current_period.declared_net_pay_clp
             current_effective_on_processing_next_day = (
                 current_employer.payment_effective_on_processing_next_day
             )
@@ -109,6 +111,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                 period_month=period.period_month,
                 start_date=period.payment_date,
                 end_date=period.payment_date,
+                net_pay_clp=period.declared_net_pay_clp,
                 is_current=False,
                 inferred=False,
             )
@@ -144,6 +147,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                             inferred_month.year,
                             inferred_month.month,
                         ),
+                        net_pay_clp=None,
                         is_current=False,
                         inferred=True,
                     )
@@ -155,6 +159,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             period_month=current_month,
             start_date=current_start,
             end_date=current_start,
+            net_pay_clp=current_net_pay_clp,
             is_current=True,
             inferred=current_inferred,
         )
@@ -182,6 +187,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                     )
                 ),
                 end_date=date(period_month.year, period_month.month, 1),
+                net_pay_clp=None,
                 is_current=False,
                 inferred=True,
             )
@@ -221,6 +227,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                     period_month=period_range.period_month,
                     start_date=period_range.start_date,
                     end_date=next_start - timedelta(days=1),
+                    net_pay_clp=period_range.net_pay_clp,
                     is_current=period_range.is_current,
                     inferred=period_range.inferred,
                 )

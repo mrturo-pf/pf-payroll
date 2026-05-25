@@ -100,6 +100,7 @@ class FakePayrollQueries:
                 period_month=12,
                 start_date=date(2025, 12, 31),
                 end_date=date(2026, 1, 30),
+                net_pay_clp=None,
                 is_current=False,
                 inferred=True,
             ),
@@ -108,6 +109,7 @@ class FakePayrollQueries:
                 period_month=1,
                 start_date=date(2026, 1, 31),
                 end_date=date(2026, 2, 27),
+                net_pay_clp=Decimal("830000"),
                 is_current=True,
                 inferred=False,
             ),
@@ -133,6 +135,7 @@ def test_payroll_query_endpoints() -> None:
             "period_month": 12,
             "start_date": "2025-12-31",
             "end_date": "2026-01-30",
+            "net_pay_clp": None,
             "position": "previous",
         },
         {
@@ -140,6 +143,7 @@ def test_payroll_query_endpoints() -> None:
             "period_month": 1,
             "start_date": "2026-01-31",
             "end_date": "2026-02-27",
+            "net_pay_clp": "830000",
             "position": "current",
         },
     ]

@@ -249,6 +249,7 @@ class PayrollSummaryRead(BaseModel):
 class PayrollPeriodRangeRead(PayrollPeriodRangeFields):
     """Represent Payroll Period Range Read."""
 
+    net_pay_clp: str | None
     position: Literal["previous", "current", "future"]
 
 
@@ -295,6 +296,9 @@ def to_payroll_period_range_reads(
             period_month=item.period_month,
             start_date=item.start_date,
             end_date=item.end_date,
+            net_pay_clp=(
+                str(item.net_pay_clp) if item.net_pay_clp is not None else None
+            ),
             position=(
                 "current"
                 if item.is_current

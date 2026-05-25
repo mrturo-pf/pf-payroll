@@ -1740,10 +1740,12 @@ async def test_sqlalchemy_payroll_repository_lists_period_ranges() -> None:
     assert result[11].period_month == 2
     assert result[11].start_date == date(2026, 2, 26)
     assert result[11].end_date == date(2026, 3, 27)
+    assert result[11].net_pay_clp == Decimal("2983237")
     assert result[11].inferred is False
     assert result[12].is_current is True
     assert result[12].start_date == date(2026, 3, 28)
     assert result[12].end_date == date(2026, 4, 28)
+    assert result[12].net_pay_clp == Decimal("2978086")
     assert result[13].period_year == 2026
     assert result[13].period_month == 4
     assert result[13].start_date == date(2026, 4, 29)
@@ -1796,6 +1798,7 @@ async def test_sqlalchemy_payroll_repository_applies_effective_processing_dates(
     assert result[13].period_month == 5
     assert result[13].start_date == date(2026, 5, 23)
     assert result[13].end_date == date(2026, 6, 22)
+    assert result[13].net_pay_clp is None
     assert result[13].inferred is True
 
 
@@ -1842,6 +1845,7 @@ async def test_sqlalchemy_payroll_repository_extends_current_period_until_today(
     assert result[12].period_month == 4
     assert result[12].start_date == date(2026, 4, 29)
     assert result[12].end_date == date(2026, 5, 25)
+    assert result[12].net_pay_clp == Decimal("2978086")
     assert result[12].is_current is True
     assert result[13].period_year == 2026
     assert result[13].period_month == 5
@@ -1869,6 +1873,7 @@ async def test_sqlalchemy_payroll_repository_lists_period_ranges_without_current
     assert result[12].period_month == 1
     assert result[12].start_date == date(2026, 1, 30)
     assert result[12].end_date == date(2026, 2, 26)
+    assert result[12].net_pay_clp is None
     assert result[12].is_current is True
     assert result[12].inferred is True
     assert result[13].start_date == date(2026, 2, 27)

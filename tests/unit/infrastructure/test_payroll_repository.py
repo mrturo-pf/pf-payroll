@@ -2196,6 +2196,7 @@ async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary()
                     ),
                 ]
             ),
+            FakeResult(scalar_rows=[2, 3]),
             FakeResult(first_row=(summary, employer)),
         ]
     )
@@ -2209,6 +2210,7 @@ async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary()
     assert result.employer_started_at == date(2020, 1, 1)
     assert result.employer_ended_at == date(2026, 1, 31)
     assert result.health_institution_is_active is True
+    assert result.health_plan_ids == (2, 3)
     assert result.items[0].concept_code == "SALARY_BASE"
     assert result.summary is not None
     assert result.summary.net_pay_clp == Decimal("830000")

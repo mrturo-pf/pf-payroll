@@ -21,7 +21,11 @@ from payroll.domain.contributions import (
 )
 
 
-def _period_detail(items: list[PayrollItemDetailDTO]) -> PayrollPeriodDetailDTO:
+def _period_detail(
+    items: list[PayrollItemDetailDTO],
+    *,
+    health_plan_ids: tuple[int, ...] | None = None,
+) -> PayrollPeriodDetailDTO:
     """Build a period detail for validation tests."""
     return PayrollPeriodDetailDTO(
         id=1,
@@ -39,6 +43,7 @@ def _period_detail(items: list[PayrollItemDetailDTO]) -> PayrollPeriodDetailDTO:
         employment_contract_kind=EmploymentContractKind.INDEFINITE,
         pension_plan_id=1,
         health_plan_id=2,
+        health_plan_ids=health_plan_ids,
         health_institution_is_active=None,
         items=items,
         summary=PayrollSummaryDTO(
@@ -201,3 +206,59 @@ def test_build_imported_contribution_validation_reports_mismatches() -> None:
     assert "PENSION_ADDITIONAL declared 21000 CLP" in validation.warning
     assert "HEALTH_BASE declared 31000 CLP" in validation.warning
     assert "HEALTH_ADDITIONAL_UF declared 41000 CLP" in validation.warning
+
+
+def test_build_imported_contribution_validation_skips_multi_plan_additional_check() -> (
+    None
+):
+    """Test validation skips additional health mismatch for multi-plan snapshots."""
+    detail = _period_detail(
+        [
+            PayrollItemDetailDTO(
+                concept_code="PENSION_BASE",
+                concept_name="Pension Base",
+                kind="discount",
+                is_taxable=False,
+                amount_clp=Decimal("100000"),
+                notes=None,
+            ),
+            PayrollItemDetailDTO(
+                concept_code="PENSION_ADDITIONAL",
+                concept_name="Pension Additional",
+                kind="discount",
+                is_taxable=False,
+                amount_clp=Decimal("20000"),
+                notes=None,
+            ),
+            PayrollItemDetailDTO(
+                concept_code="HEALTH_BASE",
+                concept_name="Health Base",
+                kind="discount",
+                is_taxable=False,
+                amount_clp=Decimal("30000"),
+                notes=None,
+            ),
+            PayrollItemDetailDTO(
+                concept_code="HEALTH_ADDITIONAL_UF",
+                concept_name="Health Additional Uf",
+                kind="discount",
+                is_taxable=False,
+                amount_clp=Decimal("41000"),
+                notes=None,
+            ),
+        ],
+        health_plan_ids=(1, 2, 3),
+    )
+    computed = _computed_contributions(
+        pension_base=Decimal("100000"),
+        pension_additional=Decimal("20000"),
+        health_base=Decimal("30000"),
+        health_additional=Decimal("40000"),
+    )
+
+    validation = build_imported_contribution_validation(detail, computed)
+
+    assert validation is not None
+    assert validation.expected_health_plan_additional_clp is None
+    assert validation.health_plan_additional_difference_clp is None
+    assert validation.warning is None

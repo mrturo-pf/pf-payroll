@@ -166,6 +166,7 @@ class SqlAlchemyPayrollRepositoryBase:
                 )
             )
             .order_by(ContributionCapModel.valid_from.desc())
+            .limit(1)
         )
         cap_model = result.scalar_one_or_none()
         if cap_model is None:

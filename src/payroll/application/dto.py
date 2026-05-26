@@ -452,6 +452,7 @@ class PayrollPeriodDetailDTO(PayrollPeriodDetailFields):
     health_plan_id: int | None
     items: list[PayrollItemDetailDTO]
     summary: PayrollSummaryDTO | None
+    health_plan_ids: tuple[int, ...] | None = None
     health_institution_is_active: bool | None = None
 
 

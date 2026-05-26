@@ -18,7 +18,20 @@ INSERT INTO health_plans (institution_id, valid_from, valid_to, plan_name, contr
     (6, DATE '2024-11-01', NULL, 'Adicionales', 0.79);
 
 -- ============================================================
--- 3. Employers
+-- 3. Contribution caps
+-- ============================================================
+INSERT INTO contribution_caps (cap_type, valid_from, valid_to, value_uf) VALUES
+    ('pension_health', DATE '2024-01-01', DATE '2024-12-31', 84.3000),
+    ('pension_health', DATE '2025-01-01', DATE '2025-12-31', 87.8000),
+    ('pension_health', DATE '2026-01-01', DATE '2026-01-31', 89.9000),
+    ('pension_health', DATE '2026-02-01', NULL, 90.0000)
+ON CONFLICT (cap_type, valid_from) DO UPDATE
+SET
+    valid_to = EXCLUDED.valid_to,
+    value_uf = EXCLUDED.value_uf;
+
+-- ============================================================
+-- 4. Employers
 -- ============================================================
 INSERT INTO employers (
     name,

@@ -81,7 +81,14 @@ def build_imported_contribution_validation(
     expected_pension_base_clp = computed.pension.base_amount_clp
     expected_pension_additional_clp = computed.pension.additional_amount_clp
     expected_health_base_clp = computed.health.base_amount_clp
-    expected_health_plan_additional_clp = computed.health.additional_amount_clp
+    has_multiple_health_plan_snapshots = bool(
+        detail.health_plan_ids and len(detail.health_plan_ids) > 1
+    )
+    expected_health_plan_additional_clp = (
+        None
+        if has_multiple_health_plan_snapshots
+        else computed.health.additional_amount_clp
+    )
 
     mismatches: list[str] = []
     if declared_pension_base_clp is not None and declared_pension_base_clp != (
@@ -105,8 +112,10 @@ def build_imported_contribution_validation(
             f"HEALTH_BASE declared {declared_health_base_clp} CLP, "
             f"expected {expected_health_base_clp} CLP."
         )
-    if declared_health_plan_additional_clp is not None and (
-        declared_health_plan_additional_clp != expected_health_plan_additional_clp
+    if (
+        declared_health_plan_additional_clp is not None
+        and expected_health_plan_additional_clp is not None
+        and declared_health_plan_additional_clp != expected_health_plan_additional_clp
     ):
         mismatches.append(
             "HEALTH_ADDITIONAL_UF declared "
@@ -140,7 +149,10 @@ def build_imported_contribution_validation(
         expected_health_plan_additional_clp=expected_health_plan_additional_clp,
         health_plan_additional_difference_clp=(
             None
-            if declared_health_plan_additional_clp is None
+            if (
+                declared_health_plan_additional_clp is None
+                or expected_health_plan_additional_clp is None
+            )
             else declared_health_plan_additional_clp
             - expected_health_plan_additional_clp
         ),

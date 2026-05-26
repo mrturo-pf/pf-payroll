@@ -21,6 +21,7 @@ from payroll.infrastructure.db.models.payroll import (
     EmployerFixedDayRoll,
     EmployerPaymentDateRule,
     PayrollItemModel,
+    PayrollPeriodHealthPlanModel,
     PayrollPeriodModel,
 )
 from payroll.infrastructure.db.repositories.payroll_repository_shared import (
@@ -281,6 +282,15 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             for item, concept in items_result.all()
         ]
 
+        health_plan_ids_result = await self._session.execute(
+            select(PayrollPeriodHealthPlanModel.health_plan_id)
+            .where(PayrollPeriodHealthPlanModel.period_id == period.id)
+            .order_by(PayrollPeriodHealthPlanModel.health_plan_id.asc())
+        )
+        health_plan_ids = tuple(
+            int(plan_id) for plan_id in health_plan_ids_result.scalars().all()
+        )
+
         summary_result = await self._session.execute(
             select(PayrollSummaryModel, EmployerModel)
             .join(EmployerModel, PayrollSummaryModel.employer_id == EmployerModel.id)
@@ -314,6 +324,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             health_plan_id=period.health_plan_id,
             items=items,
             summary=summary,
+            health_plan_ids=health_plan_ids or None,
             health_institution_is_active=health_institution_is_active,
         )
 

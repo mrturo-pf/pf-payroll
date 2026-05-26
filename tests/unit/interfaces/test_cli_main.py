@@ -185,7 +185,7 @@ def test_parse_optional_decimal_supports_valid_none_and_invalid_values(
 def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Test cli async helpers."""
     sample_file = tmp_path / "sample.csv"
-    sample_file.write_text("period,employer\n")
+    sample_file.write_text("period_month,period_year,employer\n")
 
     class FakeSessionContext:
         """Test double for Session Context."""
@@ -209,7 +209,7 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
         async def from_bytes(self, filename: str, content: bytes) -> object:
             """Create from bytes."""
             assert filename == "sample.csv"
-            assert content == b"period,employer\n"
+            assert content == b"period_month,period_year,employer\n"
             return {"imported": True}
 
     class FakePayrollQueries:
@@ -356,7 +356,7 @@ def test_import_payroll_async_syncs_requested_market_data(
 ) -> None:
     """Test import payroll eagerly syncs the requested market data."""
     sample_file = tmp_path / "sample.csv"
-    sample_file.write_text("period,employer\n")
+    sample_file.write_text("period_month,period_year,employer\n")
 
     class FakeSessionContext:
         """Test double for Session Context."""
@@ -382,7 +382,7 @@ def test_import_payroll_async_syncs_requested_market_data(
         ) -> ImportPayrollResultDTO:
             """Create from bytes."""
             assert filename == "sample.csv"
-            assert content == b"period,employer\n"
+            assert content == b"period_month,period_year,employer\n"
             return ImportPayrollResultDTO(
                 imported_periods=1,
                 imported_items=1,
@@ -486,7 +486,7 @@ def test_import_payroll_async_processes_periods_without_market_sync(
 ) -> None:
     """Test import payroll post-processes DTO results without market sync work."""
     sample_file = tmp_path / "sample.csv"
-    sample_file.write_text("period,employer\n")
+    sample_file.write_text("period_month,period_year,employer\n")
 
     class FakeSessionContext:
         """Test double for Session Context."""
@@ -563,7 +563,7 @@ def test_import_payroll_async_processes_periods_without_market_sync(
 def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test cli business commands."""
     source_file = tmp_path / "sample.csv"
-    source_file.write_text("period,employer\n")
+    source_file.write_text("period_month,period_year,employer\n")
     report_path = tmp_path / "report.pdf"
 
     async def fake_import_payroll_async(file_path: Path) -> object:

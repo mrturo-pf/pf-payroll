@@ -109,8 +109,13 @@ def parse_worked_days(raw_value: object) -> int:
     return worked_days
 
 
-def parse_optional_plan_id(column_name: str, raw_value: object) -> int | None:
-    """Parse an optional plan id column."""
+def _parse_whole_number(
+    raw_value: object,
+    field_name: str,
+    min_value: int | None = None,
+    max_value: int | None = None,
+) -> int | None:
+    """Parse an optional whole number value with optional range validation."""
     if pd.isna(raw_value):
         return None
     normalized = str(raw_value).strip()
@@ -119,14 +124,43 @@ def parse_optional_plan_id(column_name: str, raw_value: object) -> int | None:
     try:
         decimal_value = Decimal(normalized)
     except ArithmeticError as exc:
-        raise PayrollValidationError(
-            f"{column_name} must be a whole positive integer when provided."
-        ) from exc
-    if decimal_value != decimal_value.to_integral_value() or decimal_value <= 0:
-        raise PayrollValidationError(
-            f"{column_name} must be a whole positive integer when provided."
-        )
-    return int(decimal_value)
+        raise PayrollValidationError(f"{field_name} must be a whole number.") from exc
+    if decimal_value != decimal_value.to_integral_value():
+        raise PayrollValidationError(f"{field_name} must be a whole number.")
+    value = int(decimal_value)
+    if min_value is not None and value < min_value:
+        raise PayrollValidationError(f"{field_name} must be >= {min_value}.")
+    if max_value is not None and value > max_value:
+        raise PayrollValidationError(f"{field_name} must be <= {max_value}.")
+    return value
+
+
+def _parse_period_month(raw_value: object) -> int | None:
+    """Parse an optional period_month value."""
+    return _parse_whole_number(raw_value, "period_month", 1, 12)
+
+
+def _parse_period_year(raw_value: object) -> int | None:
+    """Parse an optional period_year value."""
+    return _parse_whole_number(raw_value, "period_year", 1)
+
+
+def parse_period(raw_row: pd.Series) -> tuple[int, int] | None:
+    """Parse period from period_month and period_year columns."""
+    period_month = _parse_period_month(raw_row.get("period_month"))
+    period_year = _parse_period_year(raw_row.get("period_year"))
+    if period_month is not None or period_year is not None:
+        if period_month is None or period_year is None:
+            raise PayrollValidationError(
+                "Both period_month and period_year must be provided together."
+            )
+        return period_month, period_year
+    return None
+
+
+def parse_optional_plan_id(column_name: str, raw_value: object) -> int | None:
+    """Parse an optional plan id column."""
+    return _parse_whole_number(raw_value, column_name, 1)
 
 
 def parse_optional_health_plan_ids(raw_value: object) -> tuple[int, ...] | None:
@@ -183,11 +217,11 @@ def extract_net_pay_validations(
     validations: dict[tuple[str, int, int], NetPayValidation] = {}
 
     for _, row in wide_df.iterrows():
-        period_str = str(row.get("period", "")).strip()
-        if "/" not in period_str:
+        period_parts = parse_period(row)
+        if period_parts is None:
             continue
 
-        m_str, y_str = period_str.split("/")
+        month, year = period_parts
         employer = str(row.get("employer", "")).strip()
         if not employer:
             continue
@@ -196,8 +230,6 @@ def extract_net_pay_validations(
         if pd.isna(raw_net_pay):
             continue
 
-        year = int(y_str)
-        month = pd.to_datetime(m_str, format="%b").month
         declared_net_pay_clp = Decimal(str(raw_net_pay))
         expected_net_pay_clp = Decimal("0")
         for col, (_, kind, _) in CONCEPT_MAP.items():
@@ -231,11 +263,11 @@ def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:
     long_rows: list[dict[str, object]] = []
 
     for _, row in wide_df.iterrows():
-        period_str = str(row.get("period", "")).strip()
-        if "/" not in period_str:
+        period_parts = parse_period(row)
+        if period_parts is None:
             continue
 
-        m_str, y_str = period_str.split("/")
+        month, year = period_parts
         payment_dt = parse_payment_date(row.get("payment_date"))
         if pd.isna(payment_dt):
             raise PayrollValidationError(
@@ -250,8 +282,8 @@ def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:
 
         base_meta = {
             "employer": employer,
-            "year": int(y_str),
-            "month": pd.to_datetime(m_str, format="%b").month,
+            "year": year,
+            "month": month,
             "payment_date": payment_dt.date(),
             "worked_days": parse_worked_days(row.get("worked_days")),
             "pension_plan_id": parse_optional_plan_id(

@@ -112,7 +112,9 @@ async def test_import_payroll_reads_csv_and_builds_rows() -> None:
     importer = StubPayrollImporter(sample_rows())
     use_case = ImportPayroll(repository, importer)
 
-    payload = b"period,employer,payment_date\nJan/2026,ACME,2026-01-31\n"
+    payload = (
+        b"period_month,period_year,employer,payment_date\n1,2026,ACME,2026-01-31\n"
+    )
     result = await use_case.from_bytes("sample.csv", payload)
 
     assert result.imported_periods == 1
@@ -132,7 +134,9 @@ async def test_import_payroll_rejects_empty_import() -> None:
     use_case = ImportPayroll(repository, StubPayrollImporter([]))
 
     with pytest.raises(ValueError, match="did not yield any importable rows"):
-        await use_case.from_bytes("sample.csv", b"period,employer,payment_date\n")
+        await use_case.from_bytes(
+            "sample.csv", b"period_month,period_year,employer,payment_date\n"
+        )
 
 
 @pytest.mark.asyncio

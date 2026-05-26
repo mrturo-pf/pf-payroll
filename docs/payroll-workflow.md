@@ -186,16 +186,16 @@ The importer accepts payroll flat files in **`.csv`** and **`.xlsx`** formats wi
 Minimal CSV:
 
 ```csv
-period,employer,payment_date,employment_contract_kind,salary_base
-Jan/2026,ACME,2026-01-31,indefinite,1000000
+period_month,period_year,employer,payment_date,employment_contract_kind,salary_base
+1,2026,ACME,2026-01-31,indefinite,1000000
 ```
 
 Full CSV:
 
 ```csv
-period,employer,payment_date,worked_days,employment_contract_kind,pension_plan_id,health_plan_id,salary_base,monthly_legal_gratuity,teleworking_refund,health_insurance_employer_contribution,vacation_incentive,holiday_bonus,availability_bonus,legal_gratuity_adjustment,prior_salary_difference,pension_base,pension_additional,health_base,health_plan_additional,health_insurance,vacation_bonus_advance,holiday_bonus_advance,salary_advance,prior_month_leave_absence_discount,net_pay
-Jan/2026,ACME,2026-01-31,30,indefinite,1,1,1000000,250000,50000,10030,0,0,45000,0,0,100000,25000,70000,87500,12000,5000,0,15000,3000,1130030
-Feb/2026,ACME,2026-02-28,28,fixed_term,1,1,1000000,250000,50000,10030,0,0,45000,0,15000,100000,25000,70000,87500,12000,0,10000,5000,3000,1150030
+period_month,period_year,employer,payment_date,worked_days,employment_contract_kind,pension_plan_id,health_plan_id,salary_base,monthly_legal_gratuity,teleworking_refund,health_insurance_employer_contribution,vacation_incentive,holiday_bonus,availability_bonus,legal_gratuity_adjustment,prior_salary_difference,pension_base,pension_additional,health_base,health_plan_additional,health_insurance,vacation_bonus_advance,holiday_bonus_advance,salary_advance,prior_month_leave_absence_discount,net_pay
+1,2026,ACME,2026-01-31,30,indefinite,1,1,1000000,250000,50000,10030,0,0,45000,0,0,100000,25000,70000,87500,12000,5000,0,15000,3000,1130030
+2,2026,ACME,2026-02-28,28,fixed_term,1,1,1000000,250000,50000,10030,0,0,45000,0,15000,100000,25000,70000,87500,12000,0,10000,5000,3000,1150030
 ```
 
 Supported payroll amount columns:
@@ -246,7 +246,7 @@ Column semantics:
 
 Import notes:
 
-- `period` must use `Mon/YYYY`, for example `Jan/2026`
+- `period_month` and `period_year` are required and must be provided together (for example `1` and `2026`)
 - `payment_date` is required
 - `worked_days` is optional; if omitted, the import defaults to 30
 - `pension_plan_id` and `health_plan_id` are optional, but must be provided together

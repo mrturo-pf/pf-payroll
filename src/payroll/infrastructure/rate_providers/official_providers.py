@@ -375,12 +375,7 @@ class MindicadorRateProvider:
         value = await self.fetch_rate(currency_code, on)
         if value is None:
             return None
-        return ExchangeRateWriteDTO(
-            currency_code=currency_code.upper(),
-            rate_date=on,
-            value_clp=value,
-            source=self.name,
-        )
+        return _build_exchange_rate_entry(currency_code, on, value, self.name)
 
     async def fetch_rate_entries(
         self, currency_code: str, requested_dates: list[date]
@@ -667,12 +662,7 @@ class BcchSeriesProvider:
         value = await self.fetch_rate(currency_code, on)
         if value is None:
             return None
-        return ExchangeRateWriteDTO(
-            currency_code=currency_code.upper(),
-            rate_date=on,
-            value_clp=value,
-            source=self.name,
-        )
+        return _build_exchange_rate_entry(currency_code, on, value, self.name)
 
     async def fetch_rate_entries(
         self, currency_code: str, requested_dates: list[date]

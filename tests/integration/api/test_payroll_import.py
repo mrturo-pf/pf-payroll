@@ -278,8 +278,8 @@ def test_payroll_import_endpoint() -> None:
             files={
                 "file": (
                     "sample.csv",
-                    b"period,employer,payment_date,employment_contract_kind,salary_base\n"
-                    b"Jan/2026,ACME,2026-01-31,indefinite,1000000\n",
+                    b"period_month,period_year,employer,payment_date,employment_contract_kind,salary_base\n"
+                    b"1,2026,ACME,2026-01-31,indefinite,1000000\n",
                     "text/csv",
                 )
             },

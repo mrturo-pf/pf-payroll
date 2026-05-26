@@ -10,6 +10,7 @@ import pytest
 from payroll.infrastructure.importers.xlsx_importer import (
     XlsxPayrollImporter,
     extract_net_pay_validations,
+    parse_period,
     parse_optional_health_plan_ids,
     parse_optional_plan_id,
     parse_payment_date,
@@ -24,8 +25,8 @@ def test_read_payroll_dataframe_supports_csv_and_xlsx() -> None:
     csv_frame = read_payroll_dataframe(
         "sample.csv",
         BytesIO(
-            b"period,employer,payment_date,employment_contract_kind,salary_base\n"
-            b"Jan/2026,ACME,2026-01-31,indefinite,1000\n"
+            b"period_month,period_year,employer,payment_date,employment_contract_kind,salary_base\n"
+            b"1,2026,ACME,2026-01-31,indefinite,1000\n"
         ),
     )
 
@@ -33,7 +34,8 @@ def test_read_payroll_dataframe_supports_csv_and_xlsx() -> None:
     pd.DataFrame(
         [
             {
-                "period": "Jan/2026",
+                "period_month": 1,
+                "period_year": 2026,
                 "employer": "ACME",
                 "payment_date": "2026-01-31",
                 "employment_contract_kind": "indefinite",
@@ -60,7 +62,8 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
         pd.DataFrame(
             [
                 {
-                    "period": "2026-01",
+                    "period_month": "",
+                    "period_year": "",
                     "employer": "ACME",
                     "payment_date": "2026-01-31",
                     "employment_contract_kind": "indefinite",
@@ -75,7 +78,8 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
         pd.DataFrame(
             [
                 {
-                    "period": "Jan/2026",
+                    "period_month": 1,
+                    "period_year": 2026,
                     "employer": "ACME",
                     "payment_date": "2026-01-31",
                     "employment_contract_kind": "indefinite",
@@ -92,7 +96,8 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
             pd.DataFrame(
                 [
                     {
-                        "period": "Jan/2026",
+                        "period_month": 1,
+                        "period_year": 2026,
                         "employer": "ACME",
                         "employment_contract_kind": "indefinite",
                     }
@@ -105,7 +110,8 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
             pd.DataFrame(
                 [
                     {
-                        "period": "Jan/2026",
+                        "period_month": 1,
+                        "period_year": 2026,
                         "payment_date": "2026-01-31",
                         "employment_contract_kind": "indefinite",
                     }
@@ -118,7 +124,8 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
             pd.DataFrame(
                 [
                     {
-                        "period": "Jan/2026",
+                        "period_month": 1,
+                        "period_year": 2026,
                         "employer": "ACME",
                         "payment_date": "2026-01-31",
                     }
@@ -131,11 +138,43 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
             pd.DataFrame(
                 [
                     {
-                        "period": "Jan/2026",
+                        "period_month": 1,
+                        "period_year": 2026,
                         "employer": "ACME",
                         "payment_date": "2026-01-31",
                         "employment_contract_kind": "indefinite",
                         "worked_days": 31.5,
+                        "salary_base": 1000,
+                    }
+                ]
+            )
+        )
+
+    with pytest.raises(ValueError, match="Both period_month and period_year"):
+        to_long_format(
+            pd.DataFrame(
+                [
+                    {
+                        "period_month": 1,
+                        "employer": "ACME",
+                        "payment_date": "2026-01-31",
+                        "employment_contract_kind": "indefinite",
+                        "salary_base": 1000,
+                    }
+                ]
+            )
+        )
+
+    with pytest.raises(ValueError, match="period_month"):
+        to_long_format(
+            pd.DataFrame(
+                [
+                    {
+                        "period_month": 13,
+                        "period_year": 2026,
+                        "employer": "ACME",
+                        "payment_date": "2026-01-31",
+                        "employment_contract_kind": "indefinite",
                         "salary_base": 1000,
                     }
                 ]
@@ -149,7 +188,8 @@ def test_to_long_format_normalizes_contract_kind_aliases() -> None:
         pd.DataFrame(
             [
                 {
-                    "period": "Jan/2026",
+                    "period_month": 1,
+                    "period_year": 2026,
                     "employer": "ACME",
                     "payment_date": "2026-01-31",
                     "employment_contract_kind": "plazo_fijo",
@@ -172,7 +212,8 @@ def test_to_long_format_rejects_invalid_contract_kind() -> None:
             pd.DataFrame(
                 [
                     {
-                        "period": "Jan/2026",
+                        "period_month": 1,
+                        "period_year": 2026,
                         "employer": "ACME",
                         "payment_date": "2026-01-31",
                         "employment_contract_kind": "seasonal",
@@ -206,6 +247,33 @@ def test_parse_worked_days_defaults_and_validates() -> None:
 
     with pytest.raises(ValueError, match="worked_days"):
         parse_worked_days("abc")
+
+
+def test_parse_period_prefers_split_fields_and_validates_inputs() -> None:
+    """Test parse period handles split fields and validates values."""
+    assert parse_period(pd.Series({"period_month": 1, "period_year": 2026})) == (
+        1,
+        2026,
+    )
+    assert parse_period(pd.Series({"period_month": "", "period_year": ""})) is None
+    assert (
+        parse_period(pd.Series({"period_month": pd.NA, "period_year": pd.NA})) is None
+    )
+
+    with pytest.raises(ValueError, match="Both period_month and period_year"):
+        parse_period(pd.Series({"period_month": 1, "period_year": None}))
+
+    with pytest.raises(ValueError, match="period_month"):
+        parse_period(pd.Series({"period_month": "abc", "period_year": 2026}))
+
+    with pytest.raises(ValueError, match="period_month"):
+        parse_period(pd.Series({"period_month": "1.5", "period_year": 2026}))
+
+    with pytest.raises(ValueError, match="period_year"):
+        parse_period(pd.Series({"period_month": 1, "period_year": "abc"}))
+
+    with pytest.raises(ValueError, match="period_year"):
+        parse_period(pd.Series({"period_month": 1, "period_year": 0}))
 
 
 def test_parse_optional_plan_id_defaults_and_validates() -> None:
@@ -243,7 +311,8 @@ def test_extract_net_pay_validations_returns_expected_and_difference_values() ->
         pd.DataFrame(
             [
                 {
-                    "period": "2026-01",
+                    "period_month": "",
+                    "period_year": "",
                     "employer": "ACME",
                     "payment_date": "2026-01-31",
                     "employment_contract_kind": "indefinite",
@@ -251,7 +320,8 @@ def test_extract_net_pay_validations_returns_expected_and_difference_values() ->
                     "net_pay": 1000,
                 },
                 {
-                    "period": "Jan/2026",
+                    "period_month": 1,
+                    "period_year": 2026,
                     "employer": "",
                     "payment_date": "2026-01-31",
                     "employment_contract_kind": "indefinite",
@@ -259,14 +329,16 @@ def test_extract_net_pay_validations_returns_expected_and_difference_values() ->
                     "net_pay": 1000,
                 },
                 {
-                    "period": "Jan/2026",
+                    "period_month": 1,
+                    "period_year": 2026,
                     "employer": "ACME",
                     "payment_date": "2026-01-31",
                     "employment_contract_kind": "indefinite",
                     "salary_base": 1000,
                 },
                 {
-                    "period": "Jan/2026",
+                    "period_month": 1,
+                    "period_year": 2026,
                     "employer": "ACME",
                     "payment_date": "2026-01-31",
                     "employment_contract_kind": "indefinite",
@@ -275,7 +347,8 @@ def test_extract_net_pay_validations_returns_expected_and_difference_values() ->
                     "net_pay": 950,
                 },
                 {
-                    "period": "Feb/2026",
+                    "period_month": 2,
+                    "period_year": 2026,
                     "employer": "ACME",
                     "payment_date": "2026-02-28",
                     "employment_contract_kind": "indefinite",
@@ -301,9 +374,9 @@ def test_xlsx_payroll_importer_builds_application_rows() -> None:
     rows = XlsxPayrollImporter().read_rows(
         "sample.csv",
         (
-            b"period,employer,payment_date,worked_days,employment_contract_kind,"
+            b"period_month,period_year,employer,payment_date,worked_days,employment_contract_kind,"
             b"pension_plan_id,health_plan_id,salary_base,pension_base,net_pay\n"
-            b"Jan/2026,ACME,31/01/2026,28,indefinite,1,2,1000000,100000,950000\n"
+            b"1,2026,ACME,31/01/2026,28,indefinite,1,2,1000000,100000,950000\n"
         ),
     )
 
@@ -323,9 +396,9 @@ def test_xlsx_payroll_importer_maps_health_plan_additional_column() -> None:
     rows = XlsxPayrollImporter().read_rows(
         "sample.csv",
         (
-            b"period,employer,payment_date,employment_contract_kind,"
+            b"period_month,period_year,employer,payment_date,employment_contract_kind,"
             b"health_plan_additional,net_pay\n"
-            b"Jan/2026,ACME,31/01/2026,indefinite,87500,0\n"
+            b"1,2026,ACME,31/01/2026,indefinite,87500,0\n"
         ),
     )
 
@@ -339,9 +412,9 @@ def test_xlsx_payroll_importer_reads_multiple_health_plan_ids() -> None:
     rows = XlsxPayrollImporter().read_rows(
         "sample.csv",
         (
-            b"period,employer,payment_date,employment_contract_kind,"
+            b"period_month,period_year,employer,payment_date,employment_contract_kind,"
             b"pension_plan_id,health_plan_id,salary_base,net_pay\n"
-            b'Jan/2026,ACME,31/01/2026,indefinite,1,"2,3",1000000,1000000\n'
+            b'1,2026,ACME,31/01/2026,indefinite,1,"2,3",1000000,1000000\n'
         ),
     )
 
@@ -355,9 +428,9 @@ def test_xlsx_payroll_importer_maps_health_insurance_columns() -> None:
     rows = XlsxPayrollImporter().read_rows(
         "sample.csv",
         (
-            b"period,employer,payment_date,employment_contract_kind,"
+            b"period_month,period_year,employer,payment_date,employment_contract_kind,"
             b"health_insurance_employer_contribution,health_insurance,net_pay\n"
-            b"Jan/2026,ACME,31/01/2026,indefinite,10030,46139,-36109\n"
+            b"1,2026,ACME,31/01/2026,indefinite,10030,46139,-36109\n"
         ),
     )
 
@@ -374,10 +447,10 @@ def test_xlsx_payroll_importer_maps_additional_taxable_income_columns() -> None:
     rows = XlsxPayrollImporter().read_rows(
         "sample.csv",
         (
-            b"period,employer,payment_date,employment_contract_kind,"
+            b"period_month,period_year,employer,payment_date,employment_contract_kind,"
             b"vacation_incentive,holiday_bonus,availability_bonus,"
             b"legal_gratuity_adjustment,prior_salary_difference,net_pay\n"
-            b"Jan/2026,ACME,31/01/2026,indefinite,1000,2000,3000,4000,5000,15000\n"
+            b"1,2026,ACME,31/01/2026,indefinite,1000,2000,3000,4000,5000,15000\n"
         ),
     )
 
@@ -397,9 +470,9 @@ def test_xlsx_payroll_importer_maps_prior_month_leave_absence_discount() -> None
     rows = XlsxPayrollImporter().read_rows(
         "sample.csv",
         (
-            b"period,employer,payment_date,employment_contract_kind,"
+            b"period_month,period_year,employer,payment_date,employment_contract_kind,"
             b"prior_month_leave_absence_discount,net_pay\n"
-            b"Jan/2026,ACME,31/01/2026,indefinite,2933,-2933\n"
+            b"1,2026,ACME,31/01/2026,indefinite,2933,-2933\n"
         ),
     )
 
@@ -413,9 +486,9 @@ def test_xlsx_payroll_importer_maps_bonus_advance_discount_columns() -> None:
     rows = XlsxPayrollImporter().read_rows(
         "sample.csv",
         (
-            b"period,employer,payment_date,employment_contract_kind,"
+            b"period_month,period_year,employer,payment_date,employment_contract_kind,"
             b"vacation_bonus_advance,holiday_bonus_advance,salary_advance,net_pay\n"
-            b"Jan/2026,ACME,31/01/2026,indefinite,1000,2000,4000,-7000\n"
+            b"1,2026,ACME,31/01/2026,indefinite,1000,2000,4000,-7000\n"
         ),
     )
 

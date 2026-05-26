@@ -309,7 +309,8 @@ def test_xlsx_importer_transforms_and_reads_files() -> None:
     source = pd.DataFrame(
         [
             {
-                "period": "Jan/2026",
+                "period_month": 1,
+                "period_year": 2026,
                 "employer": "ACME",
                 "payment_date": "2026-01-31",
                 "employment_contract_kind": "indefinite",
@@ -322,8 +323,8 @@ def test_xlsx_importer_transforms_and_reads_files() -> None:
     dataframe = read_payroll_dataframe(
         "sample.csv",
         __import__("io").BytesIO(
-            b"period,employer,payment_date,employment_contract_kind,salary_base\n"
-            b"Jan/2026,ACME,2026-01-31,indefinite,1000\n"
+            b"period_month,period_year,employer,payment_date,employment_contract_kind,salary_base\n"
+            b"1,2026,ACME,2026-01-31,indefinite,1000\n"
         ),
     )
 

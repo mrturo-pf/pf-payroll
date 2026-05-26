@@ -230,6 +230,327 @@ async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
 
 
 @pytest.mark.asyncio
+async def test_sa_payroll_repository_assigns_plan_ids_from_import_rows() -> None:
+    """Test import rows assign period plan ids when provided in the payload."""
+    employer = EmployerModel(id=10, name="ACME", started_at=date(2026, 1, 31))
+    pension_plan = PensionPlanModel(
+        id=1,
+        institution_id=5,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+        additional_rate=Decimal("0.0116"),
+    )
+    pension_institution = PensionInstitutionModel(
+        id=5,
+        code="AFP_MODEL",
+        name="AFP Model",
+        mandatory_rate=Decimal("0.10"),
+        is_active=True,
+    )
+    health_plan = HealthPlanModel(
+        id=2,
+        institution_id=6,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+        plan_name="Base",
+        contracted_uf=Decimal("5.42"),
+    )
+    health_institution = HealthInstitutionModel(
+        id=6,
+        code="FONASA",
+        name="Fonasa",
+        kind=HealthInstitutionKind.FONASA,
+        mandatory_rate=Decimal("0.07"),
+        is_active=True,
+    )
+    session = FakeSession(
+        [
+            FakeResult(
+                scalar_rows=[
+                    SimpleNamespace(id=1, code="SALARY_BASE"),
+                    SimpleNamespace(id=2, code="PENSION_BASE"),
+                ]
+            ),
+            FakeResult(first_row=(pension_plan, pension_institution)),
+            FakeResult(first_row=(health_plan, health_institution)),
+            FakeResult(scalar_one=employer),
+            FakeResult(scalar_one=None),
+            FakeResult(),
+            FakeResult(),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    await repository.import_rows(
+        [
+            SimpleNamespace(
+                employer="ACME",
+                period_year=2026,
+                period_month=1,
+                payment_date=date(2026, 1, 31),
+                status="actual",
+                employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                concept_code="SALARY_BASE",
+                amount_clp=Decimal("1000000"),
+                pension_plan_id=1,
+                health_plan_id=2,
+                declared_net_pay_clp=Decimal("950000"),
+                expected_net_pay_clp=Decimal("900000"),
+                net_pay_difference_clp=Decimal("50000"),
+            ),
+            SimpleNamespace(
+                employer="ACME",
+                period_year=2026,
+                period_month=1,
+                payment_date=date(2026, 1, 31),
+                status="actual",
+                employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                concept_code="PENSION_BASE",
+                amount_clp=Decimal("100000"),
+                pension_plan_id=1,
+                health_plan_id=2,
+                declared_net_pay_clp=Decimal("950000"),
+                expected_net_pay_clp=Decimal("900000"),
+                net_pay_difference_clp=Decimal("50000"),
+            ),
+        ]
+    )
+
+    created_period = next(
+        item for item in session.added if isinstance(item, PayrollPeriodModel)
+    )
+    assert created_period.pension_plan_id == 1
+    assert created_period.health_plan_id == 2
+
+
+@pytest.mark.asyncio
+async def test_sa_payroll_repository_rejects_inconsistent_period_plan_ids() -> None:
+    """Test import rows reject inconsistent plan ids within one period."""
+    session = FakeSession(
+        [
+            FakeResult(
+                scalar_rows=[
+                    SimpleNamespace(id=1, code="SALARY_BASE"),
+                    SimpleNamespace(id=2, code="PENSION_BASE"),
+                ]
+            ),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="Inconsistent pension_plan_id"):
+        await repository.import_rows(
+            [
+                SimpleNamespace(
+                    employer="ACME",
+                    period_year=2026,
+                    period_month=1,
+                    payment_date=date(2026, 1, 31),
+                    status="actual",
+                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                    concept_code="SALARY_BASE",
+                    amount_clp=Decimal("1000000"),
+                    pension_plan_id=1,
+                    health_plan_id=2,
+                    declared_net_pay_clp=None,
+                    expected_net_pay_clp=None,
+                    net_pay_difference_clp=None,
+                ),
+                SimpleNamespace(
+                    employer="ACME",
+                    period_year=2026,
+                    period_month=1,
+                    payment_date=date(2026, 1, 31),
+                    status="actual",
+                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                    concept_code="PENSION_BASE",
+                    amount_clp=Decimal("100000"),
+                    pension_plan_id=3,
+                    health_plan_id=2,
+                    declared_net_pay_clp=None,
+                    expected_net_pay_clp=None,
+                    net_pay_difference_clp=None,
+                ),
+            ]
+        )
+
+
+@pytest.mark.asyncio
+async def test_sa_payroll_repository_rejects_inconsistent_period_health_plan_ids() -> (
+    None
+):
+    """Test import rows reject inconsistent health plans within one period."""
+    session = FakeSession(
+        [
+            FakeResult(
+                scalar_rows=[
+                    SimpleNamespace(id=1, code="SALARY_BASE"),
+                    SimpleNamespace(id=2, code="PENSION_BASE"),
+                ]
+            ),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="Inconsistent health_plan_id"):
+        await repository.import_rows(
+            [
+                SimpleNamespace(
+                    employer="ACME",
+                    period_year=2026,
+                    period_month=1,
+                    payment_date=date(2026, 1, 31),
+                    status="actual",
+                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                    concept_code="SALARY_BASE",
+                    amount_clp=Decimal("1000000"),
+                    pension_plan_id=1,
+                    health_plan_ids=(2, 3),
+                    declared_net_pay_clp=None,
+                    expected_net_pay_clp=None,
+                    net_pay_difference_clp=None,
+                ),
+                SimpleNamespace(
+                    employer="ACME",
+                    period_year=2026,
+                    period_month=1,
+                    payment_date=date(2026, 1, 31),
+                    status="actual",
+                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                    concept_code="PENSION_BASE",
+                    amount_clp=Decimal("100000"),
+                    pension_plan_id=1,
+                    health_plan_ids=(2, 4),
+                    declared_net_pay_clp=None,
+                    expected_net_pay_clp=None,
+                    net_pay_difference_clp=None,
+                ),
+            ]
+        )
+
+
+@pytest.mark.asyncio
+async def test_sa_payroll_repository_rejects_partial_period_plan_assignment() -> None:
+    """Test import rows require both plan ids together for the same period."""
+    session = FakeSession(
+        [
+            FakeResult(
+                scalar_rows=[
+                    SimpleNamespace(id=1, code="SALARY_BASE"),
+                ]
+            ),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(
+        ValueError,
+        match="Both pension_plan_id and health_plan_id must be provided together.",
+    ):
+        await repository.import_rows(
+            [
+                SimpleNamespace(
+                    employer="ACME",
+                    period_year=2026,
+                    period_month=1,
+                    payment_date=date(2026, 1, 31),
+                    status="actual",
+                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                    concept_code="SALARY_BASE",
+                    amount_clp=Decimal("1000000"),
+                    pension_plan_id=1,
+                    health_plan_id=None,
+                    declared_net_pay_clp=None,
+                    expected_net_pay_clp=None,
+                    net_pay_difference_clp=None,
+                ),
+            ]
+        )
+
+
+@pytest.mark.asyncio
+async def test_sa_payroll_repository_updates_existing_period_plan_ids_from_import() -> (
+    None
+):
+    """Test import rows update existing period with provided plan ids."""
+    employer = EmployerModel(id=10, name="ACME", started_at=date(2026, 1, 31))
+    existing_period = PayrollPeriodModel(
+        id=50,
+        employer_id=10,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        status=PayrollStatus.PROJECTED,
+    )
+    pension_plan = PensionPlanModel(
+        id=1,
+        institution_id=5,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+        additional_rate=Decimal("0.0116"),
+    )
+    pension_institution = PensionInstitutionModel(
+        id=5,
+        code="AFP_MODEL",
+        name="AFP Model",
+        mandatory_rate=Decimal("0.10"),
+        is_active=True,
+    )
+    health_plan = HealthPlanModel(
+        id=2,
+        institution_id=6,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+        plan_name="Base",
+        contracted_uf=Decimal("5.42"),
+    )
+    health_institution = HealthInstitutionModel(
+        id=6,
+        code="FONASA",
+        name="Fonasa",
+        kind=HealthInstitutionKind.FONASA,
+        mandatory_rate=Decimal("0.07"),
+        is_active=True,
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_rows=[SimpleNamespace(id=1, code="SALARY_BASE")]),
+            FakeResult(first_row=(pension_plan, pension_institution)),
+            FakeResult(first_row=(health_plan, health_institution)),
+            FakeResult(scalar_one=employer),
+            FakeResult(scalar_one=existing_period),
+            FakeResult(),
+            FakeResult(),
+            FakeResult(),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    await repository.import_rows(
+        [
+            SimpleNamespace(
+                employer="ACME",
+                period_year=2026,
+                period_month=1,
+                payment_date=date(2026, 1, 31),
+                status="actual",
+                employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                concept_code="SALARY_BASE",
+                amount_clp=Decimal("1000000"),
+                pension_plan_id=1,
+                health_plan_id=2,
+                declared_net_pay_clp=None,
+                expected_net_pay_clp=None,
+                net_pay_difference_clp=None,
+            ),
+        ]
+    )
+
+    assert existing_period.pension_plan_id == 1
+    assert existing_period.health_plan_id == 2
+
+
+@pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_returns_empty_result_for_no_rows() -> None:
     """Test sqlalchemy payroll repository returns empty result for no rows."""
     session = FakeSession([])
@@ -687,6 +1008,342 @@ async def test_repository_allows_inactive_health_institution_for_history() -> No
     )
 
     assert result.health_plan.institution.code == "LEGACY"
+
+
+@pytest.mark.asyncio
+async def test_repository_sums_contracted_uf_for_multiple_period_health_plans() -> None:
+    """Test contribution context sums contracted UF across period health plans."""
+    period = PayrollPeriodModel(
+        id=5,
+        employer_id=10,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        status=PayrollStatus.PROJECTED,
+        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=period),
+            FakeResult(
+                first_row=(
+                    PensionPlanModel(
+                        id=11,
+                        institution_id=1,
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        additional_rate=Decimal("0.0127"),
+                    ),
+                    PensionInstitutionModel(
+                        id=1,
+                        code="AFP_UNO",
+                        name="AFP Uno",
+                        mandatory_rate=Decimal("0.10"),
+                        is_active=True,
+                    ),
+                )
+            ),
+            FakeResult(
+                first_row=(
+                    HealthPlanModel(
+                        id=22,
+                        institution_id=2,
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        plan_name="Base",
+                        contracted_uf=Decimal("5.42"),
+                    ),
+                    HealthInstitutionModel(
+                        id=2,
+                        code="FONASA",
+                        name="Fonasa",
+                        kind=HealthInstitutionKind.FONASA,
+                        mandatory_rate=Decimal("0.07"),
+                        is_active=True,
+                    ),
+                )
+            ),
+            FakeResult(
+                scalar_one=ContributionCapModel(
+                    id=33,
+                    cap_type=ContributionCapType.PENSION_HEALTH,
+                    valid_from=date(2026, 1, 1),
+                    valid_to=None,
+                    value_uf=Decimal("90.0000"),
+                )
+            ),
+            FakeResult(
+                scalar_one=ContributionCapModel(
+                    id=34,
+                    cap_type=ContributionCapType.UNEMPLOYMENT,
+                    valid_from=date(2026, 1, 1),
+                    valid_to=None,
+                    value_uf=Decimal("135.0000"),
+                )
+            ),
+            FakeResult(scalar_one=Decimal("1250000")),
+            FakeResult(scalar_rows=[22, 23]),
+            FakeResult(
+                first_row=(
+                    HealthPlanModel(
+                        id=22,
+                        institution_id=2,
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        plan_name="Base",
+                        contracted_uf=Decimal("5.42"),
+                    ),
+                    HealthInstitutionModel(
+                        id=2,
+                        code="FONASA",
+                        name="Fonasa",
+                        kind=HealthInstitutionKind.FONASA,
+                        mandatory_rate=Decimal("0.07"),
+                        is_active=True,
+                    ),
+                )
+            ),
+            FakeResult(
+                first_row=(
+                    HealthPlanModel(
+                        id=23,
+                        institution_id=2,
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        plan_name="GES",
+                        contracted_uf=Decimal("0.91"),
+                    ),
+                    HealthInstitutionModel(
+                        id=2,
+                        code="FONASA",
+                        name="Fonasa",
+                        kind=HealthInstitutionKind.FONASA,
+                        mandatory_rate=Decimal("0.07"),
+                        is_active=True,
+                    ),
+                )
+            ),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.get_contribution_context(
+        SimpleNamespace(period_id=5, pension_plan_id=11, health_plan_id=22)
+    )
+
+    assert result.health_plan.contracted_uf == Decimal("6.33")
+
+
+@pytest.mark.asyncio
+async def test_repository_rejects_contribution_context_health_plan_not_in_period() -> (
+    None
+):
+    """Test contribution context rejects health plans outside period snapshots."""
+    period = PayrollPeriodModel(
+        id=5,
+        employer_id=10,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        status=PayrollStatus.PROJECTED,
+        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=period),
+            FakeResult(
+                first_row=(
+                    PensionPlanModel(
+                        id=11,
+                        institution_id=1,
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        additional_rate=Decimal("0.0127"),
+                    ),
+                    PensionInstitutionModel(
+                        id=1,
+                        code="AFP_UNO",
+                        name="AFP Uno",
+                        mandatory_rate=Decimal("0.10"),
+                        is_active=True,
+                    ),
+                )
+            ),
+            FakeResult(
+                first_row=(
+                    HealthPlanModel(
+                        id=22,
+                        institution_id=2,
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        plan_name="Base",
+                        contracted_uf=Decimal("5.42"),
+                    ),
+                    HealthInstitutionModel(
+                        id=2,
+                        code="FONASA",
+                        name="Fonasa",
+                        kind=HealthInstitutionKind.FONASA,
+                        mandatory_rate=Decimal("0.07"),
+                        is_active=True,
+                    ),
+                )
+            ),
+            FakeResult(
+                scalar_one=ContributionCapModel(
+                    id=33,
+                    cap_type=ContributionCapType.PENSION_HEALTH,
+                    valid_from=date(2026, 1, 1),
+                    valid_to=None,
+                    value_uf=Decimal("90.0000"),
+                )
+            ),
+            FakeResult(
+                scalar_one=ContributionCapModel(
+                    id=34,
+                    cap_type=ContributionCapType.UNEMPLOYMENT,
+                    valid_from=date(2026, 1, 1),
+                    valid_to=None,
+                    value_uf=Decimal("135.0000"),
+                )
+            ),
+            FakeResult(scalar_one=Decimal("1250000")),
+            FakeResult(scalar_rows=[23]),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(
+        ValueError, match="does not match the period health plan snapshots"
+    ):
+        await repository.get_contribution_context(
+            SimpleNamespace(period_id=5, pension_plan_id=11, health_plan_id=22)
+        )
+
+
+@pytest.mark.asyncio
+async def test_repository_rejects_contribution_context_mixed_health_institutions() -> (
+    None
+):
+    """Test contribution context rejects mixed institutions in period health plans."""
+    period = PayrollPeriodModel(
+        id=5,
+        employer_id=10,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        status=PayrollStatus.PROJECTED,
+        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=period),
+            FakeResult(
+                first_row=(
+                    PensionPlanModel(
+                        id=11,
+                        institution_id=1,
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        additional_rate=Decimal("0.0127"),
+                    ),
+                    PensionInstitutionModel(
+                        id=1,
+                        code="AFP_UNO",
+                        name="AFP Uno",
+                        mandatory_rate=Decimal("0.10"),
+                        is_active=True,
+                    ),
+                )
+            ),
+            FakeResult(
+                first_row=(
+                    HealthPlanModel(
+                        id=22,
+                        institution_id=2,
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        plan_name="Base",
+                        contracted_uf=Decimal("5.42"),
+                    ),
+                    HealthInstitutionModel(
+                        id=2,
+                        code="FONASA",
+                        name="Fonasa",
+                        kind=HealthInstitutionKind.FONASA,
+                        mandatory_rate=Decimal("0.07"),
+                        is_active=True,
+                    ),
+                )
+            ),
+            FakeResult(
+                scalar_one=ContributionCapModel(
+                    id=33,
+                    cap_type=ContributionCapType.PENSION_HEALTH,
+                    valid_from=date(2026, 1, 1),
+                    valid_to=None,
+                    value_uf=Decimal("90.0000"),
+                )
+            ),
+            FakeResult(
+                scalar_one=ContributionCapModel(
+                    id=34,
+                    cap_type=ContributionCapType.UNEMPLOYMENT,
+                    valid_from=date(2026, 1, 1),
+                    valid_to=None,
+                    value_uf=Decimal("135.0000"),
+                )
+            ),
+            FakeResult(scalar_one=Decimal("1250000")),
+            FakeResult(scalar_rows=[22, 23]),
+            FakeResult(
+                first_row=(
+                    HealthPlanModel(
+                        id=22,
+                        institution_id=2,
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        plan_name="Base",
+                        contracted_uf=Decimal("5.42"),
+                    ),
+                    HealthInstitutionModel(
+                        id=2,
+                        code="FONASA",
+                        name="Fonasa",
+                        kind=HealthInstitutionKind.FONASA,
+                        mandatory_rate=Decimal("0.07"),
+                        is_active=True,
+                    ),
+                )
+            ),
+            FakeResult(
+                first_row=(
+                    HealthPlanModel(
+                        id=23,
+                        institution_id=3,
+                        valid_from=date(2026, 1, 1),
+                        valid_to=None,
+                        plan_name="Other",
+                        contracted_uf=Decimal("0.91"),
+                    ),
+                    HealthInstitutionModel(
+                        id=3,
+                        code="ISAPRE_X",
+                        name="Isapre X",
+                        kind=HealthInstitutionKind.ISAPRE,
+                        mandatory_rate=Decimal("0.07"),
+                        is_active=True,
+                    ),
+                )
+            ),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="must belong to the same health institution"):
+        await repository.get_contribution_context(
+            SimpleNamespace(period_id=5, pension_plan_id=11, health_plan_id=22)
+        )
 
 
 @pytest.mark.asyncio

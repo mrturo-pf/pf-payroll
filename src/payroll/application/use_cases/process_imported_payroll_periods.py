@@ -1,6 +1,7 @@
 """Use case for post-processing imported payroll periods."""
 
 from payroll.application.dto import (
+    ComputeContributionsCommandDTO,
     ComputeIncomeTaxCommandDTO,
     ComputeUnemploymentInsuranceCommandDTO,
     ImportPayrollResultDTO,
@@ -9,6 +10,10 @@ from payroll.application.dto import (
 from payroll.application.ports.repositories import (
     MarketDataRepository,
     PayrollRepository,
+)
+from payroll.application.services.contribution_computation import (
+    ContributionComputationService,
+    build_imported_contribution_validation,
 )
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.compute_unemployment_insurance import (
@@ -35,6 +40,9 @@ class ProcessImportedPayrollPeriods:
     ) -> None:
         """Initialize the instance."""
         self._repository = repository
+        self._contributions = ContributionComputationService(
+            repository, market_data_repository
+        )
         self._compute_unemployment = ComputeUnemploymentInsurance(
             repository, market_data_repository
         )
@@ -89,6 +97,21 @@ class ProcessImportedPayrollPeriods:
         if summary is None:
             return period
 
+        computed_contributions = None
+        if detail.pension_plan_id is not None and detail.health_plan_id is not None:
+            computed_contributions = await self._contributions.compute(
+                ComputeContributionsCommandDTO(
+                    period_id=detail.id,
+                    pension_plan_id=detail.pension_plan_id,
+                    health_plan_id=detail.health_plan_id,
+                )
+            )
+
+        contribution_validation = build_imported_contribution_validation(
+            detail,
+            computed_contributions,
+        )
+
         return ImportedPayrollPeriodDTO(
             id=detail.id,
             employer=detail.employer_name,
@@ -103,4 +126,5 @@ class ProcessImportedPayrollPeriods:
             expected_net_pay_clp=summary.expected_net_pay_clp,
             net_pay_difference_clp=summary.net_pay_difference_clp,
             net_pay_warning=summary.net_pay_warning,
+            contribution_validation=contribution_validation,
         )

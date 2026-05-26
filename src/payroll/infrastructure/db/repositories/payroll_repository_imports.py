@@ -22,6 +22,7 @@ from payroll.infrastructure.db.models.payroll import (
     EmployerFixedDayRoll,
     EmployerPaymentDateRule,
     PayrollItemModel,
+    PayrollPeriodHealthPlanModel,
     PayrollPeriodModel,
     PayrollStatus,
 )
@@ -87,6 +88,66 @@ def build_month_period_range(
 class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
     """Persistence operations related to payroll imports."""
 
+    def _resolve_period_plan_id(
+        self,
+        period_rows: list[ImportPayrollRowDTO],
+        *,
+        attribute_name: str,
+        column_name: str,
+    ) -> int | None:
+        """Resolve a consistent plan id for a grouped import period."""
+        values = {
+            getattr(row, attribute_name, None)
+            for row in period_rows
+            if getattr(row, attribute_name, None) is not None
+        }
+        if len(values) > 1:
+            raise PayrollValidationError(
+                f"Inconsistent {column_name} values for the same imported period."
+            )
+        if not values:
+            return None
+        return next(iter(values))
+
+    def _resolve_period_health_plan_ids(
+        self, period_rows: list[ImportPayrollRowDTO]
+    ) -> tuple[int, ...] | None:
+        """Resolve consistent health plan ids for an imported period."""
+        values: set[tuple[int, ...]] = set()
+        for row in period_rows:
+            plan_ids = getattr(row, "health_plan_ids", None)
+            if plan_ids is None:
+                single_plan_id = getattr(row, "health_plan_id", None)
+                plan_ids = None if single_plan_id is None else (single_plan_id,)
+            if plan_ids is not None:
+                values.add(tuple(plan_ids))
+        if len(values) > 1:
+            raise PayrollValidationError(
+                "Inconsistent health_plan_id values for the same imported period."
+            )
+        if not values:
+            return None
+        return next(iter(values))
+
+    async def _sync_period_health_plans(
+        self, period: PayrollPeriodModel, health_plan_ids: tuple[int, ...]
+    ) -> None:
+        """Replace period health plan snapshot rows."""
+        await self._session.execute(
+            delete(PayrollPeriodHealthPlanModel).where(
+                PayrollPeriodHealthPlanModel.period_id == period.id
+            )
+        )
+        self._session.add_all(
+            [
+                PayrollPeriodHealthPlanModel(
+                    period_id=period.id,
+                    health_plan_id=plan_id,
+                )
+                for plan_id in health_plan_ids
+            ]
+        )
+
     async def import_rows(
         self, rows: list[ImportPayrollRowDTO]
     ) -> ImportPayrollResultDTO:
@@ -121,6 +182,27 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
         for (employer_name, year, month), period_rows in sorted(grouped_rows.items()):
             first_row = period_rows[0]
             worked_days = getattr(first_row, "worked_days", 30)
+            pension_plan_id = self._resolve_period_plan_id(
+                period_rows,
+                attribute_name="pension_plan_id",
+                column_name="pension_plan_id",
+            )
+            health_plan_ids = self._resolve_period_health_plan_ids(period_rows)
+            health_plan_id = (
+                None if health_plan_ids is None else int(health_plan_ids[0])
+            )
+            if (pension_plan_id is None) != (health_plan_ids is None):
+                raise PayrollValidationError(
+                    "Both pension_plan_id and health_plan_id must be provided together."
+                )
+            if pension_plan_id is not None and health_plan_ids is not None:
+                await self._get_pension_plan(pension_plan_id, first_row.payment_date)
+                for plan_id in health_plan_ids:
+                    await self._get_health_plan(
+                        plan_id,
+                        first_row.payment_date,
+                        require_active=True,
+                    )
 
             employer_result = await self._session.execute(
                 select(EmployerModel).where(EmployerModel.name == employer_name)
@@ -167,9 +249,13 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                     declared_net_pay_clp=first_row.declared_net_pay_clp,
                     expected_net_pay_clp=None,
                     net_pay_difference_clp=None,
+                    pension_plan_id=pension_plan_id,
+                    health_plan_id=health_plan_id,
                 )
                 self._session.add(period)
                 await self._session.flush()
+                if health_plan_ids is not None:
+                    await self._sync_period_health_plans(period, health_plan_ids)
             else:
                 period.payment_date = first_row.payment_date
                 period.worked_days = worked_days
@@ -178,6 +264,10 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                 period.declared_net_pay_clp = first_row.declared_net_pay_clp
                 period.expected_net_pay_clp = None
                 period.net_pay_difference_clp = None
+                if pension_plan_id is not None and health_plan_ids is not None:
+                    period.pension_plan_id = pension_plan_id
+                    period.health_plan_id = health_plan_id
+                    await self._sync_period_health_plans(period, health_plan_ids)
                 await self._session.execute(
                     delete(PayrollItemModel).where(
                         PayrollItemModel.period_id == period.id

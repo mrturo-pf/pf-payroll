@@ -309,6 +309,7 @@ def test_payroll_import_endpoint() -> None:
                     "Declared net_pay will be reconciled after computed "
                     "contributions and income tax are generated."
                 ),
+                "contribution_validation": None,
             }
         ],
     }

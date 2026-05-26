@@ -170,9 +170,31 @@ class ImportPayrollRowDTO:
     concept_code: str
     amount_clp: Decimal
     worked_days: int = 30
+    pension_plan_id: int | None = None
+    health_plan_id: int | None = None
+    health_plan_ids: tuple[int, ...] | None = None
     declared_net_pay_clp: Decimal | None = None
     expected_net_pay_clp: Decimal | None = None
     net_pay_difference_clp: Decimal | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ImportedContributionValidationDTO:
+    """Represent imported contribution validation results."""
+
+    declared_pension_base_clp: Decimal | None = None
+    expected_pension_base_clp: Decimal | None = None
+    pension_base_difference_clp: Decimal | None = None
+    declared_pension_additional_clp: Decimal | None = None
+    expected_pension_additional_clp: Decimal | None = None
+    pension_additional_difference_clp: Decimal | None = None
+    declared_health_base_clp: Decimal | None = None
+    expected_health_base_clp: Decimal | None = None
+    health_base_difference_clp: Decimal | None = None
+    declared_health_plan_additional_clp: Decimal | None = None
+    expected_health_plan_additional_clp: Decimal | None = None
+    health_plan_additional_difference_clp: Decimal | None = None
+    warning: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,6 +214,7 @@ class ImportedPayrollPeriodDTO:
     expected_net_pay_clp: Decimal | None = None
     net_pay_difference_clp: Decimal | None = None
     net_pay_warning: str | None = None
+    contribution_validation: ImportedContributionValidationDTO | None = None
 
 
 @dataclass(frozen=True, slots=True)

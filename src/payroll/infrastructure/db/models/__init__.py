@@ -3,6 +3,7 @@
 from payroll.infrastructure.db.models.payroll import (
     EmployerModel,
     PayrollItemModel,
+    PayrollPeriodHealthPlanModel,
     PayrollPeriodModel,
     PayrollSummaryModel,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "PayrollItemModel",
     "PayrollConceptModel",
     "PayrollPeriodModel",
+    "PayrollPeriodHealthPlanModel",
     "PayrollSummaryModel",
     "PensionInstitutionModel",
     "PensionPlanModel",

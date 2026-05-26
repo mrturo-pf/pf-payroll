@@ -109,6 +109,47 @@ def parse_worked_days(raw_value: object) -> int:
     return worked_days
 
 
+def parse_optional_plan_id(column_name: str, raw_value: object) -> int | None:
+    """Parse an optional plan id column."""
+    if pd.isna(raw_value):
+        return None
+    normalized = str(raw_value).strip()
+    if not normalized:
+        return None
+    try:
+        decimal_value = Decimal(normalized)
+    except ArithmeticError as exc:
+        raise PayrollValidationError(
+            f"{column_name} must be a whole positive integer when provided."
+        ) from exc
+    if decimal_value != decimal_value.to_integral_value() or decimal_value <= 0:
+        raise PayrollValidationError(
+            f"{column_name} must be a whole positive integer when provided."
+        )
+    return int(decimal_value)
+
+
+def parse_optional_health_plan_ids(raw_value: object) -> tuple[int, ...] | None:
+    """Parse optional health-plan ids allowing comma-separated values."""
+    if pd.isna(raw_value):
+        return None
+    normalized = str(raw_value).strip()
+    if not normalized:
+        return None
+
+    plan_ids: list[int] = []
+    for raw_part in (
+        normalized.replace("|", ",").replace(";", ",").replace("/", ",").split(",")
+    ):
+        plan_id = parse_optional_plan_id("health_plan_id", raw_part.strip())
+        if plan_id is not None:
+            plan_ids.append(plan_id)
+
+    if not plan_ids:
+        return None
+    return tuple(plan_ids)
+
+
 def read_payroll_dataframe(filename: str, payload: BufferedIOBase) -> pd.DataFrame:
     """Read payroll dataframe."""
     lowered = filename.lower()
@@ -213,6 +254,12 @@ def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:
             "month": pd.to_datetime(m_str, format="%b").month,
             "payment_date": payment_dt.date(),
             "worked_days": parse_worked_days(row.get("worked_days")),
+            "pension_plan_id": parse_optional_plan_id(
+                "pension_plan_id", row.get("pension_plan_id")
+            ),
+            "health_plan_ids": parse_optional_health_plan_ids(
+                row.get("health_plan_id")
+            ),
             "status": "actual" if pd.notna(row.get("net_pay")) else "projected",
             "employment_contract_kind": parse_contract_kind(
                 row.get("employment_contract_kind")
@@ -261,6 +308,19 @@ class XlsxPayrollImporter(PayrollImporter):
                     concept_code=str(row["concept_code"]),
                     amount_clp=row["amount_clp"],
                     worked_days=int(row["worked_days"]),
+                    pension_plan_id=None
+                    if row["pension_plan_id"] is None
+                    else int(row["pension_plan_id"]),
+                    health_plan_id=(
+                        None
+                        if row["health_plan_ids"] is None
+                        else int(row["health_plan_ids"][0])
+                    ),
+                    health_plan_ids=(
+                        None
+                        if row["health_plan_ids"] is None
+                        else tuple(int(plan_id) for plan_id in row["health_plan_ids"])
+                    ),
                     declared_net_pay_clp=None
                     if validation is None
                     else validation.declared_net_pay_clp,

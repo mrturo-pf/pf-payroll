@@ -18,7 +18,7 @@ from payroll.application.dto import (
 from payroll.application.use_cases.process_imported_payroll_periods import (
     ProcessImportedPayrollPeriods,
 )
-from payroll.domain.contributions import EmploymentContractKind
+from payroll.domain.contributions import EmploymentContractKind, HealthInstitutionKind
 
 
 def _sample_summary() -> PayrollSummaryDTO:
@@ -39,7 +39,12 @@ def _sample_summary() -> PayrollSummaryDTO:
 
 
 def _sample_detail(
-    *, item_codes: list[str], expected_net_pay_clp: Decimal | None = None
+    *,
+    item_codes: list[str],
+    expected_net_pay_clp: Decimal | None = None,
+    pension_plan_id: int | None = None,
+    health_plan_id: int | None = None,
+    item_amounts: dict[str, Decimal] | None = None,
 ) -> PayrollPeriodDetailDTO:
     """Build a sample period detail."""
     items = [
@@ -48,7 +53,11 @@ def _sample_detail(
             concept_name=code.title(),
             kind="discount" if code != "SALARY_BASE" else "income",
             is_taxable=code == "SALARY_BASE",
-            amount_clp=Decimal("1000"),
+            amount_clp=(
+                item_amounts[code]
+                if item_amounts is not None and code in item_amounts
+                else Decimal("1000")
+            ),
             notes=None,
         )
         for code in item_codes
@@ -82,8 +91,8 @@ def _sample_detail(
         worked_days=30,
         status="actual",
         employment_contract_kind=EmploymentContractKind.INDEFINITE,
-        pension_plan_id=None,
-        health_plan_id=None,
+        pension_plan_id=pension_plan_id,
+        health_plan_id=health_plan_id,
         health_institution_is_active=None,
         items=items,
         summary=summary,
@@ -143,6 +152,79 @@ class StubPayrollRepository:
             },
         )()
 
+    async def get_contribution_context(self, command: object) -> object:
+        """Get contribution context."""
+        return type(
+            "Context",
+            (),
+            {
+                "period_id": 7,
+                "payment_date": date(2026, 4, 30),
+                "taxable_income_clp": Decimal("1000000"),
+                "employment_contract_kind": EmploymentContractKind.INDEFINITE,
+                "pension_plan": type(
+                    "PensionPlan",
+                    (),
+                    {
+                        "id": 1,
+                        "institution": type(
+                            "PensionInstitution",
+                            (),
+                            {
+                                "code": "AFP_UNO",
+                                "name": "AFP Uno",
+                                "mandatory_rate": Decimal("0.10"),
+                            },
+                        )(),
+                        "valid_from": date(2026, 1, 1),
+                        "valid_to": None,
+                        "additional_rate": Decimal("0.0127"),
+                    },
+                )(),
+                "health_plan": type(
+                    "HealthPlan",
+                    (),
+                    {
+                        "id": 2,
+                        "institution": type(
+                            "HealthInstitution",
+                            (),
+                            {
+                                "code": "BANMEDICA",
+                                "name": "Banmedica",
+                                "kind": HealthInstitutionKind.ISAPRE,
+                                "mandatory_rate": Decimal("0.07"),
+                            },
+                        )(),
+                        "valid_from": date(2026, 1, 1),
+                        "valid_to": None,
+                        "plan_name": "Plan Oro",
+                        "contracted_uf": Decimal("8.1000"),
+                    },
+                )(),
+                "cap": type(
+                    "Cap",
+                    (),
+                    {
+                        "cap_type": "pension_health",
+                        "valid_from": date(2026, 1, 1),
+                        "valid_to": None,
+                        "value_uf": Decimal("90.0000"),
+                    },
+                )(),
+                "unemployment_cap": type(
+                    "Cap",
+                    (),
+                    {
+                        "cap_type": "unemployment",
+                        "valid_from": date(2026, 1, 1),
+                        "valid_to": None,
+                        "value_uf": Decimal("90.0000"),
+                    },
+                )(),
+            },
+        )()
+
     async def save_computed_unemployment(
         self, result: ComputeUnemploymentInsuranceResultDTO
     ) -> ComputeUnemploymentInsuranceResultDTO:
@@ -191,12 +273,20 @@ class StubPayrollRepository:
 class StubMarketDataRepository:
     """Test double for Market Data Repository."""
 
+    def __init__(
+        self, uf_value: Decimal | dict[date, Decimal] | None = Decimal("40000")
+    ) -> None:
+        """Initialize the instance."""
+        self.uf_value = uf_value
+
     async def get_exchange_rate_value(
         self, currency_code: str, rate_date: date
     ) -> Decimal | None:
         """Get exchange rate value."""
         if currency_code == "UF":
-            return Decimal("40000")
+            if isinstance(self.uf_value, dict):
+                return self.uf_value.get(rate_date)
+            return self.uf_value
         return Decimal("70000")
 
 
@@ -233,6 +323,75 @@ async def test_process_imported_payroll_periods_compute_and_refresh() -> None:
     assert repository.saved_tax == [7]
     assert result.periods[0].item_count == 7
     assert result.periods[0].expected_net_pay_clp == Decimal("1100000")
+
+
+@pytest.mark.asyncio
+async def test_process_imported_payroll_periods_validates_imported_contributions() -> (
+    None
+):
+    """Test post-processing validates imported contribution breakdowns."""
+
+    class ValidatedRepository(StubPayrollRepository):
+        """Repository with plan snapshots assigned."""
+
+        async def get_period_detail(
+            self, period_id: int
+        ) -> PayrollPeriodDetailDTO | None:
+            """Get period detail."""
+            return _sample_detail(
+                item_codes=[
+                    "SALARY_BASE",
+                    "PENSION_BASE",
+                    "PENSION_ADDITIONAL",
+                    "HEALTH_BASE",
+                    "HEALTH_ADDITIONAL_UF",
+                ],
+                pension_plan_id=1,
+                health_plan_id=2,
+                item_amounts={
+                    "PENSION_BASE": Decimal("100000"),
+                    "PENSION_ADDITIONAL": Decimal("12700"),
+                    "HEALTH_BASE": Decimal("70000"),
+                    "HEALTH_ADDITIONAL_UF": Decimal("213500"),
+                },
+            )
+
+    repository = ValidatedRepository()
+    use_case = ProcessImportedPayrollPeriods(
+        repository,
+        StubMarketDataRepository(Decimal("35000")),
+    )
+
+    result = await use_case.execute(
+        ImportPayrollResultDTO(
+            imported_periods=1,
+            imported_items=5,
+            periods=[
+                ImportedPayrollPeriodDTO(
+                    id=7,
+                    employer="ACME",
+                    period_year=2026,
+                    period_month=4,
+                    payment_date=date(2026, 4, 30),
+                    status="actual",
+                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                    item_count=5,
+                    declared_net_pay_clp=Decimal("1050000"),
+                )
+            ],
+        )
+    )
+
+    assert repository.saved_unemployment == [7]
+    assert repository.saved_tax == [7]
+    assert result.periods[0].contribution_validation is not None
+    assert result.periods[0].contribution_validation.expected_pension_base_clp == (
+        Decimal("100000")
+    )
+    assert result.periods[
+        0
+    ].contribution_validation.expected_health_plan_additional_clp == Decimal("213500")
+    assert result.periods[0].contribution_validation.warning is None
 
 
 @pytest.mark.asyncio

@@ -35,6 +35,7 @@ from payroll.infrastructure.db.models import (
     IncomeTaxBracketModel,
 )
 from payroll.infrastructure.db.models.payroll import PayrollItemModel, PayrollStatus
+from payroll.infrastructure.db.models.payroll import PayrollPeriodHealthPlanModel
 from payroll.infrastructure.db.models.reference_data import (
     ContributionCapType,
     PayrollConceptKind,
@@ -222,6 +223,39 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
         )
 
         taxable_income_clp = await self._get_taxable_income_clp(period.id)
+        aggregated_contracted_uf = health_plan_model.contracted_uf
+        assigned_plan_ids_result = await self._session.execute(
+            select(PayrollPeriodHealthPlanModel.health_plan_id).where(
+                PayrollPeriodHealthPlanModel.period_id == period.id
+            )
+        )
+        assigned_plan_ids = [
+            int(plan_id) for plan_id in assigned_plan_ids_result.scalars().all()
+        ]
+        if assigned_plan_ids:
+            if command.health_plan_id not in assigned_plan_ids:
+                raise PayrollConflictError(
+                    "The provided health_plan_id does not match the period health "
+                    "plan snapshots."
+                )
+            aggregated_contracted_uf = Decimal("0")
+            for assigned_plan_id in assigned_plan_ids:
+                (
+                    assigned_health_plan_model,
+                    assigned_health_institution_model,
+                ) = await self._get_health_plan(
+                    assigned_plan_id,
+                    period.payment_date,
+                )
+                if (
+                    assigned_health_institution_model.code
+                    != health_institution_model.code
+                ):
+                    raise PayrollConflictError(
+                        "All assigned health plans for a payroll period must belong "
+                        "to the same health institution."
+                    )
+                aggregated_contracted_uf += assigned_health_plan_model.contracted_uf
 
         return ContributionComputationContextDTO(
             period_id=period.id,
@@ -250,7 +284,7 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
                 valid_from=health_plan_model.valid_from,
                 valid_to=health_plan_model.valid_to,
                 plan_name=health_plan_model.plan_name,
-                contracted_uf=health_plan_model.contracted_uf,
+                contracted_uf=aggregated_contracted_uf,
             ),
             cap=ContributionCap(
                 cap_type=cap_model.cap_type.value,

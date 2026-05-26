@@ -119,6 +119,27 @@ class PayrollPeriodModel(Base):
 
     employer: Mapped[EmployerModel] = relationship(back_populates="payroll_periods")
     items: Mapped[list["PayrollItemModel"]] = relationship(back_populates="period")
+    health_plans: Mapped[list["PayrollPeriodHealthPlanModel"]] = relationship(
+        back_populates="period",
+        cascade="all, delete-orphan",
+    )
+
+
+class PayrollPeriodHealthPlanModel(Base):
+    """Represent health plan snapshots assigned to a payroll period."""
+
+    __tablename__ = "payroll_period_health_plans"
+
+    period_id: Mapped[int] = mapped_column(
+        ForeignKey("payroll_periods.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    health_plan_id: Mapped[int] = mapped_column(
+        ForeignKey("health_plans.id"),
+        primary_key=True,
+    )
+
+    period: Mapped[PayrollPeriodModel] = relationship(back_populates="health_plans")
 
 
 class PayrollItemModel(Base):

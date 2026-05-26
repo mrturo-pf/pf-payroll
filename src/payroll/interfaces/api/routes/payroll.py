@@ -55,6 +55,24 @@ from payroll.interfaces.api.dependencies import (
 router = APIRouter(prefix="/payroll", tags=["payroll"])
 
 
+class ImportedContributionValidationRead(BaseModel):
+    """Represent Imported Contribution Validation Read."""
+
+    declared_pension_base_clp: Decimal | None = None
+    expected_pension_base_clp: Decimal | None = None
+    pension_base_difference_clp: Decimal | None = None
+    declared_pension_additional_clp: Decimal | None = None
+    expected_pension_additional_clp: Decimal | None = None
+    pension_additional_difference_clp: Decimal | None = None
+    declared_health_base_clp: Decimal | None = None
+    expected_health_base_clp: Decimal | None = None
+    health_base_difference_clp: Decimal | None = None
+    declared_health_plan_additional_clp: Decimal | None = None
+    expected_health_plan_additional_clp: Decimal | None = None
+    health_plan_additional_difference_clp: Decimal | None = None
+    warning: str | None = None
+
+
 class ImportedPayrollPeriodRead(BaseModel):
     """Represent Imported Payroll Period Read."""
 
@@ -71,6 +89,7 @@ class ImportedPayrollPeriodRead(BaseModel):
     expected_net_pay_clp: Decimal | None = None
     net_pay_difference_clp: Decimal | None = None
     net_pay_warning: str | None = None
+    contribution_validation: ImportedContributionValidationRead | None = None
 
 
 class ImportPayrollResponse(BaseModel):

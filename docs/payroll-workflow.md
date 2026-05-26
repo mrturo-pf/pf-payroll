@@ -193,9 +193,9 @@ Jan/2026,ACME,2026-01-31,indefinite,1000000
 Full CSV:
 
 ```csv
-period,employer,payment_date,worked_days,employment_contract_kind,salary_base,monthly_legal_gratuity,teleworking_refund,health_insurance_employer_contribution,vacation_incentive,holiday_bonus,availability_bonus,legal_gratuity_adjustment,prior_salary_difference,pension_base,pension_additional,health_base,health_plan_additional,health_insurance,vacation_bonus_advance,holiday_bonus_advance,salary_advance,prior_month_leave_absence_discount,net_pay
-Jan/2026,ACME,2026-01-31,30,indefinite,1000000,250000,50000,10030,0,0,45000,0,0,100000,25000,70000,87500,12000,5000,0,15000,3000,1130030
-Feb/2026,ACME,2026-02-28,28,fixed_term,1000000,250000,50000,10030,0,0,45000,0,15000,100000,25000,70000,87500,12000,0,10000,5000,3000,1150030
+period,employer,payment_date,worked_days,employment_contract_kind,pension_plan_id,health_plan_id,salary_base,monthly_legal_gratuity,teleworking_refund,health_insurance_employer_contribution,vacation_incentive,holiday_bonus,availability_bonus,legal_gratuity_adjustment,prior_salary_difference,pension_base,pension_additional,health_base,health_plan_additional,health_insurance,vacation_bonus_advance,holiday_bonus_advance,salary_advance,prior_month_leave_absence_discount,net_pay
+Jan/2026,ACME,2026-01-31,30,indefinite,1,1,1000000,250000,50000,10030,0,0,45000,0,0,100000,25000,70000,87500,12000,5000,0,15000,3000,1130030
+Feb/2026,ACME,2026-02-28,28,fixed_term,1,1,1000000,250000,50000,10030,0,0,45000,0,15000,100000,25000,70000,87500,12000,0,10000,5000,3000,1150030
 ```
 
 Supported payroll amount columns:
@@ -249,12 +249,16 @@ Import notes:
 - `period` must use `Mon/YYYY`, for example `Jan/2026`
 - `payment_date` is required
 - `worked_days` is optional; if omitted, the import defaults to 30
+- `pension_plan_id` and `health_plan_id` are optional, but must be provided together
+- `health_plan_id` accepts one id or multiple ids separated by commas (for example `2,3`) and the system sums all their `contracted_uf` values during contribution calculation
 - `employer` is required
 - `employment_contract_kind` is required
 - accepted contract kind aliases include `indefinite`, `fixed_term`, `indefinido`, and `plazo_fijo`
 - `net_pay` is optional; if present, the imported period is marked as `actual`, otherwise it is marked as `projected`
 - `net_pay` is **not** imported as a payroll concept row
 - when `net_pay` is present, the import response stores the declared value and marks reconciliation as pending until computed contributions and income tax are generated
+- when the imported period already has pension and health plan snapshots assigned, post-processing also validates `PENSION_BASE`, `PENSION_ADDITIONAL`, `HEALTH_BASE`, and `HEALTH_ADDITIONAL_UF` against the internally computed contribution values
+- if plan snapshots are still missing, that contribution validation stays pending until `assign-plans` and `compute-contributions` run
 - during import, the system also tries to fetch any missing `UF`, `UTM`, `USD`, `EUR`, or `IPC_CL` entries required by the imported period so the next calculation steps can run immediately
 - all UF-valued payroll contribution calculations use the **last day of the remuneration month**, including contribution caps and `ISAPRE` contracted plan pricing; imports therefore request the `UF` for both the payroll `payment_date` and the month's last day when those dates differ
 - if the CSV already includes `PENSION_BASE`, `PENSION_ADDITIONAL`, `HEALTH_BASE`, and `HEALTH_ADDITIONAL_UF`, the import flow automatically computes the remaining modeled concepts that do not depend on plan assignment: `UNEMPLOYMENT_INSURANCE` and `INCOME_TAX`

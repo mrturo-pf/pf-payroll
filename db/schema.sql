@@ -213,6 +213,12 @@ CREATE TABLE IF NOT EXISTS payroll_periods (
     UNIQUE (employer_id, period_year, period_month)
 );
 
+CREATE TABLE IF NOT EXISTS payroll_period_health_plans (
+    period_id      BIGINT NOT NULL REFERENCES payroll_periods(id) ON DELETE CASCADE,
+    health_plan_id BIGINT NOT NULL REFERENCES health_plans(id),
+    PRIMARY KEY (period_id, health_plan_id)
+);
+
 ALTER TABLE payroll_periods
     ADD COLUMN IF NOT EXISTS employment_contract_kind employment_contract_kind NOT NULL DEFAULT 'indefinite';
 ALTER TABLE payroll_periods

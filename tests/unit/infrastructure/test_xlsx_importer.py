@@ -11,8 +11,6 @@ from payroll.infrastructure.importers.xlsx_importer import (
     XlsxPayrollImporter,
     extract_net_pay_validations,
     parse_period,
-    parse_optional_health_plan_ids,
-    parse_optional_plan_id,
     parse_payment_date,
     parse_worked_days,
     read_payroll_dataframe,
@@ -276,35 +274,6 @@ def test_parse_period_prefers_split_fields_and_validates_inputs() -> None:
         parse_period(pd.Series({"period_month": 1, "period_year": 0}))
 
 
-def test_parse_optional_plan_id_defaults_and_validates() -> None:
-    """Test parse optional plan id defaults and validates."""
-    assert parse_optional_plan_id("pension_plan_id", None) is None
-    assert parse_optional_plan_id("pension_plan_id", "") is None
-    assert parse_optional_plan_id("pension_plan_id", "3") == 3
-
-    with pytest.raises(ValueError, match="pension_plan_id"):
-        parse_optional_plan_id("pension_plan_id", "0")
-
-    with pytest.raises(ValueError, match="pension_plan_id"):
-        parse_optional_plan_id("pension_plan_id", "3.5")
-
-    with pytest.raises(ValueError, match="pension_plan_id"):
-        parse_optional_plan_id("pension_plan_id", "abc")
-
-
-def test_parse_optional_health_plan_ids_defaults_and_validates() -> None:
-    """Test parse optional health plan ids defaults and validates."""
-    assert parse_optional_health_plan_ids(None) is None
-    assert parse_optional_health_plan_ids("") is None
-    assert parse_optional_health_plan_ids("2") == (2,)
-    assert parse_optional_health_plan_ids("2,3") == (2, 3)
-    assert parse_optional_health_plan_ids("2|3;4/5") == (2, 3, 4, 5)
-    assert parse_optional_health_plan_ids(" , ; / ") is None
-
-    with pytest.raises(ValueError, match="health_plan_id"):
-        parse_optional_health_plan_ids("2,a")
-
-
 def test_extract_net_pay_validations_returns_expected_and_difference_values() -> None:
     """Test extract net pay validations returns expected and difference values."""
     result = extract_net_pay_validations(
@@ -383,9 +352,6 @@ def test_xlsx_payroll_importer_builds_application_rows() -> None:
     assert len(rows) == 2
     assert rows[0].payment_date.isoformat() == "2026-01-31"
     assert rows[0].worked_days == 28
-    assert rows[0].pension_plan_id == 1
-    assert rows[0].health_plan_id == 2
-    assert rows[0].health_plan_ids == (2,)
     assert rows[0].declared_net_pay_clp == Decimal("950000")
     assert rows[0].expected_net_pay_clp == Decimal("900000")
     assert rows[0].net_pay_difference_clp == Decimal("50000")
@@ -408,7 +374,7 @@ def test_xlsx_payroll_importer_maps_health_plan_additional_column() -> None:
 
 
 def test_xlsx_payroll_importer_reads_multiple_health_plan_ids() -> None:
-    """Test importer parses multiple health plans from a single CSV column."""
+    """Test importer reads CSV with health plan IDs (deduced in system)."""
     rows = XlsxPayrollImporter().read_rows(
         "sample.csv",
         (
@@ -418,9 +384,9 @@ def test_xlsx_payroll_importer_reads_multiple_health_plan_ids() -> None:
         ),
     )
 
-    assert rows[0].pension_plan_id == 1
-    assert rows[0].health_plan_id == 2
-    assert rows[0].health_plan_ids == (2, 3)
+    assert len(rows) == 1
+    assert rows[0].period_month == 1
+    assert rows[0].period_year == 2026
 
 
 def test_xlsx_payroll_importer_maps_health_insurance_columns() -> None:

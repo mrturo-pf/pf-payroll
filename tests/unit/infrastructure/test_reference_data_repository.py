@@ -326,6 +326,17 @@ async def test_sa_reference_data_repository_returns_zero_when_no_brackets_exist(
     assert session.commit_calls == 0
 
 
+@pytest.mark.asyncio
+async def test_reference_data_repo_returns_none_when_no_pension_plan_for_date() -> None:
+    """Test returning None when no pension plan matches the reference date."""
+    session = FakeSession([FakeResult(joined_rows=[])])
+    repository = SqlAlchemyReferenceDataRepository(session)
+
+    result = await repository.get_valid_pension_plan_for_date(date(2026, 1, 1))
+
+    assert result is None
+
+
 def test_reference_data_models_and_enums_are_declared() -> None:
     """Test reference data models and enums are declared."""
     assert CurrencyModel.__tablename__ == "currencies"

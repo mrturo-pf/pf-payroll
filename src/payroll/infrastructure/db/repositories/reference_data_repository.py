@@ -1,7 +1,9 @@
 """SQLAlchemy repository for reference data."""
 
+from datetime import date
+
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from payroll.application.dto import (
@@ -222,3 +224,82 @@ class SqlAlchemyReferenceDataRepository:
         )
         await self._session.commit()
         return len(brackets)
+
+    async def get_valid_pension_plan_for_date(
+        self, reference_date: date
+    ) -> PensionPlanDTO | None:
+        """Get the valid pension plan for a given reference date.
+
+        A plan is valid if:
+        - reference_date >= valid_from AND
+        - (valid_to IS NULL OR reference_date <= valid_to)
+        """
+        result = await self._session.execute(
+            select(PensionPlanModel, PensionInstitutionModel)
+            .join(
+                PensionInstitutionModel,
+                PensionPlanModel.institution_id == PensionInstitutionModel.id,
+            )
+            .where(
+                and_(
+                    PensionPlanModel.valid_from <= reference_date,
+                    or_(
+                        PensionPlanModel.valid_to.is_(None),
+                        PensionPlanModel.valid_to >= reference_date,
+                    ),
+                )
+            )
+            .order_by(PensionPlanModel.valid_from.desc())
+        )
+        rows = result.all()
+        if not rows:
+            return None
+        plan, institution = rows[0]
+        return PensionPlanDTO(
+            id=plan.id,
+            institution_code=institution.code,
+            institution_name=institution.name,
+            valid_from=plan.valid_from,
+            valid_to=plan.valid_to,
+            additional_rate=plan.additional_rate,
+        )
+
+    async def get_valid_health_plans_for_date(
+        self, reference_date: date
+    ) -> list[HealthPlanDTO]:
+        """Get valid health plans for a given reference date.
+
+        A plan is valid if:
+        - reference_date >= valid_from AND
+        - (valid_to IS NULL OR reference_date <= valid_to)
+        """
+        result = await self._session.execute(
+            select(HealthPlanModel, HealthInstitutionModel)
+            .join(
+                HealthInstitutionModel,
+                HealthPlanModel.institution_id == HealthInstitutionModel.id,
+            )
+            .where(
+                and_(
+                    HealthPlanModel.valid_from <= reference_date,
+                    or_(
+                        HealthPlanModel.valid_to.is_(None),
+                        HealthPlanModel.valid_to >= reference_date,
+                    ),
+                )
+            )
+            .order_by(HealthPlanModel.valid_from.desc())
+        )
+        return [
+            HealthPlanDTO(
+                id=plan.id,
+                institution_code=institution.code,
+                institution_name=institution.name,
+                institution_kind=institution.kind,
+                valid_from=plan.valid_from,
+                valid_to=plan.valid_to,
+                plan_name=plan.plan_name,
+                contracted_uf=plan.contracted_uf,
+            )
+            for plan, institution in result.all()
+        ]

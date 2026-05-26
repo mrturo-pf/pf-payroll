@@ -170,9 +170,6 @@ class ImportPayrollRowDTO:
     concept_code: str
     amount_clp: Decimal
     worked_days: int = 30
-    pension_plan_id: int | None = None
-    health_plan_id: int | None = None
-    health_plan_ids: tuple[int, ...] | None = None
     declared_net_pay_clp: Decimal | None = None
     expected_net_pay_clp: Decimal | None = None
     net_pay_difference_clp: Decimal | None = None

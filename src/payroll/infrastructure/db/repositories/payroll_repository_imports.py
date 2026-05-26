@@ -4,6 +4,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from payroll.application.dto import (
     ImportPayrollResultDTO,
@@ -25,6 +26,9 @@ from payroll.infrastructure.db.models.payroll import (
     PayrollPeriodHealthPlanModel,
     PayrollPeriodModel,
     PayrollStatus,
+)
+from payroll.infrastructure.db.repositories.reference_data_repository import (
+    SqlAlchemyReferenceDataRepository,
 )
 from payroll.infrastructure.db.repositories.payroll_repository_shared import (
     SqlAlchemyPayrollRepositoryBase,
@@ -87,6 +91,41 @@ def build_month_period_range(
 
 class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
     """Persistence operations related to payroll imports."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        """Initialize the instance."""
+        super().__init__(session)
+        self._reference_data_repository = SqlAlchemyReferenceDataRepository(session)
+
+    async def _deduce_pension_plan_for_date(self, reference_date: date) -> int:
+        """Deduce the valid pension plan ID for a given reference date.
+
+        Raises PayrollValidationError if no valid plan is found.
+        """
+        plan = await self._reference_data_repository.get_valid_pension_plan_for_date(
+            reference_date
+        )
+        if plan is None:
+            raise PayrollValidationError(
+                f"No valid pension plan found for reference date {reference_date}."
+            )
+        return plan.id
+
+    async def _deduce_health_plan_ids_for_date(
+        self, reference_date: date
+    ) -> tuple[int, ...]:
+        """Deduce valid health plan IDs for a given reference date.
+
+        Raises PayrollValidationError if no valid plans are found.
+        """
+        plans = await self._reference_data_repository.get_valid_health_plans_for_date(
+            reference_date
+        )
+        if not plans:
+            raise PayrollValidationError(
+                f"No valid health plans found for reference date {reference_date}."
+            )
+        return tuple(plan.id for plan in plans)
 
     def _resolve_period_plan_id(
         self,
@@ -182,6 +221,8 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
         for (employer_name, year, month), period_rows in sorted(grouped_rows.items()):
             first_row = period_rows[0]
             worked_days = getattr(first_row, "worked_days", 30)
+
+            # Try to resolve explicit plan IDs from the rows first
             pension_plan_id = self._resolve_period_plan_id(
                 period_rows,
                 attribute_name="pension_plan_id",
@@ -191,12 +232,27 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
             health_plan_id = (
                 None if health_plan_ids is None else int(health_plan_ids[0])
             )
+
+            # Check if both or neither are provided
             if (pension_plan_id is None) != (health_plan_ids is None):
                 raise PayrollValidationError(
                     "Both pension_plan_id and health_plan_id must be provided together."
                 )
-            if pension_plan_id is not None and health_plan_ids is not None:
-                await self._get_pension_plan(pension_plan_id, first_row.payment_date)
+
+            # If not explicitly provided, deduce from reference date
+            if pension_plan_id is None:
+                reference_date = date(year, month, 1)
+                pension_plan_id = await self._deduce_pension_plan_for_date(
+                    reference_date
+                )
+                health_plan_ids = await self._deduce_health_plan_ids_for_date(
+                    reference_date
+                )
+                health_plan_id = int(health_plan_ids[0]) if health_plan_ids else None
+
+            # Validate the plans exist
+            await self._get_pension_plan(pension_plan_id, first_row.payment_date)
+            if health_plan_ids is not None:
                 for plan_id in health_plan_ids:
                     await self._get_health_plan(
                         plan_id,

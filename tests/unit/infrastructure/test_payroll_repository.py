@@ -152,16 +152,47 @@ def test_build_net_pay_warning_reports_final_mismatch() -> None:
 async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
     """Test sqlalchemy payroll repository imports rows."""
     employer = EmployerModel(id=10, name="ACME", started_at=date(2026, 1, 31))
+    pension_institution = PensionInstitutionModel(
+        id=1, code="AFP_TEST", name="AFP Test"
+    )
+    pension_plan = PensionPlanModel(
+        id=1,
+        institution_id=1,
+        valid_from=date(2026, 1, 1),
+        valid_to=None,
+        additional_rate=Decimal("0"),
+    )
+    health_institution = HealthInstitutionModel(
+        id=1, code="FONASA", name="Fonasa", is_active=True
+    )
+    health_plan = HealthPlanModel(
+        id=1,
+        institution_id=1,
+        valid_from=date(2026, 1, 1),
+        valid_to=None,
+    )
     session = FakeSession(
         [
+            # Concept codes
             FakeResult(
                 scalar_rows=[
                     SimpleNamespace(id=1, code="SALARY_BASE"),
                     SimpleNamespace(id=2, code="PENSION_BASE"),
                 ]
             ),
+            # Pension plan deduction
+            FakeResult(joined_rows=[(pension_plan, pension_institution)]),
+            # Health plan deduction
+            FakeResult(joined_rows=[(health_plan, health_institution)]),
+            # Pension plan validation
+            FakeResult(first_row=(pension_plan, pension_institution)),
+            # Health plan validation
+            FakeResult(first_row=(health_plan, health_institution)),
+            # Employer lookup
             FakeResult(scalar_one=employer),
+            # Check period exists
             FakeResult(scalar_one=None),
+            # Other operations
             FakeResult(),
             FakeResult(),
         ]
@@ -469,9 +500,94 @@ async def test_sa_payroll_repository_rejects_partial_period_plan_assignment() ->
 
 
 @pytest.mark.asyncio
-async def test_sa_payroll_repository_updates_existing_period_plan_ids_from_import() -> (
-    None
-):
+async def test_sa_payroll_repository_rejects_missing_pension_plan_deduction() -> None:
+    """Test import rows raise error when no valid pension plan for date."""
+    session = FakeSession(
+        [
+            FakeResult(
+                scalar_rows=[
+                    SimpleNamespace(id=1, code="SALARY_BASE"),
+                ]
+            ),
+            # Pension plan deduction returns empty list
+            FakeResult(joined_rows=[]),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(
+        ValueError,
+        match="No valid pension plan found for reference date",
+    ):
+        await repository.import_rows(
+            [
+                SimpleNamespace(
+                    employer="ACME",
+                    period_year=2026,
+                    period_month=1,
+                    payment_date=date(2026, 1, 31),
+                    status="actual",
+                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                    concept_code="SALARY_BASE",
+                    amount_clp=Decimal("1000000"),
+                    declared_net_pay_clp=None,
+                    expected_net_pay_clp=None,
+                    net_pay_difference_clp=None,
+                ),
+            ]
+        )
+
+
+@pytest.mark.asyncio
+async def test_sa_payroll_repository_rejects_missing_health_plans_deduction() -> None:
+    """Test import rows raise error when no valid health plans for reference date."""
+    pension_institution = PensionInstitutionModel(
+        id=1, code="AFP_TEST", name="AFP Test"
+    )
+    pension_plan = PensionPlanModel(
+        id=1,
+        institution_id=1,
+        valid_from=date(2026, 1, 1),
+        valid_to=None,
+        additional_rate=Decimal("0"),
+    )
+    session = FakeSession(
+        [
+            FakeResult(
+                scalar_rows=[
+                    SimpleNamespace(id=1, code="SALARY_BASE"),
+                ]
+            ),
+            # Pension plan deduction returns valid plan
+            FakeResult(joined_rows=[(pension_plan, pension_institution)]),
+            # Health plan deduction returns empty list
+            FakeResult(joined_rows=[]),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(
+        ValueError,
+        match="No valid health plans found for reference date",
+    ):
+        await repository.import_rows(
+            [
+                SimpleNamespace(
+                    employer="ACME",
+                    period_year=2026,
+                    period_month=1,
+                    payment_date=date(2026, 1, 31),
+                    status="actual",
+                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                    concept_code="SALARY_BASE",
+                    amount_clp=Decimal("1000000"),
+                    declared_net_pay_clp=None,
+                    expected_net_pay_clp=None,
+                    net_pay_difference_clp=None,
+                ),
+            ]
+        )
+
     """Test import rows update existing period with provided plan ids."""
     employer = EmployerModel(id=10, name="ACME", started_at=date(2026, 1, 31))
     existing_period = PayrollPeriodModel(
@@ -571,11 +687,41 @@ async def test_sa_payroll_repository_closes_previous_open_ended_employer() -> No
         name="PreviousCo",
         started_at=date(2025, 1, 1),
     )
+    pension_plan = PensionPlanModel(
+        id=1,
+        institution_id=5,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+        additional_rate=Decimal("0"),
+    )
+    pension_institution = PensionInstitutionModel(
+        id=5, code="AFP_TEST", name="AFP Test"
+    )
+    health_plan = HealthPlanModel(
+        id=1,
+        institution_id=6,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+    )
+    health_institution = HealthInstitutionModel(
+        id=6, code="FONASA", name="Fonasa", is_active=True
+    )
     session = FakeSession(
         [
             FakeResult(scalar_rows=[SimpleNamespace(id=1, code="SALARY_BASE")]),
+            # Pension plan deduction
+            FakeResult(joined_rows=[(pension_plan, pension_institution)]),
+            # Health plan deduction
+            FakeResult(joined_rows=[(health_plan, health_institution)]),
+            # Pension plan validation
+            FakeResult(first_row=(pension_plan, pension_institution)),
+            # Health plan validation
+            FakeResult(first_row=(health_plan, health_institution)),
+            # Employer lookup - NewCo doesn't exist yet
             FakeResult(scalar_one=None),
+            # Close overlapping open-ended employers
             FakeResult(scalar_rows=[previous_employer]),
+            # Period lookup - new period doesn't exist yet
             FakeResult(scalar_one=None),
             FakeResult(),
             FakeResult(),
@@ -635,11 +781,41 @@ async def test_sa_payroll_repository_updates_existing_employer_started_at() -> N
         name="PreviousCo",
         started_at=date(2025, 1, 1),
     )
+    pension_plan = PensionPlanModel(
+        id=1,
+        institution_id=5,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+        additional_rate=Decimal("0"),
+    )
+    pension_institution = PensionInstitutionModel(
+        id=5, code="AFP_TEST", name="AFP Test"
+    )
+    health_plan = HealthPlanModel(
+        id=1,
+        institution_id=6,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+    )
+    health_institution = HealthInstitutionModel(
+        id=6, code="FONASA", name="Fonasa", is_active=True
+    )
     session = FakeSession(
         [
             FakeResult(scalar_rows=[SimpleNamespace(id=1, code="SALARY_BASE")]),
+            # Pension plan deduction
+            FakeResult(joined_rows=[(pension_plan, pension_institution)]),
+            # Health plan deduction
+            FakeResult(joined_rows=[(health_plan, health_institution)]),
+            # Pension plan validation
+            FakeResult(first_row=(pension_plan, pension_institution)),
+            # Health plan validation
+            FakeResult(first_row=(health_plan, health_institution)),
+            # Employer lookup - return existing employer
             FakeResult(scalar_one=employer),
+            # Close overlapping open-ended employers
             FakeResult(scalar_rows=[previous_employer]),
+            # Period lookup - new period doesn't exist yet
             FakeResult(scalar_one=None),
             FakeResult(),
             FakeResult(),
@@ -682,11 +858,41 @@ async def test_sa_payroll_repository_creates_employer_and_replaces_period_items(
         payment_date=date(2026, 1, 15),
         status=PayrollStatus.PROJECTED,
     )
+    pension_plan = PensionPlanModel(
+        id=1,
+        institution_id=5,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+        additional_rate=Decimal("0"),
+    )
+    pension_institution = PensionInstitutionModel(
+        id=5, code="AFP_TEST", name="AFP Test"
+    )
+    health_plan = HealthPlanModel(
+        id=1,
+        institution_id=6,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+    )
+    health_institution = HealthInstitutionModel(
+        id=6, code="FONASA", name="Fonasa", is_active=True
+    )
     session = FakeSession(
         [
             FakeResult(scalar_rows=[SimpleNamespace(id=1, code="SALARY_BASE")]),
+            # Pension plan deduction
+            FakeResult(joined_rows=[(pension_plan, pension_institution)]),
+            # Health plan deduction
+            FakeResult(joined_rows=[(health_plan, health_institution)]),
+            # Pension plan validation
+            FakeResult(first_row=(pension_plan, pension_institution)),
+            # Health plan validation
+            FakeResult(first_row=(health_plan, health_institution)),
+            # Employer lookup - NewCo doesn't exist yet
             FakeResult(scalar_one=None),
+            # Close overlapping open-ended employers
             FakeResult(scalar_rows=[]),
+            # Period lookup
             FakeResult(scalar_one=existing_period),
             FakeResult(),
             FakeResult(),

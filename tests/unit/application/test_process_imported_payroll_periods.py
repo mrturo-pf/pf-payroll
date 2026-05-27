@@ -290,6 +290,17 @@ class StubMarketDataRepository:
         return Decimal("70000")
 
 
+class StubComplementaryInsuranceRepository:
+    """Test double for Complementary Insurance Repository."""
+
+    async def get_vigent_plans(self, reference_date: date) -> list:  # type: ignore[no-untyped-def]
+        """Get vigent plans."""
+        return []
+
+    async def assign_plans_to_period(self, period_id: int, plan_ids: list[int]) -> None:
+        """Assign plans to period."""
+
+
 @pytest.mark.asyncio
 async def test_process_imported_payroll_periods_compute_and_refresh() -> None:
     """Test post-processing computes missing derived items and refreshes periods."""
@@ -297,6 +308,7 @@ async def test_process_imported_payroll_periods_compute_and_refresh() -> None:
     use_case = ProcessImportedPayrollPeriods(
         repository,
         StubMarketDataRepository(),  # type: ignore[arg-type]
+        StubComplementaryInsuranceRepository(),  # type: ignore[arg-type]
     )
 
     result = await use_case.execute(
@@ -359,7 +371,8 @@ async def test_process_imported_payroll_periods_validates_imported_contributions
     repository = ValidatedRepository()
     use_case = ProcessImportedPayrollPeriods(
         repository,
-        StubMarketDataRepository(Decimal("35000")),
+        StubMarketDataRepository(Decimal("35000")),  # type: ignore[arg-type]
+        StubComplementaryInsuranceRepository(),  # type: ignore[arg-type]
     )
 
     result = await use_case.execute(
@@ -411,6 +424,7 @@ async def test_process_imported_payroll_periods_skips_missing_imported_codes() -
     use_case = ProcessImportedPayrollPeriods(
         repository,
         StubMarketDataRepository(),  # type: ignore[arg-type]
+        StubComplementaryInsuranceRepository(),  # type: ignore[arg-type]
     )
 
     result = await use_case.execute(
@@ -465,6 +479,7 @@ async def test_process_imported_payroll_periods_keeps_original_on_missing_refres
     result = await ProcessImportedPayrollPeriods(
         MissingRefreshRepository(),
         StubMarketDataRepository(),  # type: ignore[arg-type]
+        StubComplementaryInsuranceRepository(),  # type: ignore[arg-type]
     ).execute(
         ImportPayrollResultDTO(
             imported_periods=1,
@@ -513,6 +528,7 @@ async def test_process_imported_payroll_periods_keeps_original_without_summary()
     result = await ProcessImportedPayrollPeriods(
         MissingSummaryRepository(),
         StubMarketDataRepository(),  # type: ignore[arg-type]
+        StubComplementaryInsuranceRepository(),  # type: ignore[arg-type]
     ).execute(
         ImportPayrollResultDTO(
             imported_periods=1,

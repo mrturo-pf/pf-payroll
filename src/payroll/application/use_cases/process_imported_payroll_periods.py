@@ -8,8 +8,12 @@ from payroll.application.dto import (
     ImportedPayrollPeriodDTO,
 )
 from payroll.application.ports.repositories import (
+    ComplementaryInsuranceRepository,
     MarketDataRepository,
     PayrollRepository,
+)
+from payroll.application.services.complementary_insurance_service import (
+    ComplementaryInsuranceService,
 )
 from payroll.application.services.contribution_computation import (
     ContributionComputationService,
@@ -37,6 +41,7 @@ class ProcessImportedPayrollPeriods:
         self,
         repository: PayrollRepository,
         market_data_repository: MarketDataRepository,
+        complementary_insurance_repository: ComplementaryInsuranceRepository,
     ) -> None:
         """Initialize the instance."""
         self._repository = repository
@@ -47,6 +52,9 @@ class ProcessImportedPayrollPeriods:
             repository, market_data_repository
         )
         self._compute_income_tax = ComputeIncomeTax(repository, market_data_repository)
+        self._complementary_insurance = ComplementaryInsuranceService(
+            repository, complementary_insurance_repository
+        )
 
     async def execute(self, result: ImportPayrollResultDTO) -> ImportPayrollResultDTO:
         """Auto-compute derived payroll items for eligible imported periods."""
@@ -69,6 +77,9 @@ class ProcessImportedPayrollPeriods:
         summary = None if detail is None else detail.summary
         if detail is None or summary is None or summary.declared_net_pay_clp is None:
             return
+
+        # Assign vigent complementary insurance plans early, before other calculations
+        await self._complementary_insurance.assign_plans_for_period(period_id)
 
         item_codes = {item.concept_code for item in detail.items}
         if not _REQUIRED_IMPORTED_CONTRIBUTION_CODES.issubset(item_codes):

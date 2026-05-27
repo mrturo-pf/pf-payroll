@@ -37,6 +37,7 @@ from payroll.application.dto import (
     ReviewPayrollPeriodResultDTO,
     UnemploymentComputationContextDTO,
 )
+from payroll.domain.contributions import ComplementaryInsurancePlan
 from payroll.domain.taxes import IncomeTaxBracket
 
 
@@ -165,6 +166,20 @@ class PayrollRepository(Protocol):
         self, result: ComputeIncomeTaxResultDTO
     ) -> ComputeIncomeTaxResultDTO:
         """Save computed income tax."""
+        ...
+
+
+class ComplementaryInsuranceRepository(Protocol):
+    """Persistence port for complementary insurance operations."""
+
+    async def get_vigent_plans(
+        self, reference_date: date
+    ) -> list[ComplementaryInsurancePlan]:
+        """Get complementary insurance plans vigent on the given date."""
+        ...
+
+    async def assign_plans_to_period(self, period_id: int, plan_ids: list[int]) -> None:
+        """Assign complementary insurance plans to a payroll period."""
         ...
 
 

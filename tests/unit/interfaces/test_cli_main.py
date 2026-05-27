@@ -427,7 +427,12 @@ def test_import_payroll_async_syncs_requested_market_data(
     class FakeProcessImportedPayrollPeriods:
         """Test double for imported-payroll post-processing."""
 
-        def __init__(self, repository: object, market_data_repository: object) -> None:
+        def __init__(
+            self,
+            repository: object,
+            market_data_repository: object,
+            complementary_insurance_repository: object,
+        ) -> None:
             """Initialize the instance."""
 
         async def execute(
@@ -531,7 +536,12 @@ def test_import_payroll_async_processes_periods_without_market_sync(
     class FakeProcessImportedPayrollPeriods:
         """Test double for imported-payroll post-processing."""
 
-        def __init__(self, repository: object, market_data_repository: object) -> None:
+        def __init__(
+            self,
+            repository: object,
+            market_data_repository: object,
+            complementary_insurance_repository: object,
+        ) -> None:
             """Initialize the instance."""
 
         async def execute(

@@ -42,6 +42,9 @@ from payroll.infrastructure.db.repositories.payroll_repository import (
 from payroll.infrastructure.db.repositories.reference_data_repository import (
     SqlAlchemyReferenceDataRepository,
 )
+from payroll.infrastructure.db.repositories.complementary_insurance_repository import (
+    SqlAlchemyComplementaryInsuranceRepository,
+)
 from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
 from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import (
     WeasyPrintPayrollReportRenderer,
@@ -106,6 +109,7 @@ async def _import_payroll_async(file_path: Path) -> object:
                 return await ProcessImportedPayrollPeriods(
                     SqlAlchemyPayrollRepository(session),
                     SqlAlchemyMarketDataRepository(session),
+                    SqlAlchemyComplementaryInsuranceRepository(session),
                 ).execute(result)
             return result
 
@@ -117,6 +121,7 @@ async def _import_payroll_async(file_path: Path) -> object:
             synced_result = await ProcessImportedPayrollPeriods(
                 SqlAlchemyPayrollRepository(session),
                 SqlAlchemyMarketDataRepository(session),
+                SqlAlchemyComplementaryInsuranceRepository(session),
             ).execute(synced_result)
         return {
             "imported_periods": synced_result.imported_periods,

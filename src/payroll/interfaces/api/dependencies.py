@@ -6,6 +6,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from payroll.application.ports.repositories import (
+    ComplementaryInsuranceRepository,
     MarketDataRepository,
     PayrollRepository,
     ReferenceDataRepository,
@@ -50,6 +51,9 @@ from payroll.infrastructure.db.repositories.payroll_repository import (
 )
 from payroll.infrastructure.db.repositories.reference_data_repository import (
     SqlAlchemyReferenceDataRepository,
+)
+from payroll.infrastructure.db.repositories.complementary_insurance_repository import (
+    SqlAlchemyComplementaryInsuranceRepository,
 )
 from payroll.config import settings
 from payroll.interfaces.session import SessionLocal, open_session
@@ -102,6 +106,13 @@ def get_market_data_repository(
 ) -> MarketDataRepository:
     """Get market data repository."""
     return SqlAlchemyMarketDataRepository(session)
+
+
+def get_complementary_insurance_repository(
+    session: AsyncSession = Depends(get_session),
+) -> ComplementaryInsuranceRepository:
+    """Get complementary insurance repository."""
+    return SqlAlchemyComplementaryInsuranceRepository(session)
 
 
 def get_market_data_queries(
@@ -192,9 +203,14 @@ def get_import_payroll_use_case(
 def get_process_imported_payroll_periods_use_case(
     repository: PayrollRepository = Depends(get_payroll_repository),
     market_data_repository: MarketDataRepository = Depends(get_market_data_repository),
+    complementary_insurance_repository: ComplementaryInsuranceRepository = Depends(
+        get_complementary_insurance_repository
+    ),
 ) -> ProcessImportedPayrollPeriods:
     """Get imported-payroll post-processing use case."""
-    return ProcessImportedPayrollPeriods(repository, market_data_repository)
+    return ProcessImportedPayrollPeriods(
+        repository, market_data_repository, complementary_insurance_repository
+    )
 
 
 def get_payroll_queries(

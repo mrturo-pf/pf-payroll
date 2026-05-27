@@ -271,7 +271,9 @@ def test_use_case_placeholders_are_instantiable() -> None:
         ComputeUnemploymentInsurance,
     )
     assert isinstance(
-        ProcessImportedPayrollPeriods(StubRepository(), StubRepository()),
+        ProcessImportedPayrollPeriods(
+            StubRepository(), StubRepository(), StubRepository()
+        ),
         ProcessImportedPayrollPeriods,
     )
     assert isinstance(RefreshRates(StubRepository()), RefreshRates)

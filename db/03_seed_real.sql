@@ -97,3 +97,50 @@ SET
     payment_calendar_day_offset = EXCLUDED.payment_calendar_day_offset,
     payment_effective_on_processing_next_day = EXCLUDED.payment_effective_on_processing_next_day,
     payment_fixed_day_roll = EXCLUDED.payment_fixed_day_roll;
+
+-- ============================================================
+-- 5. Complementary insurance providers
+-- ============================================================
+INSERT INTO complementary_insurance_providers (name) VALUES
+    ('METLIFE')
+ON CONFLICT (name) DO NOTHING;
+
+-- ============================================================
+-- 6. Complementary insurance plans
+-- ============================================================
+INSERT INTO complementary_insurance_plans (
+    provider_id,
+    name,
+    cost_type,
+    cost_value,
+    cost_currency,
+    valid_from,
+    valid_to
+) VALUES
+    (
+        (SELECT id FROM complementary_insurance_providers WHERE name = 'METLIFE'),
+        'SEGURO DENTAL - PLAN AVANZADO',
+        'fixed_uf'::complementary_insurance_cost_type,
+        0.19,
+        'UF',
+        DATE '2024-12-01',
+        NULL
+    ),
+    (
+        (SELECT id FROM complementary_insurance_providers WHERE name = 'METLIFE'),
+        'SEGURO DE SALUD - PLAN DESTACADO',
+        'fixed_uf'::complementary_insurance_cost_type,
+        0.63,
+        'UF',
+        DATE '2024-12-01',
+        NULL
+    ),
+    (
+        (SELECT id FROM complementary_insurance_providers WHERE name = 'METLIFE'),
+        'SEGURO CATASTROFICO - PLAN AVANZADO',
+        'fixed_uf'::complementary_insurance_cost_type,
+        0.13,
+        'UF',
+        DATE '2024-12-01',
+        NULL
+    );

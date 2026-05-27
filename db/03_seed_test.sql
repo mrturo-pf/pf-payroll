@@ -33,3 +33,85 @@ WHERE NOT EXISTS (
       AND COALESCE(hp.plan_name, '') = 'Base'
       AND hp.contracted_uf = 0
 );
+
+-- ============================================================
+-- 3. Complementary insurance providers
+-- ============================================================
+INSERT INTO complementary_insurance_providers (name) VALUES
+    ('SEGUROS CAJA'),
+    ('ISANA'),
+    ('CONSALUD')
+ON CONFLICT (name) DO NOTHING;
+
+-- ============================================================
+-- 4. Complementary insurance plans
+-- ============================================================
+INSERT INTO complementary_insurance_plans (
+    provider_id,
+    name,
+    cost_type,
+    cost_value,
+    cost_currency,
+    valid_from,
+    valid_to
+) VALUES
+    -- SEGUROS CAJA plans - Fixed CLP
+    (
+        (SELECT id FROM complementary_insurance_providers WHERE name = 'SEGUROS CAJA'),
+        'Plan Clínico Plus - Fixed',
+        'fixed_clp'::complementary_insurance_cost_type,
+        50000,
+        'CLP',
+        DATE '2025-01-01',
+        NULL
+    ),
+    -- SEGUROS CAJA plans - Variable percentage
+    (
+        (SELECT id FROM complementary_insurance_providers WHERE name = 'SEGUROS CAJA'),
+        'Plan Clínico Plus - Variable',
+        'variable_percentage'::complementary_insurance_cost_type,
+        2.5,
+        'CLP',
+        DATE '2025-01-01',
+        NULL
+    ),
+    -- ISANA plans - Fixed CLP
+    (
+        (SELECT id FROM complementary_insurance_providers WHERE name = 'ISANA'),
+        'Plan Integral - Fixed',
+        'fixed_clp'::complementary_insurance_cost_type,
+        35000,
+        'CLP',
+        DATE '2025-01-01',
+        NULL
+    ),
+    -- ISANA plans - Variable percentage
+    (
+        (SELECT id FROM complementary_insurance_providers WHERE name = 'ISANA'),
+        'Plan Integral - Variable',
+        'variable_percentage'::complementary_insurance_cost_type,
+        2.0,
+        'CLP',
+        DATE '2025-01-01',
+        NULL
+    ),
+    -- CONSALUD plans - Fixed CLP
+    (
+        (SELECT id FROM complementary_insurance_providers WHERE name = 'CONSALUD'),
+        'Plan Premium - Fixed',
+        'fixed_clp'::complementary_insurance_cost_type,
+        55000,
+        'CLP',
+        DATE '2025-01-01',
+        NULL
+    ),
+    -- CONSALUD plans - Variable percentage
+    (
+        (SELECT id FROM complementary_insurance_providers WHERE name = 'CONSALUD'),
+        'Plan Premium - Variable',
+        'variable_percentage'::complementary_insurance_cost_type,
+        3.0,
+        'CLP',
+        DATE '2025-01-01',
+        NULL
+    );

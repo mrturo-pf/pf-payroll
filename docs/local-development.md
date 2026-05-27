@@ -23,6 +23,12 @@ Start or reuse the local database with test-only fixtures:
 make db-up-test
 ```
 
+Start or reuse the local database with real fixtures:
+
+```bash
+make db-up-real
+```
+
 Reset the local database data, reapply the schema, and reload the base seed data:
 
 ```bash
@@ -65,7 +71,7 @@ Override defaults when needed:
 make db-up DB_CONTAINER=my-payroll-db DB_PORT=5433 DB_PASSWORD=secret
 ```
 
-The schema lives in `db/schema.sql`, the default catalog data in `db/seed.sql`, the real operational bootstrap data in `db/seed_real.sql`, and test-only fixtures in `db/seed_test.sql`.
+The schema lives in `db/01_schema.sql`, the default catalog data in `db/02_seed_base.sql`, the real operational bootstrap data in `db/03_seed_real.sql`, and test-only fixtures in `db/03_seed_test.sql`.
 
 Employer payment-date rules are currently configured **directly in the
 `employers` table**. New employers default to:

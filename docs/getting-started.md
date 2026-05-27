@@ -41,6 +41,13 @@ If you also want local test-only fixtures loaded:
 ```bash
 make db-up-test
 ```
+```
+
+If you also want local real fixtures loaded:
+
+```bash
+make db-up-real
+```
 
 If you need to wipe local data and rebuild the database contents from scratch:
 

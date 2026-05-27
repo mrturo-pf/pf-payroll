@@ -3,7 +3,7 @@
 -- ============================================================
 -- Add non-production fixtures here.
 -- This file is applied only through the explicit test-seed flow.
--- No current inserts were moved from db/seed.sql because the existing seed
+-- No current inserts were moved from db/02_seed_base.sql because the existing seed
 -- contains production-safe reference and operational bootstrap data.
 --
 -- 1. Pension institutions

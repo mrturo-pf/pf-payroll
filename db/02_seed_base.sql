@@ -2,7 +2,7 @@
 -- Base seed data shared by every environment
 -- ============================================================
 -- Keep only production-safe reference or operational bootstrap data here.
--- Test-only fixtures belong in db/seed_test.sql.
+-- Test-only fixtures belong in db/03_seed_test.sql.
 --
 -- 1. Currencies and index units
 -- ============================================================

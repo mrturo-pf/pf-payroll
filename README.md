@@ -47,7 +47,13 @@ import -> assign plans -> compute contributions -> compute tax -> review -> repo
    make db-up-test
    ```
 
-   To wipe current data and rebuild schema plus seed data in the same local database:
+   To also load real fixtures into the local database:
+
+   ```bash
+   make db-up-real
+   ```
+
+   To wipe current data and rebuild schema plus seed base data in the same local database:
 
    ```bash
    make db-reset-data

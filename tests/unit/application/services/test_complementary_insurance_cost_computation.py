@@ -1,0 +1,225 @@
+"""Tests for ComplementaryInsuranceCostComputationService."""
+
+from datetime import date
+from decimal import Decimal
+from unittest.mock import AsyncMock
+
+import pytest
+
+from payroll.application.dto import PayrollPeriodDetailDTO, PayrollSummaryDTO
+from payroll.application.services.complementary_insurance_cost_computation import (
+    ComplementaryInsuranceCostComputationService,
+)
+from payroll.domain.contributions import (
+    ComplementaryInsuranceCostType,
+    ComplementaryInsurancePlan,
+)
+
+
+@pytest.fixture
+def mock_payroll_repository() -> AsyncMock:
+    """Create mock payroll repository."""
+    return AsyncMock()
+
+
+@pytest.fixture
+def mock_complementary_insurance_repository() -> AsyncMock:
+    """Create mock complementary insurance repository."""
+    return AsyncMock()
+
+
+@pytest.fixture
+def service(
+    mock_payroll_repository: AsyncMock,
+    mock_complementary_insurance_repository: AsyncMock,
+) -> ComplementaryInsuranceCostComputationService:
+    """Create service instance."""
+    return ComplementaryInsuranceCostComputationService(
+        mock_payroll_repository, mock_complementary_insurance_repository
+    )
+
+
+@pytest.mark.asyncio
+async def test_compute_with_fixed_and_variable_plans(
+    service: ComplementaryInsuranceCostComputationService,
+    mock_payroll_repository: AsyncMock,
+    mock_complementary_insurance_repository: AsyncMock,
+) -> None:
+    """Test computing costs with both fixed and variable plans."""
+    period_id = 123
+    summary = PayrollSummaryDTO(
+        period_id=period_id,
+        employer_id=1,
+        employer_name="Test Corp",
+        period_year=2025,
+        period_month=5,
+        payment_date=date(2025, 5, 30),
+        taxable_income_clp=Decimal("1000000"),
+        gross_income_clp=Decimal("1250000"),
+        total_discounts_clp=Decimal("180000"),
+        net_pay_clp=Decimal("1070000"),
+    )
+    detail = PayrollPeriodDetailDTO(
+        id=period_id,
+        employer_id=1,
+        employer_name="Test Corp",
+        employer_tax_id="123456789",
+        employer_country_code="CL",
+        employer_started_at=date(2020, 1, 1),
+        employer_ended_at=None,
+        period_year=2025,
+        period_month=5,
+        payment_date=date(2025, 5, 30),
+        status="actual",
+        employment_contract_kind="indefinite",
+        worked_days=30,
+        summary=summary,
+        items=[],
+        pension_plan_id=1,
+        health_plan_id=2,
+    )
+
+    plan1 = ComplementaryInsurancePlan(
+        id=10,
+        provider_id=1,
+        name="Plan A (Fixed)",
+        cost_type=ComplementaryInsuranceCostType.FIXED_CLP,
+        cost_value=Decimal("50000"),
+        cost_currency="CLP",
+        valid_from=date(2024, 1, 1),
+        valid_to=None,
+    )
+    plan2 = ComplementaryInsurancePlan(
+        id=20,
+        provider_id=1,
+        name="Plan B (2%)",
+        cost_type=ComplementaryInsuranceCostType.VARIABLE_PERCENTAGE,
+        cost_value=Decimal("2.5"),
+        cost_currency="CLP",
+        valid_from=date(2024, 1, 1),
+        valid_to=None,
+    )
+
+    mock_payroll_repository.get_period_detail.return_value = detail
+    mock_complementary_insurance_repository.get_period_plans.return_value = [
+        plan1,
+        plan2,
+    ]
+
+    result = await service.compute(period_id)
+
+    assert result.period_id == period_id
+    assert len(result.costs) == 2
+    assert result.costs[0].plan_id == 10
+    assert result.costs[0].cost_clp == Decimal("50000")
+    assert result.costs[1].plan_id == 20
+    # 2.5% of 1,000,000 = 25,000
+    assert result.costs[1].cost_clp == Decimal("25000.00")
+    assert result.total_cost_clp == Decimal("75000.00")
+
+
+@pytest.mark.asyncio
+async def test_compute_with_no_plans(
+    service: ComplementaryInsuranceCostComputationService,
+    mock_payroll_repository: AsyncMock,
+    mock_complementary_insurance_repository: AsyncMock,
+) -> None:
+    """Test computing when no plans are assigned."""
+    period_id = 123
+    summary = PayrollSummaryDTO(
+        period_id=period_id,
+        employer_id=1,
+        employer_name="Test Corp",
+        period_year=2025,
+        period_month=5,
+        payment_date=date(2025, 5, 30),
+        taxable_income_clp=Decimal("1000000"),
+        gross_income_clp=Decimal("1250000"),
+        total_discounts_clp=Decimal("180000"),
+        net_pay_clp=Decimal("1070000"),
+    )
+    detail = PayrollPeriodDetailDTO(
+        id=period_id,
+        employer_id=1,
+        employer_name="Test Corp",
+        employer_tax_id="123456789",
+        employer_country_code="CL",
+        employer_started_at=date(2020, 1, 1),
+        employer_ended_at=None,
+        period_year=2025,
+        period_month=5,
+        payment_date=date(2025, 5, 30),
+        status="actual",
+        employment_contract_kind="indefinite",
+        worked_days=30,
+        summary=summary,
+        items=[],
+        pension_plan_id=1,
+        health_plan_id=2,
+    )
+
+    mock_payroll_repository.get_period_detail.return_value = detail
+    mock_complementary_insurance_repository.get_period_plans.return_value = []
+
+    result = await service.compute(period_id)
+
+    assert result.period_id == period_id
+    assert result.costs == []
+    assert result.total_cost_clp == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_compute_with_missing_detail(
+    service: ComplementaryInsuranceCostComputationService,
+    mock_payroll_repository: AsyncMock,
+    mock_complementary_insurance_repository: AsyncMock,
+) -> None:
+    """Test computing when period detail is missing."""
+    period_id = 999
+
+    mock_payroll_repository.get_period_detail.return_value = None
+
+    result = await service.compute(period_id)
+
+    assert result.period_id == period_id
+    assert result.costs == []
+    assert result.total_cost_clp == Decimal("0")
+    mock_complementary_insurance_repository.get_period_plans.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_compute_with_missing_summary(
+    service: ComplementaryInsuranceCostComputationService,
+    mock_payroll_repository: AsyncMock,
+    mock_complementary_insurance_repository: AsyncMock,
+) -> None:
+    """Test computing when summary is missing."""
+    period_id = 123
+    detail = PayrollPeriodDetailDTO(
+        id=period_id,
+        employer_id=1,
+        employer_name="Test Corp",
+        employer_tax_id="123456789",
+        employer_country_code="CL",
+        employer_started_at=date(2020, 1, 1),
+        employer_ended_at=None,
+        period_year=2025,
+        period_month=5,
+        payment_date=date(2025, 5, 30),
+        status="actual",
+        employment_contract_kind="indefinite",
+        worked_days=30,
+        summary=None,
+        items=[],
+        pension_plan_id=1,
+        health_plan_id=2,
+    )
+
+    mock_payroll_repository.get_period_detail.return_value = detail
+
+    result = await service.compute(period_id)
+
+    assert result.period_id == period_id
+    assert result.costs == []
+    assert result.total_cost_clp == Decimal("0")
+    mock_complementary_insurance_repository.get_period_plans.assert_not_called()

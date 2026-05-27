@@ -571,3 +571,28 @@ class DeflateAmountsResultDTO:
     gross_income: DeflatedAmountDTO
     total_discounts: DeflatedAmountDTO
     net_pay: DeflatedAmountDTO
+
+
+@dataclass(frozen=True, slots=True)
+class ComplementaryInsuranceCostDTO:
+    """Represent complementary insurance cost for a plan."""
+
+    plan_id: int
+    plan_name: str
+    cost_clp: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class ComputeComplementaryInsuranceCommandDTO:
+    """Represent Compute Complementary Insurance Command DTO."""
+
+    period_id: int
+
+
+@dataclass(frozen=True, slots=True)
+class ComputeComplementaryInsuranceResultDTO:
+    """Represent Compute Complementary Insurance Result DTO."""
+
+    period_id: int
+    costs: list[ComplementaryInsuranceCostDTO]
+    total_cost_clp: Decimal

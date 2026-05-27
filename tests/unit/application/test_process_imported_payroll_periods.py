@@ -300,6 +300,10 @@ class StubComplementaryInsuranceRepository:
     async def assign_plans_to_period(self, period_id: int, plan_ids: list[int]) -> None:
         """Assign plans to period."""
 
+    async def get_period_plans(self, period_id: int) -> list:  # type: ignore[no-untyped-def]
+        """Get period plans."""
+        return []
+
 
 @pytest.mark.asyncio
 async def test_process_imported_payroll_periods_compute_and_refresh() -> None:

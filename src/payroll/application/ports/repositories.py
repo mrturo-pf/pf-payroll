@@ -182,6 +182,12 @@ class ComplementaryInsuranceRepository(Protocol):
         """Assign complementary insurance plans to a payroll period."""
         ...
 
+    async def get_period_plans(
+        self, period_id: int
+    ) -> list[ComplementaryInsurancePlan]:
+        """Get complementary insurance plans assigned to a payroll period."""
+        ...
+
 
 class MarketDataRepository(Protocol):
     """Persistence port for historical rates and indices."""

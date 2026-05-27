@@ -15,6 +15,9 @@ from payroll.application.ports.repositories import (
 from payroll.application.services.complementary_insurance_service import (
     ComplementaryInsuranceService,
 )
+from payroll.application.services.complementary_insurance_validation import (
+    ComplementaryInsuranceValidationService,
+)
 from payroll.application.services.contribution_computation import (
     ContributionComputationService,
     build_imported_contribution_validation,
@@ -61,6 +64,9 @@ class ProcessImportedPayrollPeriods:
         self._compute_complementary_insurance = ComputeComplementaryInsurance(
             repository, complementary_insurance_repository
         )
+        self._validate_complementary_insurance = (
+            ComplementaryInsuranceValidationService()
+        )
 
     async def execute(self, result: ImportPayrollResultDTO) -> ImportPayrollResultDTO:
         """Auto-compute derived payroll items for eligible imported periods."""
@@ -88,7 +94,10 @@ class ProcessImportedPayrollPeriods:
         await self._complementary_insurance.assign_plans_for_period(period_id)
 
         # Compute complementary insurance costs after assignment
-        await self._compute_complementary_insurance.execute(period_id)
+        computed_costs = await self._compute_complementary_insurance.execute(period_id)
+
+        # Validate complementary insurance costs against declared amounts
+        await self._validate_complementary_insurance.validate(detail, computed_costs)
 
         item_codes = {item.concept_code for item in detail.items}
         if not _REQUIRED_IMPORTED_CONTRIBUTION_CODES.issubset(item_codes):

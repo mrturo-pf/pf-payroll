@@ -142,6 +142,21 @@ class PayrollPeriodHealthPlanModel(Base):
     period: Mapped[PayrollPeriodModel] = relationship(back_populates="health_plans")
 
 
+class PayrollComplementaryInsuranceModel(Base):
+    """Represent complementary insurance plans assigned to a payroll period."""
+
+    __tablename__ = "payroll_complementary_insurance"
+
+    period_id: Mapped[int] = mapped_column(
+        ForeignKey("payroll_periods.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    complementary_insurance_plan_id: Mapped[int] = mapped_column(
+        ForeignKey("complementary_insurance_plans.id"),
+        primary_key=True,
+    )
+
+
 class PayrollItemModel(Base):
     """Represent Payroll Item Model."""
 

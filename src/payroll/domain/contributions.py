@@ -13,6 +13,14 @@ class HealthInstitutionKind(StrEnum):
     ISAPRE = "isapre"
 
 
+class ComplementaryInsuranceCostType(StrEnum):
+    """Represent Complementary Insurance Cost Type."""
+
+    FIXED_CLP = "fixed_clp"
+    FIXED_UF = "fixed_uf"
+    VARIABLE_PERCENTAGE = "variable_percentage"
+
+
 class EmploymentContractKind(StrEnum):
     """Represent Employment Contract Kind."""
 
@@ -111,3 +119,25 @@ class UnemploymentContribution:
     employee_amount_clp: Decimal
     employer_rate: Decimal
     employer_amount_clp: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class ComplementaryInsuranceProvider:
+    """Represent Complementary Insurance Provider."""
+
+    id: int
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class ComplementaryInsurancePlan:
+    """Represent Complementary Insurance Plan."""
+
+    id: int
+    provider_id: int
+    name: str
+    cost_type: ComplementaryInsuranceCostType
+    cost_value: Decimal
+    cost_currency: str
+    valid_from: date
+    valid_to: date | None

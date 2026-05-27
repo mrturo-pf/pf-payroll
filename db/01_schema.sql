@@ -60,6 +60,12 @@ EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
+DO $$ BEGIN
+    CREATE TYPE complementary_insurance_cost_type AS ENUM ('fixed_clp', 'fixed_uf', 'variable_percentage');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
 CREATE TABLE IF NOT EXISTS pension_institutions (
     id             BIGSERIAL PRIMARY KEY,
     code           VARCHAR(40)   NOT NULL UNIQUE,
@@ -103,6 +109,23 @@ CREATE TABLE IF NOT EXISTS contribution_caps (
     valid_to   DATE,
     value_uf   NUMERIC(10,4) NOT NULL CHECK (value_uf > 0),
     UNIQUE (cap_type, valid_from)
+);
+
+CREATE TABLE IF NOT EXISTS complementary_insurance_providers (
+    id   BIGSERIAL PRIMARY KEY,
+    name VARCHAR(120) NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS complementary_insurance_plans (
+    id                BIGSERIAL PRIMARY KEY,
+    provider_id       BIGINT                                NOT NULL REFERENCES complementary_insurance_providers(id),
+    name              VARCHAR(120)                          NOT NULL,
+    cost_type         complementary_insurance_cost_type     NOT NULL,
+    cost_value        NUMERIC(12,4)                         NOT NULL CHECK (cost_value >= 0),
+    cost_currency     CHAR(3)                               NOT NULL DEFAULT 'CLP',
+    valid_from        DATE                                  NOT NULL,
+    valid_to          DATE,
+    CONSTRAINT chk_complementary_plan_dates CHECK (valid_to IS NULL OR valid_to >= valid_from)
 );
 
 -- ============================================================
@@ -217,6 +240,12 @@ CREATE TABLE IF NOT EXISTS payroll_period_health_plans (
     period_id      BIGINT NOT NULL REFERENCES payroll_periods(id) ON DELETE CASCADE,
     health_plan_id BIGINT NOT NULL REFERENCES health_plans(id),
     PRIMARY KEY (period_id, health_plan_id)
+);
+
+CREATE TABLE IF NOT EXISTS payroll_complementary_insurance (
+    period_id                    BIGINT NOT NULL REFERENCES payroll_periods(id) ON DELETE CASCADE,
+    complementary_insurance_plan_id BIGINT NOT NULL REFERENCES complementary_insurance_plans(id),
+    PRIMARY KEY (period_id, complementary_insurance_plan_id)
 );
 
 ALTER TABLE payroll_periods

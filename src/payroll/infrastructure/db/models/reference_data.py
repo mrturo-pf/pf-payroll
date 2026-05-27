@@ -16,7 +16,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from payroll.domain.contributions import HealthInstitutionKind
+from payroll.domain.contributions import (
+    HealthInstitutionKind,
+    ComplementaryInsuranceCostType,
+)
 from payroll.infrastructure.db.base import Base
 
 
@@ -205,3 +208,36 @@ class PayrollConceptModel(Base):
         )
     )
     is_taxable: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class ComplementaryInsuranceProviderModel(Base):
+    """Represent Complementary Insurance Provider Model."""
+
+    __tablename__ = "complementary_insurance_providers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True)
+
+
+class ComplementaryInsurancePlanModel(Base):
+    """Represent Complementary Insurance Plan Model."""
+
+    __tablename__ = "complementary_insurance_plans"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider_id: Mapped[int] = mapped_column(
+        ForeignKey("complementary_insurance_providers.id")
+    )
+    name: Mapped[str] = mapped_column(String(120))
+    cost_type: Mapped[ComplementaryInsuranceCostType] = mapped_column(
+        SAEnum(
+            ComplementaryInsuranceCostType,
+            name="complementary_insurance_cost_type",
+            native_enum=False,
+            values_callable=enum_values,
+        )
+    )
+    cost_value: Mapped[Decimal] = mapped_column(Numeric(12, 4))
+    cost_currency: Mapped[str] = mapped_column(String(3), default="CLP")
+    valid_from: Mapped[date] = mapped_column(Date)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)

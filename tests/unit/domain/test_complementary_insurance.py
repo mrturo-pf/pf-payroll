@@ -71,8 +71,28 @@ def test_calculate_complementary_insurance_cost_variable_percentage_rounding() -
     assert cost == Decimal("33250.00")
 
 
-def test_calculate_complementary_insurance_cost_fixed_uf_not_implemented() -> None:
-    """Test that fixed UF cost calculation raises NotImplementedError."""
+def test_calculate_complementary_insurance_cost_fixed_uf() -> None:
+    """Test fixed UF cost calculation converts UF to CLP using provided rate."""
+    plan = ComplementaryInsurancePlan(
+        id=4,
+        provider_id=1,
+        name="Plan D",
+        cost_type=ComplementaryInsuranceCostType.FIXED_UF,
+        cost_value=Decimal("2.5"),
+        cost_currency="UF",
+        valid_from=date(2025, 1, 1),
+        valid_to=None,
+    )
+    salary_base = Decimal("3000000")
+    uf_rate = Decimal("38500")
+
+    cost = calculate_complementary_insurance_cost(plan, salary_base, uf_rate)
+
+    assert cost == Decimal("96250")
+
+
+def test_calculate_complementary_insurance_cost_fixed_uf_missing_rate() -> None:
+    """Test that FIXED_UF without a UF rate raises ValueError."""
     plan = ComplementaryInsurancePlan(
         id=4,
         provider_id=1,
@@ -85,7 +105,7 @@ def test_calculate_complementary_insurance_cost_fixed_uf_not_implemented() -> No
     )
     salary_base = Decimal("3000000")
 
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError, match="UF rate is required"):
         calculate_complementary_insurance_cost(plan, salary_base)
 
 

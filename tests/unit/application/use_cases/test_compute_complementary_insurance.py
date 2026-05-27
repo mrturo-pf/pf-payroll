@@ -29,13 +29,22 @@ def mock_complementary_insurance_repository() -> AsyncMock:
 
 
 @pytest.fixture
+def mock_market_data_repository() -> AsyncMock:
+    """Create mock market data repository."""
+    return AsyncMock()
+
+
+@pytest.fixture
 def use_case(
     mock_payroll_repository: AsyncMock,
     mock_complementary_insurance_repository: AsyncMock,
+    mock_market_data_repository: AsyncMock,
 ) -> ComputeComplementaryInsurance:
     """Create use case instance."""
     return ComputeComplementaryInsurance(
-        mock_payroll_repository, mock_complementary_insurance_repository
+        mock_payroll_repository,
+        mock_complementary_insurance_repository,
+        mock_market_data_repository,
     )
 
 

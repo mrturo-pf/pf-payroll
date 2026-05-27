@@ -16,16 +16,15 @@ from typer.testing import CliRunner
 import payroll.interfaces.cli.main as cli_main
 from payroll.application.dto import (
     GeneratedPayrollReportDTO,
-    HealthPlanDTO,
     ImportPayrollResultDTO,
     ImportedPayrollPeriodDTO,
     MarketDataSyncRequestDTO,
     PayrollPeriodDetailDTO,
     PayrollSummaryDTO,
-    PensionPlanDTO,
     SyncRecentMarketDataResultDTO,
 )
-from payroll.domain.contributions import EmploymentContractKind, HealthInstitutionKind
+from payroll.domain.contributions import EmploymentContractKind
+from helpers.interface_stubs import sample_health_plan, sample_pension_plan
 
 
 @dataclass(frozen=True)
@@ -72,32 +71,6 @@ def sample_detail() -> PayrollPeriodDetailDTO:
         health_plan_id=2,
         items=[],
         summary=sample_summary(),
-    )
-
-
-def sample_pension_plan() -> PensionPlanDTO:
-    """Sample pension plan."""
-    return PensionPlanDTO(
-        id=1,
-        institution_code="AFP_UNO",
-        institution_name="AFP Uno",
-        valid_from=date(2026, 1, 1),
-        valid_to=None,
-        additional_rate=Decimal("0.0127"),
-    )
-
-
-def sample_health_plan() -> HealthPlanDTO:
-    """Sample health plan."""
-    return HealthPlanDTO(
-        id=2,
-        institution_code="FONASA",
-        institution_name="Fonasa",
-        institution_kind=HealthInstitutionKind.FONASA,
-        valid_from=date(2026, 1, 1),
-        valid_to=None,
-        plan_name="Base",
-        contracted_uf=Decimal("0"),
     )
 
 

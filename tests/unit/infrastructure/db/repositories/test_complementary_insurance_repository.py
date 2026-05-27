@@ -113,6 +113,7 @@ async def test_get_plan_by_id_not_found() -> None:
 async def test_assign_plans_to_period_empty_list() -> None:
     """Test assigning empty plan list to period."""
     mock_session = AsyncMock()
+    mock_session.add = MagicMock()
     repo = SqlAlchemyComplementaryInsuranceRepository(mock_session)
 
     await repo.assign_plans_to_period(1, [])
@@ -124,6 +125,7 @@ async def test_assign_plans_to_period_empty_list() -> None:
 async def test_assign_plans_to_period_adds_new_plans() -> None:
     """Test assigning new plans to period."""
     mock_session = AsyncMock()
+    mock_session.add = MagicMock()
     mock_result = MagicMock()
     mock_result.scalar_one_or_none.return_value = None
     mock_session.execute.return_value = mock_result

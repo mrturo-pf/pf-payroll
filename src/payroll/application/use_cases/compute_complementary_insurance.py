@@ -3,6 +3,7 @@
 from payroll.application.dto import ComputeComplementaryInsuranceResultDTO
 from payroll.application.ports.repositories import (
     ComplementaryInsuranceRepository,
+    MarketDataRepository,
     PayrollRepository,
 )
 from payroll.application.services.complementary_insurance_cost_computation import (
@@ -17,11 +18,12 @@ class ComputeComplementaryInsurance:
         self,
         repository: PayrollRepository,
         complementary_insurance_repository: ComplementaryInsuranceRepository,
+        market_data_repository: MarketDataRepository,
     ) -> None:
         """Initialize the instance."""
         self._repository = repository
         self._service = ComplementaryInsuranceCostComputationService(
-            repository, complementary_insurance_repository
+            repository, complementary_insurance_repository, market_data_repository
         )
 
     async def execute(self, period_id: int) -> ComputeComplementaryInsuranceResultDTO:

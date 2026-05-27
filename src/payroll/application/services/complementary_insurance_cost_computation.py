@@ -6,13 +6,16 @@ from payroll.application.dto import (
     ComplementaryInsuranceCostDTO,
     ComputeComplementaryInsuranceResultDTO,
 )
+from payroll.application.errors import EconomicIndexNotFoundError
 from payroll.application.ports.repositories import (
     ComplementaryInsuranceRepository,
+    MarketDataRepository,
     PayrollRepository,
 )
 from payroll.domain.complementary_insurance import (
     calculate_complementary_insurance_cost,
 )
+from payroll.domain.contributions import ComplementaryInsuranceCostType
 
 
 class ComplementaryInsuranceCostComputationService:
@@ -22,16 +25,22 @@ class ComplementaryInsuranceCostComputationService:
         self,
         payroll_repository: PayrollRepository,
         complementary_insurance_repository: ComplementaryInsuranceRepository,
+        market_data_repository: MarketDataRepository,
     ) -> None:
         """Initialize the instance."""
         self._payroll_repository = payroll_repository
         self._complementary_insurance_repository = complementary_insurance_repository
+        self._market_data_repository = market_data_repository
 
     async def compute(self, period_id: int) -> ComputeComplementaryInsuranceResultDTO:
         """Compute total complementary insurance costs for a period.
 
         Retrieves assigned plans for the period, calculates cost for each plan
         based on plan configuration and salary, and returns aggregated result.
+
+        Raises:
+            EconomicIndexNotFoundError: If any plan requires a UF rate that is
+                not available in the market data repository.
         """
         period_detail = await self._payroll_repository.get_period_detail(period_id)
         if period_detail is None or period_detail.summary is None:
@@ -52,13 +61,29 @@ class ComplementaryInsuranceCostComputationService:
                 total_cost_clp=Decimal("0"),
             )
 
+        # Fetch UF rate once if any plan requires it
+        uf_rate_clp: Decimal | None = None
+        if any(p.cost_type == ComplementaryInsuranceCostType.FIXED_UF for p in plans):
+            uf_rate_clp = await self._market_data_repository.get_exchange_rate_value(
+                "UF",
+                period_detail.payment_date,
+            )
+            if uf_rate_clp is None:
+                raise EconomicIndexNotFoundError(
+                    f"UF rate not found for period "
+                    f"{period_detail.period_year}-{period_detail.period_month:02d}. "
+                    "Please load UF data before importing payroll."
+                )
+
         # Calculate cost for each plan
         costs: list[ComplementaryInsuranceCostDTO] = []
         total_cost = Decimal("0")
 
         salary_base = period_detail.summary.taxable_income_clp
         for plan in plans:
-            plan_cost = calculate_complementary_insurance_cost(plan, salary_base)
+            plan_cost = calculate_complementary_insurance_cost(
+                plan, salary_base, uf_rate_clp
+            )
             costs.append(
                 ComplementaryInsuranceCostDTO(
                     plan_id=plan.id,

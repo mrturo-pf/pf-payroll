@@ -13,6 +13,17 @@ from payroll.application.dto import (
 from payroll.interfaces.api import background_tasks
 
 
+class _FakeSessionManager:
+    """Test double for session manager."""
+
+    async def __aenter__(self) -> object:
+        """Enter the async context manager."""
+        return object()
+
+    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+        """Exit the async context manager."""
+
+
 def test_market_data_sync_request_helpers_detect_work() -> None:
     """Test helper functions count pending sync work."""
     empty_request = MarketDataSyncRequestDTO()
@@ -39,16 +50,6 @@ async def test_run_payroll_market_data_sync_logs_completion(
         economic_index_periods={"IPC_CL": [(2026, 1)]},
     )
 
-    class FakeSessionManager:
-        """Test double for session manager."""
-
-        async def __aenter__(self) -> object:
-            """Enter the async context manager."""
-            return object()
-
-        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-            """Exit the async context manager."""
-
     class FakeUseCase:
         """Test double for background sync use case."""
 
@@ -63,7 +64,7 @@ async def test_run_payroll_market_data_sync_logs_completion(
             )
 
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
-    monkeypatch.setattr(background_tasks, "SessionLocal", lambda: FakeSessionManager())
+    monkeypatch.setattr(background_tasks, "SessionLocal", lambda: _FakeSessionManager())
     monkeypatch.setattr(
         background_tasks,
         "build_market_data_sync_use_case",
@@ -104,16 +105,6 @@ async def test_run_payroll_market_data_sync_logs_failures(
         exchange_rate_dates={"UF": [date(2026, 1, 31)]}
     )
 
-    class FakeSessionManager:
-        """Test double for session manager."""
-
-        async def __aenter__(self) -> object:
-            """Enter the async context manager."""
-            return object()
-
-        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-            """Exit the async context manager."""
-
     class FakeUseCase:
         """Test double for failing background sync use case."""
 
@@ -122,7 +113,7 @@ async def test_run_payroll_market_data_sync_logs_failures(
             raise RuntimeError("sync exploded")
 
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
-    monkeypatch.setattr(background_tasks, "SessionLocal", lambda: FakeSessionManager())
+    monkeypatch.setattr(background_tasks, "SessionLocal", lambda: _FakeSessionManager())
     monkeypatch.setattr(
         background_tasks,
         "build_market_data_sync_use_case",
@@ -152,16 +143,6 @@ async def test_run_payroll_market_data_sync_logs_cancellation(
         exchange_rate_dates={"UF": [date(2026, 1, 31)]}
     )
 
-    class FakeSessionManager:
-        """Test double for session manager."""
-
-        async def __aenter__(self) -> object:
-            """Enter the async context manager."""
-            return object()
-
-        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-            """Exit the async context manager."""
-
     class FakeUseCase:
         """Test double for cancelled background sync use case."""
 
@@ -170,7 +151,7 @@ async def test_run_payroll_market_data_sync_logs_cancellation(
             raise asyncio.CancelledError()
 
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
-    monkeypatch.setattr(background_tasks, "SessionLocal", lambda: FakeSessionManager())
+    monkeypatch.setattr(background_tasks, "SessionLocal", lambda: _FakeSessionManager())
     monkeypatch.setattr(
         background_tasks,
         "build_market_data_sync_use_case",
@@ -224,16 +205,6 @@ async def test_sync_payroll_market_data_now_returns_remaining_request(
         exchange_rate_dates={"UF": [date(2026, 1, 31)]}
     )
 
-    class FakeSessionManager:
-        """Test double for session manager."""
-
-        async def __aenter__(self) -> object:
-            """Enter the async context manager."""
-            return object()
-
-        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-            """Exit the async context manager."""
-
     class FakeUseCase:
         """Test double for immediate sync use case."""
 
@@ -252,7 +223,7 @@ async def test_sync_payroll_market_data_now_returns_remaining_request(
                 None,
             )
 
-    monkeypatch.setattr(background_tasks, "SessionLocal", lambda: FakeSessionManager())
+    monkeypatch.setattr(background_tasks, "SessionLocal", lambda: _FakeSessionManager())
     monkeypatch.setattr(
         background_tasks,
         "build_market_data_sync_use_case",

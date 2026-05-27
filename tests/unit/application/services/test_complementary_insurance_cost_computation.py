@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from payroll.application.dto import PayrollPeriodDetailDTO, PayrollSummaryDTO
+from payroll.application.errors import EconomicIndexNotFoundError
 from payroll.application.services.complementary_insurance_cost_computation import (
     ComplementaryInsuranceCostComputationService,
 )
@@ -29,13 +30,22 @@ def mock_complementary_insurance_repository() -> AsyncMock:
 
 
 @pytest.fixture
+def mock_market_data_repository() -> AsyncMock:
+    """Create mock market data repository."""
+    return AsyncMock()
+
+
+@pytest.fixture
 def service(
     mock_payroll_repository: AsyncMock,
     mock_complementary_insurance_repository: AsyncMock,
+    mock_market_data_repository: AsyncMock,
 ) -> ComplementaryInsuranceCostComputationService:
     """Create service instance."""
     return ComplementaryInsuranceCostComputationService(
-        mock_payroll_repository, mock_complementary_insurance_repository
+        mock_payroll_repository,
+        mock_complementary_insurance_repository,
+        mock_market_data_repository,
     )
 
 
@@ -223,3 +233,141 @@ async def test_compute_with_missing_summary(
     assert result.costs == []
     assert result.total_cost_clp == Decimal("0")
     mock_complementary_insurance_repository.get_period_plans.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_compute_with_fixed_uf_plan(
+    mock_payroll_repository: AsyncMock,
+    mock_complementary_insurance_repository: AsyncMock,
+    mock_market_data_repository: AsyncMock,
+) -> None:
+    """Test computing costs with a FIXED_UF plan fetches and converts UF rate."""
+    period_id = 10
+    summary = PayrollSummaryDTO(
+        period_id=period_id,
+        employer_id=1,
+        employer_name="Test Corp",
+        period_year=2025,
+        period_month=3,
+        payment_date=date(2025, 3, 31),
+        taxable_income_clp=Decimal("3000000"),
+        gross_income_clp=Decimal("3500000"),
+        total_discounts_clp=Decimal("400000"),
+        net_pay_clp=Decimal("3100000"),
+    )
+    detail = PayrollPeriodDetailDTO(
+        id=period_id,
+        employer_id=1,
+        employer_name="Test Corp",
+        employer_tax_id="123456789",
+        employer_country_code="CL",
+        employer_started_at=date(2020, 1, 1),
+        employer_ended_at=None,
+        period_year=2025,
+        period_month=3,
+        payment_date=date(2025, 3, 31),
+        status="actual",
+        employment_contract_kind="indefinite",
+        worked_days=30,
+        summary=summary,
+        items=[],
+        pension_plan_id=1,
+        health_plan_id=2,
+    )
+    plan = ComplementaryInsurancePlan(
+        id=30,
+        provider_id=1,
+        name="Plan UF",
+        cost_type=ComplementaryInsuranceCostType.FIXED_UF,
+        cost_value=Decimal("2"),
+        cost_currency="UF",
+        valid_from=date(2024, 1, 1),
+        valid_to=None,
+    )
+
+    mock_payroll_repository.get_period_detail.return_value = detail
+    mock_complementary_insurance_repository.get_period_plans.return_value = [plan]
+    mock_market_data_repository.get_exchange_rate_value.return_value = Decimal("38500")
+
+    service = ComplementaryInsuranceCostComputationService(
+        mock_payroll_repository,
+        mock_complementary_insurance_repository,
+        mock_market_data_repository,
+    )
+    result = await service.compute(period_id)
+
+    mock_market_data_repository.get_exchange_rate_value.assert_called_once_with(
+        "UF", date(2025, 3, 31)
+    )
+    assert len(result.costs) == 1
+    # 2 UF * 38500 CLP/UF = 77000
+    assert result.costs[0].cost_clp == Decimal("77000")
+    assert result.total_cost_clp == Decimal("77000")
+
+
+@pytest.mark.asyncio
+async def test_compute_with_fixed_uf_plan_missing_rate_raises(
+    mock_payroll_repository: AsyncMock,
+    mock_complementary_insurance_repository: AsyncMock,
+    mock_market_data_repository: AsyncMock,
+) -> None:
+    """Test that a FIXED_UF plan with missing UF rate raises EconomicIndexNotFoundError.
+
+    When the market data repository returns None for the UF rate, the service
+    must surface an EconomicIndexNotFoundError.
+    """
+    period_id = 11
+    summary = PayrollSummaryDTO(
+        period_id=period_id,
+        employer_id=1,
+        employer_name="Test Corp",
+        period_year=2025,
+        period_month=3,
+        payment_date=date(2025, 3, 31),
+        taxable_income_clp=Decimal("3000000"),
+        gross_income_clp=Decimal("3500000"),
+        total_discounts_clp=Decimal("400000"),
+        net_pay_clp=Decimal("3100000"),
+    )
+    detail = PayrollPeriodDetailDTO(
+        id=period_id,
+        employer_id=1,
+        employer_name="Test Corp",
+        employer_tax_id="123456789",
+        employer_country_code="CL",
+        employer_started_at=date(2020, 1, 1),
+        employer_ended_at=None,
+        period_year=2025,
+        period_month=3,
+        payment_date=date(2025, 3, 31),
+        status="actual",
+        employment_contract_kind="indefinite",
+        worked_days=30,
+        summary=summary,
+        items=[],
+        pension_plan_id=1,
+        health_plan_id=2,
+    )
+    plan = ComplementaryInsurancePlan(
+        id=30,
+        provider_id=1,
+        name="Plan UF",
+        cost_type=ComplementaryInsuranceCostType.FIXED_UF,
+        cost_value=Decimal("2"),
+        cost_currency="UF",
+        valid_from=date(2024, 1, 1),
+        valid_to=None,
+    )
+
+    mock_payroll_repository.get_period_detail.return_value = detail
+    mock_complementary_insurance_repository.get_period_plans.return_value = [plan]
+    mock_market_data_repository.get_exchange_rate_value.return_value = None
+
+    service = ComplementaryInsuranceCostComputationService(
+        mock_payroll_repository,
+        mock_complementary_insurance_repository,
+        mock_market_data_repository,
+    )
+
+    with pytest.raises(EconomicIndexNotFoundError, match="UF rate not found"):
+        await service.compute(period_id)

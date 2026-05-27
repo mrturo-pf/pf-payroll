@@ -40,6 +40,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]
 
 [tool.ruff.lint]
 extend-select = ["D", "E", "W", "UP"]

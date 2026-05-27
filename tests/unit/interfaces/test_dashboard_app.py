@@ -12,7 +12,7 @@ from payroll.application.dto import (
     PayrollSummaryDTO,
     PensionPlanDTO,
 )
-from payroll.domain.contributions import EmploymentContractKind, HealthInstitutionKind
+from payroll.domain.contributions import EmploymentContractKind
 from payroll.interfaces.dashboard.app import (
     _assigned_plans_label,
     _build_period_row,
@@ -24,6 +24,7 @@ from payroll.interfaces.dashboard.app import (
     _report_url,
     render_dashboard_html,
 )
+from helpers.interface_stubs import sample_health_plan, sample_pension_plan
 
 
 def sample_summary() -> PayrollSummaryDTO:
@@ -85,32 +86,6 @@ def sample_detail(
         items=items,
         summary=sample_summary(),
         health_institution_is_active=health_institution_is_active,
-    )
-
-
-def sample_pension_plan() -> PensionPlanDTO:
-    """Sample pension plan."""
-    return PensionPlanDTO(
-        id=1,
-        institution_code="AFP_UNO",
-        institution_name="AFP Uno",
-        valid_from=date(2026, 1, 1),
-        valid_to=None,
-        additional_rate=Decimal("0.0127"),
-    )
-
-
-def sample_health_plan() -> HealthPlanDTO:
-    """Sample health plan."""
-    return HealthPlanDTO(
-        id=2,
-        institution_code="FONASA",
-        institution_name="Fonasa",
-        institution_kind=HealthInstitutionKind.FONASA,
-        valid_from=date(2026, 1, 1),
-        valid_to=None,
-        plan_name="Base",
-        contracted_uf=Decimal("0"),
     )
 
 

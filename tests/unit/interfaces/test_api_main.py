@@ -8,6 +8,17 @@ import pytest
 from payroll.interfaces.api import main
 
 
+class _FakeSessionManager:
+    """Test double for session manager that returns a plain object."""
+
+    async def __aenter__(self) -> object:
+        """Enter the async context manager."""
+        return object()
+
+    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+        """Exit the async context manager."""
+
+
 @pytest.mark.asyncio
 async def test_run_startup_market_data_sync_uses_session_and_logs(
     monkeypatch: pytest.MonkeyPatch,
@@ -93,16 +104,6 @@ async def test_run_startup_market_data_sync_logs_failures(
     """Test startup sync logs failures instead of failing silently."""
     exception_calls: list[tuple[str, dict[str, str]]] = []
 
-    class FakeSessionManager:
-        """Test double for session manager."""
-
-        async def __aenter__(self) -> object:
-            """Enter the async context manager."""
-            return object()
-
-        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-            """Exit the async context manager."""
-
     class FakeUseCase:
         """Test double for failing startup sync use case."""
 
@@ -111,7 +112,7 @@ async def test_run_startup_market_data_sync_logs_failures(
             raise RuntimeError("sync exploded")
 
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
-    monkeypatch.setattr(main, "SessionLocal", lambda: FakeSessionManager())
+    monkeypatch.setattr(main, "SessionLocal", lambda: _FakeSessionManager())
     monkeypatch.setattr(
         main, "build_startup_market_data_sync", lambda value: FakeUseCase()
     )
@@ -136,16 +137,6 @@ async def test_run_startup_market_data_sync_logs_cancellation(
     """Test startup sync logs cancellation before re-raising it."""
     info_calls: list[tuple[str, dict[str, int | str]]] = []
 
-    class FakeSessionManager:
-        """Test double for session manager."""
-
-        async def __aenter__(self) -> object:
-            """Enter the async context manager."""
-            return object()
-
-        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-            """Exit the async context manager."""
-
     class FakeUseCase:
         """Test double for cancelled startup sync use case."""
 
@@ -154,7 +145,7 @@ async def test_run_startup_market_data_sync_logs_cancellation(
             raise asyncio.CancelledError()
 
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
-    monkeypatch.setattr(main, "SessionLocal", lambda: FakeSessionManager())
+    monkeypatch.setattr(main, "SessionLocal", lambda: _FakeSessionManager())
     monkeypatch.setattr(
         main, "build_startup_market_data_sync", lambda value: FakeUseCase()
     )

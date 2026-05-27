@@ -62,7 +62,7 @@ class ProcessImportedPayrollPeriods:
             repository, complementary_insurance_repository
         )
         self._compute_complementary_insurance = ComputeComplementaryInsurance(
-            repository, complementary_insurance_repository
+            repository, complementary_insurance_repository, market_data_repository
         )
         self._validate_complementary_insurance = (
             ComplementaryInsuranceValidationService()

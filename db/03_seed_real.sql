@@ -123,7 +123,7 @@ INSERT INTO complementary_insurance_plans (
         'fixed_uf'::complementary_insurance_cost_type,
         0.19,
         'UF',
-        DATE '2024-12-01',
+        DATE '2025-02-01',
         NULL
     ),
     (
@@ -132,7 +132,7 @@ INSERT INTO complementary_insurance_plans (
         'fixed_uf'::complementary_insurance_cost_type,
         0.63,
         'UF',
-        DATE '2024-12-01',
+        DATE '2025-01-01',
         NULL
     ),
     (
@@ -141,6 +141,6 @@ INSERT INTO complementary_insurance_plans (
         'fixed_uf'::complementary_insurance_cost_type,
         0.13,
         'UF',
-        DATE '2024-12-01',
+        DATE '2025-02-01',
         NULL
     );

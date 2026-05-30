@@ -25,46 +25,10 @@ def service() -> ComplementaryInsuranceValidationService:
     return ComplementaryInsuranceValidationService()
 
 
-@pytest.fixture
-def base_detail() -> PayrollPeriodDetailDTO:
-    """Create base period detail for testing."""
-    summary = PayrollSummaryDTO(
-        period_id=1,
-        employer_id=1,
-        employer_name="Test Corp",
-        period_year=2025,
-        period_month=5,
-        payment_date=date(2025, 5, 30),
-        taxable_income_clp=Decimal("1000000"),
-        gross_income_clp=Decimal("1250000"),
-        total_discounts_clp=Decimal("250000"),
-        net_pay_clp=Decimal("1000000"),
-    )
-    return PayrollPeriodDetailDTO(
-        id=1,
-        employer_id=1,
-        employer_name="Test Corp",
-        employer_tax_id="123456789",
-        employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
-        period_year=2025,
-        period_month=5,
-        payment_date=date(2025, 5, 30),
-        status="actual",
-        employment_contract_kind="indefinite",
-        worked_days=30,
-        summary=summary,
-        items=[],
-        pension_plan_id=1,
-        health_plan_id=2,
-    )
-
-
 @pytest.mark.asyncio
 async def test_validate_matching_costs(
     service: ComplementaryInsuranceValidationService,
-    base_detail: PayrollPeriodDetailDTO,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
 ) -> None:
     """Test validation when calculated cost matches declared amount."""
     cost = Decimal("50000")
@@ -81,7 +45,7 @@ async def test_validate_matching_costs(
     )
 
     detail = replace(
-        base_detail,
+        payroll_period_detail_dto,
         items=[
             PayrollItemDetailDTO(
                 concept_code="HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION",
@@ -103,9 +67,9 @@ async def test_validate_matching_costs(
 @pytest.mark.asyncio
 async def test_validate_discrepancy_exceeds_tolerance(
     service: ComplementaryInsuranceValidationService,
-    base_detail: PayrollPeriodDetailDTO,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
 ) -> None:
-    """Test validation when cost discrepancy exceeds tolerance (generates warnings)."""
+    """Test validation when cost discrepancy exceeds tolerance."""
     computed_cost = Decimal("50000")
     declared_cost = Decimal("50500")
 
@@ -122,7 +86,7 @@ async def test_validate_discrepancy_exceeds_tolerance(
     )
 
     detail = replace(
-        base_detail,
+        payroll_period_detail_dto,
         items=[
             PayrollItemDetailDTO(
                 concept_code="HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION",
@@ -145,7 +109,7 @@ async def test_validate_discrepancy_exceeds_tolerance(
 @pytest.mark.asyncio
 async def test_validate_no_declared_amount(
     service: ComplementaryInsuranceValidationService,
-    base_detail: PayrollPeriodDetailDTO,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
 ) -> None:
     """Test validation when no declared contribution is found."""
     computed_costs = ComputeComplementaryInsuranceResultDTO(
@@ -154,7 +118,7 @@ async def test_validate_no_declared_amount(
         total_cost_clp=Decimal("0"),
     )
 
-    detail = replace(base_detail, items=[])
+    detail = replace(payroll_period_detail_dto, items=[])
 
     is_valid, warnings = await service.validate(detail, computed_costs)
 
@@ -166,7 +130,7 @@ async def test_validate_no_declared_amount(
 @pytest.mark.asyncio
 async def test_validate_within_tolerance(
     service: ComplementaryInsuranceValidationService,
-    base_detail: PayrollPeriodDetailDTO,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
 ) -> None:
     """Test validation when discrepancy is within tolerance."""
     computed_cost = Decimal("50000")
@@ -185,7 +149,7 @@ async def test_validate_within_tolerance(
     )
 
     detail = replace(
-        base_detail,
+        payroll_period_detail_dto,
         items=[
             PayrollItemDetailDTO(
                 concept_code="HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION",
@@ -207,7 +171,7 @@ async def test_validate_within_tolerance(
 @pytest.mark.asyncio
 async def test_validate_no_summary(
     service: ComplementaryInsuranceValidationService,
-    base_detail: PayrollPeriodDetailDTO,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
 ) -> None:
     """Test validation when period detail has no summary."""
     computed_costs = ComputeComplementaryInsuranceResultDTO(
@@ -216,7 +180,7 @@ async def test_validate_no_summary(
         total_cost_clp=Decimal("0"),
     )
 
-    detail = replace(base_detail, summary=None)
+    detail = replace(payroll_period_detail_dto, summary=None)
 
     is_valid, warnings = await service.validate(detail, computed_costs)
 
@@ -227,7 +191,7 @@ async def test_validate_no_summary(
 @pytest.mark.asyncio
 async def test_validate_high_contribution_ratio(
     service: ComplementaryInsuranceValidationService,
-    base_detail: PayrollPeriodDetailDTO,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
 ) -> None:
     """Test validation when contribution ratio is unusually high."""
     high_cost = Decimal("200000")
@@ -244,7 +208,7 @@ async def test_validate_high_contribution_ratio(
     )
 
     detail = replace(
-        base_detail,
+        payroll_period_detail_dto,
         items=[
             PayrollItemDetailDTO(
                 concept_code="HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION",
@@ -266,7 +230,7 @@ async def test_validate_high_contribution_ratio(
 @pytest.mark.asyncio
 async def test_validate_deduction_chain_inconsistency(
     service: ComplementaryInsuranceValidationService,
-    base_detail: PayrollPeriodDetailDTO,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
 ) -> None:
     """Test validation when deduction chain is inconsistent."""
     cost = Decimal("50000")
@@ -296,7 +260,7 @@ async def test_validate_deduction_chain_inconsistency(
     )
 
     detail = replace(
-        base_detail,
+        payroll_period_detail_dto,
         summary=bad_summary,
         items=[
             PayrollItemDetailDTO(
@@ -319,7 +283,7 @@ async def test_validate_deduction_chain_inconsistency(
 @pytest.mark.asyncio
 async def test_validate_calculated_greater_than_declared(
     service: ComplementaryInsuranceValidationService,
-    base_detail: PayrollPeriodDetailDTO,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
 ) -> None:
     """Test validation when calculated cost is higher than declared."""
     computed_cost = Decimal("60000")
@@ -338,7 +302,7 @@ async def test_validate_calculated_greater_than_declared(
     )
 
     detail = replace(
-        base_detail,
+        payroll_period_detail_dto,
         items=[
             PayrollItemDetailDTO(
                 concept_code="HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION",
@@ -357,47 +321,13 @@ async def test_validate_calculated_greater_than_declared(
     assert any("higher than declared" in w.lower() for w in warnings)
 
 
-@pytest.mark.asyncio
-async def test_validate_deduction_chain_with_none_summary(
+def test_validate_deduction_chain_with_none_summary(
     service: ComplementaryInsuranceValidationService,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
 ) -> None:
     """Test deduction chain validation when summary is None."""
-    summary = PayrollSummaryDTO(
-        period_id=1,
-        employer_id=1,
-        employer_name="Test Corp",
-        period_year=2025,
-        period_month=5,
-        payment_date=date(2025, 5, 30),
-        taxable_income_clp=Decimal("1000000"),
-        gross_income_clp=Decimal("1250000"),
-        total_discounts_clp=Decimal("250000"),
-        net_pay_clp=Decimal("1000000"),
-    )
-    detail = PayrollPeriodDetailDTO(
-        id=1,
-        employer_id=1,
-        employer_name="Test Corp",
-        employer_tax_id="123456789",
-        employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
-        period_year=2025,
-        period_month=5,
-        payment_date=date(2025, 5, 30),
-        status="actual",
-        employment_contract_kind="indefinite",
-        worked_days=30,
-        summary=None,
-        items=[],
-        pension_plan_id=1,
-        health_plan_id=2,
-    )
+    detail = replace(payroll_period_detail_dto, summary=None)
 
-    warnings = service._validate_deduction_chain(
-        detail, Decimal("50000")
-    )
+    warnings = service._validate_deduction_chain(detail, Decimal("50000"))
 
     assert warnings == []
-
-

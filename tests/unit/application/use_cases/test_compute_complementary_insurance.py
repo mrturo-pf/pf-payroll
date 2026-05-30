@@ -1,5 +1,6 @@
 """Tests for ComputeComplementaryInsurance use case."""
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from unittest.mock import AsyncMock
@@ -53,39 +54,21 @@ async def test_execute(
     use_case: ComputeComplementaryInsurance,
     mock_payroll_repository: AsyncMock,
     mock_complementary_insurance_repository: AsyncMock,
+    payroll_summary_dto: PayrollSummaryDTO,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
 ) -> None:
     """Test execute method."""
     period_id = 123
-    summary = PayrollSummaryDTO(
+    summary = replace(
+        payroll_summary_dto,
         period_id=period_id,
-        employer_id=1,
-        employer_name="Test Corp",
-        period_year=2025,
-        period_month=5,
-        payment_date=date(2025, 5, 30),
-        taxable_income_clp=Decimal("1000000"),
-        gross_income_clp=Decimal("1250000"),
         total_discounts_clp=Decimal("180000"),
         net_pay_clp=Decimal("1070000"),
     )
-    detail = PayrollPeriodDetailDTO(
+    detail = replace(
+        payroll_period_detail_dto,
         id=period_id,
-        employer_id=1,
-        employer_name="Test Corp",
-        employer_tax_id="123456789",
-        employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
-        period_year=2025,
-        period_month=5,
-        payment_date=date(2025, 5, 30),
-        status="actual",
-        employment_contract_kind="indefinite",
-        worked_days=30,
         summary=summary,
-        items=[],
-        pension_plan_id=1,
-        health_plan_id=2,
     )
 
     plan = ComplementaryInsurancePlan(

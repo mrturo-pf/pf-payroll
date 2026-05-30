@@ -310,6 +310,7 @@ def test_payroll_import_endpoint() -> None:
                     "contributions and income tax are generated."
                 ),
                 "contribution_validation": None,
+                "complementary_insurance_validation": None,
             }
         ],
     }

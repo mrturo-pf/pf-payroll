@@ -143,15 +143,13 @@ class ProcessImportedPayrollPeriods:
         )
 
         # Validate complementary insurance costs against declared amounts
-        complementary_insurance_validation = None
         computed_costs = await self._compute_complementary_insurance.execute(detail.id)
         _is_valid, warnings = await self._validate_complementary_insurance.validate(
             detail, computed_costs
         )
-        if warnings:
-            complementary_insurance_validation = (
-                ImportedComplementaryInsuranceValidationDTO(warnings=warnings)
-            )
+        complementary_insurance_validation = (
+            ImportedComplementaryInsuranceValidationDTO(warnings=warnings)
+        )
 
         return ImportedPayrollPeriodDTO(
             id=detail.id,

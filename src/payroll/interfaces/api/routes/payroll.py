@@ -73,6 +73,12 @@ class ImportedContributionValidationRead(BaseModel):
     warning: str | None = None
 
 
+class ImportedComplementaryInsuranceValidationRead(BaseModel):
+    """Represent Imported Complementary Insurance Validation Read."""
+
+    warnings: list[str] = []
+
+
 class ImportedPayrollPeriodRead(BaseModel):
     """Represent Imported Payroll Period Read."""
 
@@ -90,6 +96,9 @@ class ImportedPayrollPeriodRead(BaseModel):
     net_pay_difference_clp: Decimal | None = None
     net_pay_warning: str | None = None
     contribution_validation: ImportedContributionValidationRead | None = None
+    complementary_insurance_validation: (
+        ImportedComplementaryInsuranceValidationRead | None
+    ) = None
 
 
 class ImportPayrollResponse(BaseModel):

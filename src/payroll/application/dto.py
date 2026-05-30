@@ -195,6 +195,13 @@ class ImportedContributionValidationDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class ImportedComplementaryInsuranceValidationDTO:
+    """Represent imported complementary insurance validation results."""
+
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
 class ImportedPayrollPeriodDTO:
     """Represent Imported Payroll Period DTO."""
 
@@ -212,6 +219,9 @@ class ImportedPayrollPeriodDTO:
     net_pay_difference_clp: Decimal | None = None
     net_pay_warning: str | None = None
     contribution_validation: ImportedContributionValidationDTO | None = None
+    complementary_insurance_validation: (
+        ImportedComplementaryInsuranceValidationDTO | None
+    ) = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -4,6 +4,7 @@ from payroll.application.dto import (
     ComputeContributionsCommandDTO,
     ComputeIncomeTaxCommandDTO,
     ComputeUnemploymentInsuranceCommandDTO,
+    ImportedComplementaryInsuranceValidationDTO,
     ImportPayrollResultDTO,
     ImportedPayrollPeriodDTO,
 )
@@ -141,6 +142,17 @@ class ProcessImportedPayrollPeriods:
             computed_contributions,
         )
 
+        # Validate complementary insurance costs against declared amounts
+        complementary_insurance_validation = None
+        computed_costs = await self._compute_complementary_insurance.execute(detail.id)
+        _is_valid, warnings = await self._validate_complementary_insurance.validate(
+            detail, computed_costs
+        )
+        if warnings:
+            complementary_insurance_validation = (
+                ImportedComplementaryInsuranceValidationDTO(warnings=warnings)
+            )
+
         return ImportedPayrollPeriodDTO(
             id=detail.id,
             employer=detail.employer_name,
@@ -156,4 +168,5 @@ class ProcessImportedPayrollPeriods:
             net_pay_difference_clp=summary.net_pay_difference_clp,
             net_pay_warning=summary.net_pay_warning,
             contribution_validation=contribution_validation,
+            complementary_insurance_validation=complementary_insurance_validation,
         )

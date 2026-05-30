@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from payroll.application.dto import (
     ComplementaryInsuranceCostDTO,
+    ComplementaryInsuranceValidationAuditDTO,
     ComputeComplementaryInsuranceResultDTO,
 )
 from payroll.application.errors import EconomicIndexNotFoundError
@@ -19,7 +20,11 @@ from payroll.domain.contributions import ComplementaryInsuranceCostType
 
 
 class ComplementaryInsuranceCostComputationService:
-    """Computes costs for complementary insurance plans assigned to a payroll period."""
+    """Computes costs for complementary insurance plans assigned to a payroll period.
+
+    Calculates total complementary insurance costs based on assigned plans,
+    including generating audit trails for cost computation traceability.
+    """
 
     def __init__(
         self,
@@ -36,7 +41,8 @@ class ComplementaryInsuranceCostComputationService:
         """Compute total complementary insurance costs for a period.
 
         Retrieves assigned plans for the period, calculates cost for each plan
-        based on plan configuration and salary, and returns aggregated result.
+        based on plan configuration and salary, and returns aggregated result
+        with audit trail.
 
         Raises:
             EconomicIndexNotFoundError: If any plan requires a UF rate that is
@@ -93,8 +99,22 @@ class ComplementaryInsuranceCostComputationService:
             )
             total_cost += plan_cost
 
+        # Build audit trail for traceability
+        audit = ComplementaryInsuranceValidationAuditDTO(
+            period_id=period_id,
+            gross_income_clp=period_detail.summary.gross_income_clp,
+            taxable_income_clp=salary_base,
+            total_legal_deductions_clp=(
+                period_detail.summary.gross_income_clp - salary_base
+            ),
+            declared_employer_contribution_clp=None,
+            calculated_total_cost_clp=total_cost,
+            individual_plan_costs=costs,
+        )
+
         return ComputeComplementaryInsuranceResultDTO(
             period_id=period_id,
             costs=costs,
             total_cost_clp=total_cost,
+            audit=audit,
         )

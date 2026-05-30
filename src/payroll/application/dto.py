@@ -590,9 +590,28 @@ class ComputeComplementaryInsuranceCommandDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class ComplementaryInsuranceValidationAuditDTO:
+    """Represent audit trail for complementary insurance validation."""
+
+    period_id: int
+    gross_income_clp: Decimal
+    taxable_income_clp: Decimal
+    total_legal_deductions_clp: Decimal
+    declared_employer_contribution_clp: Decimal | None
+    calculated_total_cost_clp: Decimal
+    individual_plan_costs: list[ComplementaryInsuranceCostDTO] = field(
+        default_factory=list
+    )
+    difference_clp: Decimal = Decimal("0")
+    tolerance_clp: Decimal = Decimal("100")
+    has_discrepancy: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class ComputeComplementaryInsuranceResultDTO:
     """Represent Compute Complementary Insurance Result DTO."""
 
     period_id: int
     costs: list[ComplementaryInsuranceCostDTO]
     total_cost_clp: Decimal
+    audit: ComplementaryInsuranceValidationAuditDTO | None = None

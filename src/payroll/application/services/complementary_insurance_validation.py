@@ -66,7 +66,7 @@ class ComplementaryInsuranceValidationService:
             individual_plan_costs=computed_costs.costs,
         )
 
-        # Validate 1: Check if declared amount exists
+        # Validate 1: Check if declared amount was provided
         if declared_amount is None:
             warnings.append(
                 "No declared complementary insurance employer contribution "
@@ -76,6 +76,7 @@ class ComplementaryInsuranceValidationService:
             return True, warnings
 
         # Validate 2: Compare declared vs calculated (with tolerance)
+        # This includes the case where declared_amount is 0 but costs were calculated
         tolerance = Decimal("100")
         difference = abs(computed_costs.total_cost_clp - declared_amount)
 
@@ -204,14 +205,20 @@ class ComplementaryInsuranceValidationService:
 
         Searches for items with concept_code matching complementary insurance
         or health insurance employer contribution patterns.
+
+        Returns the declared amount (including 0), or None if the concept
+        code is not found in the CSV at all.
         """
         # Search for declared health insurance employer contribution items
-        amount = sum(
-            (
-                item.amount_clp
-                for item in detail.items
-                if item.concept_code == "HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION"
-            ),
-            Decimal("0"),
-        )
-        return amount if amount > 0 else None
+        items = [
+            item.amount_clp
+            for item in detail.items
+            if item.concept_code == "HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION"
+        ]
+
+        # If items exist (even if all are 0), return the sum
+        # Only return None if the concept_code was never found
+        if items:
+            return sum(items, Decimal("0"))
+
+        return None

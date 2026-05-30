@@ -331,3 +331,54 @@ def test_validate_deduction_chain_with_none_summary(
     warnings = service._validate_deduction_chain(detail, Decimal("50000"))
 
     assert warnings == []
+
+
+@pytest.mark.asyncio
+async def test_validate_declared_zero_with_calculated_costs(
+    service: ComplementaryInsuranceValidationService,
+    payroll_summary_dto: PayrollSummaryDTO,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
+) -> None:
+    """Test validation when declared contribution is 0 but costs were calculated.
+
+    This is a critical case: if the CSV declares 0 CLP for complementary
+    insurance employer contribution, but the system calculates costs based on
+    assigned plans, this should trigger an alert.
+    """
+    # Create an item with HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION = 0
+    zero_contribution_item = PayrollItemDetailDTO(
+        concept_code="HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION",
+        concept_name="Complementary Insurance Employer Contribution",
+        kind=PayrollConceptKind.DISCOUNT,
+        is_taxable=False,
+        amount_clp=Decimal("0"),
+        notes=None,
+    )
+
+    detail = replace(
+        payroll_period_detail_dto,
+        period_year=2026,
+        period_month=6,
+        items=[zero_contribution_item],  # Has the item with 0 value
+    )
+
+    # But the system calculated costs for the assigned plans
+    computed_costs = ComputeComplementaryInsuranceResultDTO(
+        period_id=detail.id,
+        costs=[
+            ComplementaryInsuranceCostDTO(
+                plan_id=1,
+                plan_name="Health Plan A",
+                cost_clp=Decimal("50000"),
+            )
+        ],
+        total_cost_clp=Decimal("50000"),
+    )
+
+    is_valid, warnings = await service.validate(detail, computed_costs)
+
+    # Must be valid (no import failure) but should have warnings
+    assert is_valid is True
+    # Should detect the discrepancy between declared (0) and calculated (50000)
+    assert any("discrepancy" in w.lower() for w in warnings)
+    assert any("50000" in w for w in warnings)

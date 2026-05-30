@@ -32,7 +32,8 @@ class ComplementaryInsuranceValidationService:
         """Validate computed complementary insurance costs with full audit trail.
 
         Performs comprehensive validation including:
-        - Verification that declared contribution relates to calculated cost
+        - Verification that declared contribution (employer + employee) relates
+          to calculated cost
         - Validation of the deduction chain (gross → taxable → insurance)
         - Tolerance-based matching (100 CLP for rounding)
 
@@ -50,7 +51,24 @@ class ComplementaryInsuranceValidationService:
             return True, warnings
 
         # Extract key amounts from the payroll period
-        declared_amount = self._extract_declared_employer_contribution(detail)
+        # Total declared = employer contribution + employee deduction (health_insurance)
+        employer_declared = self._extract_declared_employer_contribution(detail)
+        employee_declared = self._extract_employee_health_insurance(detail)
+
+        # If neither is present, skip validation
+        if employer_declared is None and employee_declared is None:
+            warnings.append(
+                "No declared complementary insurance amounts found in CSV "
+                "(neither health_insurance_employer_contribution nor "
+                "health_insurance). Validation skipped."
+            )
+            return True, warnings
+
+        # Total declared amount (both employer and employee contributions)
+        total_declared = (employer_declared or Decimal("0")) + (
+            employee_declared or Decimal("0")
+        )
+
         gross_income = detail.summary.gross_income_clp
         taxable_income = detail.summary.taxable_income_clp
         total_legal_deductions = gross_income - taxable_income
@@ -61,24 +79,14 @@ class ComplementaryInsuranceValidationService:
             gross_income_clp=gross_income,
             taxable_income_clp=taxable_income,
             total_legal_deductions_clp=total_legal_deductions,
-            declared_employer_contribution_clp=declared_amount,
+            declared_employer_contribution_clp=total_declared,
             calculated_total_cost_clp=computed_costs.total_cost_clp,
             individual_plan_costs=computed_costs.costs,
         )
 
-        # Validate 1: Check if declared amount was provided
-        if declared_amount is None:
-            warnings.append(
-                "No declared complementary insurance employer contribution "
-                "(health_insurance_employer_contribution) found in CSV. "
-                "Validation will be performed on calculated costs only."
-            )
-            return True, warnings
-
-        # Validate 2: Compare declared vs calculated (with tolerance)
-        # This includes the case where declared_amount is 0 but costs were calculated
+        # Validate: Compare total declared vs calculated (with tolerance)
         tolerance = Decimal("100")
-        difference = abs(computed_costs.total_cost_clp - declared_amount)
+        difference = abs(computed_costs.total_cost_clp - total_declared)
 
         if difference > tolerance:
             audit_with_diff = ComplementaryInsuranceValidationAuditDTO(
@@ -98,25 +106,42 @@ class ComplementaryInsuranceValidationService:
                     audit_with_diff,
                     detail.summary.period_year,
                     detail.summary.period_month,
+                    employer_declared,
+                    employee_declared,
                 )
             )
 
-        # Validate 3: Cross-check deduction chain consistency
-        deduction_warnings = self._validate_deduction_chain(detail, declared_amount)
+        # Validate deduction chain consistency
+        deduction_warnings = self._validate_deduction_chain(detail, total_declared)
         warnings.extend(deduction_warnings)
 
         return True, warnings
 
     def _build_cost_discrepancy_warnings(
-        self, audit: ComplementaryInsuranceValidationAuditDTO, year: int, month: int
+        self,
+        audit: ComplementaryInsuranceValidationAuditDTO,
+        year: int,
+        month: int,
+        employer_declared: Decimal | None,
+        employee_declared: Decimal | None,
     ) -> list[str]:
-        """Build detailed warnings for cost discrepancies."""
+        """Build detailed warnings for cost discrepancies.
+
+        Shows breakdown of employer and employee contributions and compares
+        the total against calculated costs.
+        """
         warnings: list[str] = []
+
+        employer_part = employer_declared or Decimal("0")
+        employee_part = employee_declared or Decimal("0")
+        total_declared = employer_part + employee_part
 
         warnings.append(
             f"[{year}-{month:02d}] Complementary insurance cost discrepancy "
-            f"detected: CSV declares "
-            f"{audit.declared_employer_contribution_clp} CLP but calculation "
+            f"detected. CSV declares: "
+            f"employer contribution {employer_part} CLP + "
+            f"employee deduction {employee_part} CLP = "
+            f"{total_declared} CLP total, but calculation "
             f"based on assigned plans yields {audit.calculated_total_cost_clp} CLP "
             f"(difference: {audit.difference_clp} CLP, "
             f"tolerance: {audit.tolerance_clp} CLP)."
@@ -135,28 +160,27 @@ class ComplementaryInsuranceValidationService:
             )
 
         # Provide guidance on root cause
-        declared = audit.declared_employer_contribution_clp or Decimal("0")
         calculated = audit.calculated_total_cost_clp
-        if calculated > declared:
-            variance_pct = (
-                ((calculated - declared) / declared * Decimal(100))
-                if declared > 0
-                else Decimal(0)
-            )
+        if calculated > total_declared:
+            if total_declared > 0:
+                variance_pct = (
+                    (calculated - total_declared) / total_declared * Decimal(100)
+                )
+            else:
+                variance_pct = Decimal(0)
             warnings.append(
-                f"Calculated cost is {variance_pct:.1f}% higher than declared. "
-                "Verify that salary base, UF rates, and plan rates are current."
+                f"Calculated cost is {variance_pct:.1f}% higher than declared total. "
+                "Verify that salary base, UF rates, plan rates are current, "
+                "and that all complementary insurance plans have been assigned."
             )
         else:
-            variance_pct = (
-                ((declared - calculated) / declared * Decimal(100))
-                if declared > 0
-                else Decimal(0)
-            )
+            # When calculated <= total_declared with a discrepancy > 100,
+            # total_declared must be > 100 (so the division below is safe)
+            variance_pct = (total_declared - calculated) / total_declared * Decimal(100)
             warnings.append(
-                f"Declared contribution is {variance_pct:.1f}% higher than "
-                f"calculated. Verify that all complementary insurance plans have "
-                "been assigned or check for data entry discrepancies."
+                f"Declared total is {variance_pct:.1f}% higher than "
+                f"calculated. Verify plan assignments, rates, and salary data "
+                "for accuracy."
             )
 
         return warnings
@@ -214,6 +238,33 @@ class ComplementaryInsuranceValidationService:
             item.amount_clp
             for item in detail.items
             if item.concept_code == "HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION"
+        ]
+
+        # If items exist (even if all are 0), return the sum
+        # Only return None if the concept_code was never found
+        if items:
+            return sum(items, Decimal("0"))
+
+        return None
+
+    def _extract_employee_health_insurance(
+        self, detail: PayrollPeriodDetailDTO
+    ) -> Decimal | None:
+        """Extract declared employee health insurance deduction from payroll items.
+
+        Searches for items with concept_code == "HEALTH_INSURANCE" (employee deduction).
+
+        Returns the declared amount (including 0), or None if the concept
+        code is not found in the CSV at all. This follows the same logic as
+        _extract_declared_employer_contribution to maintain consistency:
+        - Decimal('0') means the concept was in the CSV with value 0
+        - None means the concept was never declared in the CSV
+        """
+        # Search for declared health insurance (employee deduction) items
+        items = [
+            item.amount_clp
+            for item in detail.items
+            if item.concept_code == "HEALTH_INSURANCE"
         ]
 
         # If items exist (even if all are 0), return the sum

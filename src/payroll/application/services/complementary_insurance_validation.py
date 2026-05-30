@@ -196,17 +196,18 @@ class ComplementaryInsuranceValidationService:
             return warnings
 
         gross = detail.summary.gross_income_clp
-        taxable = detail.summary.taxable_income_clp
         total_discounts = detail.summary.total_discounts_clp
+        net_pay = detail.summary.net_pay_clp
 
-        # Check 1: Gross - Taxable = Total Deductions (consistency)
-        calculated_deductions = gross - taxable
-        if abs(calculated_deductions - total_discounts) > Decimal("1"):
+        # Check 1: Gross - Total Discounts = Net Pay (consistency)
+        # This validates the core payroll equation
+        calculated_net_pay = gross - total_discounts
+        if abs(calculated_net_pay - net_pay) > Decimal("1"):
             warnings.append(
                 f"Payroll deduction chain inconsistency: "
-                f"(Gross {gross} - Taxable {taxable} = {calculated_deductions}) "
-                f"but total_discounts = {total_discounts}. "
-                "This may affect insurance cost calculations."
+                f"(Gross {gross} - Total Discounts {total_discounts} = "
+                f"{calculated_net_pay}) but Net Pay = {net_pay}. "
+                "This indicates the payroll balance is incorrect."
             )
 
         # Check 2: Verify that declared contribution is reasonable vs gross

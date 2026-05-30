@@ -223,6 +223,8 @@ async def test_validate_deduction_chain_inconsistency(
         total_cost_clp=cost,
     )
 
+    # Create summary where Gross - Total Discounts != Net Pay
+    # This represents an inconsistent payroll balance
     bad_summary = PayrollSummaryDTO(
         period_id=1,
         employer_id=1,
@@ -233,7 +235,7 @@ async def test_validate_deduction_chain_inconsistency(
         taxable_income_clp=Decimal("1000000"),
         gross_income_clp=Decimal("1250000"),
         total_discounts_clp=Decimal("100000"),
-        net_pay_clp=Decimal("1150000"),
+        net_pay_clp=Decimal("1000000"),  # Should be 1150000 (1250000 - 100000)
     )
 
     detail = replace(

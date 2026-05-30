@@ -17,6 +17,7 @@ from payroll.domain.complementary_insurance import (
     calculate_complementary_insurance_cost,
 )
 from payroll.domain.contributions import ComplementaryInsuranceCostType
+from payroll.shared.dates import add_months
 
 
 class ComplementaryInsuranceCostComputationService:
@@ -70,9 +71,11 @@ class ComplementaryInsuranceCostComputationService:
         # Fetch UF rate once if any plan requires it
         uf_rate_clp: Decimal | None = None
         if any(p.cost_type == ComplementaryInsuranceCostType.FIXED_UF for p in plans):
+            # Use first day of following month for UF rate lookup
+            reference_date = add_months(period_detail.payment_date, 1)
             uf_rate_clp = await self._market_data_repository.get_exchange_rate_value(
                 "UF",
-                period_detail.payment_date,
+                reference_date,
             )
             if uf_rate_clp is None:
                 raise EconomicIndexNotFoundError(

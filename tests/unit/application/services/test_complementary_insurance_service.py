@@ -48,6 +48,7 @@ async def test_assign_plans_for_period_with_vigent_plans(
     """Test assigning plans when vigent plans exist."""
     period_id = 123
     payment_date = date(2025, 5, 30)
+    reference_date = date(2025, 6, 1)  # First day of following month
     summary = PayrollSummaryDTO(
         period_id=period_id,
         employer_id=1,
@@ -111,7 +112,7 @@ async def test_assign_plans_for_period_with_vigent_plans(
 
     mock_payroll_repository.get_period_detail.assert_called_once_with(period_id)
     mock_complementary_insurance_repository.get_vigent_plans.assert_called_once_with(
-        payment_date
+        reference_date
     )
     mock_complementary_insurance_repository.assign_plans_to_period.assert_called_once_with(
         period_id, [10, 20]

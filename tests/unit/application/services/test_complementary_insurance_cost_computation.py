@@ -243,13 +243,15 @@ async def test_compute_with_fixed_uf_plan(
 ) -> None:
     """Test computing costs with a FIXED_UF plan fetches and converts UF rate."""
     period_id = 10
+    payment_date = date(2025, 3, 31)
+    reference_date = date(2025, 4, 1)  # First day of following month
     summary = PayrollSummaryDTO(
         period_id=period_id,
         employer_id=1,
         employer_name="Test Corp",
         period_year=2025,
         period_month=3,
-        payment_date=date(2025, 3, 31),
+        payment_date=payment_date,
         taxable_income_clp=Decimal("3000000"),
         gross_income_clp=Decimal("3500000"),
         total_discounts_clp=Decimal("400000"),
@@ -265,7 +267,7 @@ async def test_compute_with_fixed_uf_plan(
         employer_ended_at=None,
         period_year=2025,
         period_month=3,
-        payment_date=date(2025, 3, 31),
+        payment_date=payment_date,
         status="actual",
         employment_contract_kind="indefinite",
         worked_days=30,
@@ -297,7 +299,7 @@ async def test_compute_with_fixed_uf_plan(
     result = await service.compute(period_id)
 
     mock_market_data_repository.get_exchange_rate_value.assert_called_once_with(
-        "UF", date(2025, 3, 31)
+        "UF", reference_date
     )
     assert len(result.costs) == 1
     # 2 UF * 38500 CLP/UF = 77000

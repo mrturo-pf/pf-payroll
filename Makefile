@@ -16,11 +16,12 @@ DB_ENV = NERDCTL_BIN="$(NERDCTL)" DB_CONTAINER="$(DB_CONTAINER)" DB_VOLUME="$(DB
 DB_SEED_FLAG_base =
 DB_SEED_FLAG_test = APPLY_TEST_SEED=1
 DB_SEED_FLAG_real = APPLY_REAL_SEED=1
+UNSET_PROXY_VARS = bash -eu -o pipefail -c 'vars=(http_proxy https_proxy all_proxy no_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY); for v in "$${vars[@]}"; do if [[ -n "$${!v-}" ]]; then printf "  ✓ Unsetting %s → %s\n" "$$v" "$${!v}"; unset "$$v"; else printf "  • %s not set\n" "$$v"; fi; done'
 
 # Creates the local virtual environment and installs project dependencies.
 install:
 	$(PYTHON) -m venv $(VENV)
-	. $(VENV)/bin/activate && python -m pip install -U pip && python -m pip install -e ".[dev]"
+	bash -eu -o pipefail -c 'vars=(http_proxy https_proxy all_proxy no_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY); for v in "$${vars[@]}"; do if [[ -n "$${!v-}" ]]; then printf "  ✓ Unsetting %s → %s\n" "$$v" "$${!v}"; unset "$$v"; else printf "  • %s not set\n" "$$v"; fi; done; . "$(VENV)/bin/activate" && python -m pip install -U pip && python -m pip install -e ".[dev]"'
 
 # Runs the DB script with a selected action and optional seed mode.
 _db-flow:
@@ -69,6 +70,10 @@ adminer-down:
 # Writes a local .env file with database connection defaults.
 env-write:
 	DB_NAME="$(DB_NAME)" DB_USER="$(DB_USER)" DB_PASSWORD="$(DB_PASSWORD)" DB_PORT="$(DB_PORT)" ENV_FILE="$(ENV_FILE)" ./scripts/write_env.sh
+
+# Unsets common proxy variables in the current shell invocation.
+unset-proxy-vars:
+	@$(UNSET_PROXY_VARS)
 
 # Brings up the full local stack (DB, Adminer, env, deps, and API).
 local-up:

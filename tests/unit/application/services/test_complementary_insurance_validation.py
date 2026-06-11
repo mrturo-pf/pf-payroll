@@ -63,6 +63,25 @@ def _create_detail_with_employer_contribution(
     )
 
 
+def _create_detail_with_employee_deduction(
+    base_detail: PayrollPeriodDetailDTO, amount_clp: Decimal
+) -> PayrollPeriodDetailDTO:
+    """Create a detail with employee health insurance deduction."""
+    return replace(
+        base_detail,
+        items=[
+            PayrollItemDetailDTO(
+                concept_code="HEALTH_INSURANCE",
+                concept_name="Health Insurance",
+                kind=PayrollConceptKind.DISCOUNT,
+                is_taxable=False,
+                amount_clp=amount_clp,
+                notes=None,
+            )
+        ],
+    )
+
+
 def _create_detail_with_items(
     base_detail: PayrollPeriodDetailDTO,
     employer_clp: Decimal | None = None,
@@ -106,7 +125,7 @@ async def test_validate_matching_costs(
     """Test validation when calculated cost matches declared amount."""
     cost = Decimal("50000")
     computed_costs = _create_computed_costs(cost)
-    detail = _create_detail_with_employer_contribution(payroll_period_detail_dto, cost)
+    detail = _create_detail_with_employee_deduction(payroll_period_detail_dto, cost)
 
     is_valid, warnings = await service.validate(detail, computed_costs)
 
@@ -124,7 +143,7 @@ async def test_validate_discrepancy_exceeds_tolerance(
     declared_cost = Decimal("50500")
 
     computed_costs = _create_computed_costs(computed_cost)
-    detail = _create_detail_with_employer_contribution(
+    detail = _create_detail_with_employee_deduction(
         payroll_period_detail_dto, declared_cost
     )
 
@@ -161,7 +180,7 @@ async def test_validate_within_tolerance(
     declared_cost = Decimal("50050")
 
     computed_costs = _create_computed_costs(computed_cost)
-    detail = _create_detail_with_employer_contribution(
+    detail = _create_detail_with_employee_deduction(
         payroll_period_detail_dto, declared_cost
     )
 
@@ -194,7 +213,7 @@ async def test_validate_high_contribution_ratio(
     """Test validation when contribution ratio is unusually high."""
     high_cost = Decimal("200000")
     computed_costs = _create_computed_costs(high_cost, "Premium Plan")
-    detail = _create_detail_with_employer_contribution(
+    detail = _create_detail_with_employee_deduction(
         payroll_period_detail_dto, high_cost
     )
 
@@ -243,10 +262,10 @@ async def test_validate_deduction_chain_inconsistency(
         summary=bad_summary,
         items=[
             PayrollItemDetailDTO(
-                concept_code="HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION",
-                concept_name="Health Insurance Employer Contribution",
+                concept_code="HEALTH_INSURANCE",
+                concept_name="Health Insurance",
                 kind=PayrollConceptKind.DISCOUNT,
-                is_taxable=True,
+                is_taxable=False,
                 amount_clp=cost,
                 notes=None,
             )
@@ -269,7 +288,7 @@ async def test_validate_calculated_greater_than_declared(
     declared_cost = Decimal("50000")
 
     computed_costs = _create_computed_costs(computed_cost)
-    detail = _create_detail_with_employer_contribution(
+    detail = _create_detail_with_employee_deduction(
         payroll_period_detail_dto, declared_cost
     )
 
@@ -299,14 +318,12 @@ async def test_validate_declared_zero_with_calculated_costs(
 ) -> None:
     """Test validation when declared contribution is 0 but costs were calculated.
 
-    This is a critical case: if the CSV declares 0 CLP for complementary
-    insurance employer contribution, but the system calculates costs based on
-    assigned plans, this should trigger an alert.
+    This is a critical case: if the CSV declares 0 CLP for health_insurance,
+    but the system calculates costs based on assigned plans, this should trigger
+    an alert.
     """
     detail = replace(
-        _create_detail_with_employer_contribution(
-            payroll_period_detail_dto, Decimal("0")
-        ),
+        _create_detail_with_employee_deduction(payroll_period_detail_dto, Decimal("0")),
         period_year=2026,
         period_month=6,
     )
@@ -351,13 +368,13 @@ async def test_validate_employer_and_employee_combined(
 ) -> None:
     """Test validation when both employer and employee contributions are declared.
 
-    The total should be employer + employee, and should match calculated costs.
+    Validation uses employee health_insurance only; employer contribution is ignored.
     """
     employer_contribution = Decimal("30000")
     employee_deduction = Decimal("20000")
-    total_declared = employer_contribution + employee_deduction
+    calculated_total = Decimal("20000")
 
-    computed_costs = _create_computed_costs(total_declared)
+    computed_costs = _create_computed_costs(calculated_total)
     detail = _create_detail_with_items(
         payroll_period_detail_dto,
         employer_clp=employer_contribution,
@@ -377,9 +394,8 @@ async def test_validate_employer_and_employee_discrepancy(
 ) -> None:
     """Test validation when combined employer+employee total doesn't match calculated.
 
-    This is the critical scenario: if employee deduction is 0 but employer
-    contribution is some amount, the total might not match calculated costs,
-    triggering a discrepancy alert.
+    This is the critical scenario: when employee deduction is 0, employer
+    contribution must not be used as the declared validation amount.
     """
     employer_contribution = Decimal("30000")
     employee_deduction = Decimal("0")
@@ -399,9 +415,13 @@ async def test_validate_employer_and_employee_discrepancy(
     is_valid, warnings = await service.validate(detail, computed_costs)
 
     assert is_valid is True
-    # Should detect discrepancy: declared total (30000) vs calculated (50000)
+    # Should detect discrepancy: declared health_insurance (0) vs calculated (50000)
     assert any("discrepancy" in w.lower() for w in warnings)
-    assert any("30000" in w or "employer contribution 30000" in w for w in warnings)
+    assert any("health_insurance 0" in w for w in warnings)
+    assert any(
+        "health_insurance_employer_contribution is intentionally excluded" in w
+        for w in warnings
+    )
 
 
 @pytest.mark.asyncio

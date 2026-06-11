@@ -89,6 +89,24 @@ def build_month_period_range(
     return periods
 
 
+def suppress_latest_ipc_gap(
+    missing_periods_by_code: dict[str, set[tuple[int, int]]],
+    latest_period: tuple[int, int],
+) -> None:
+    """Ignore IPC gap for the most recent imported payroll period.
+
+    The latest payroll month can legitimately miss IPC publication at import time.
+    We keep older IPC gaps visible, but suppress this specific one to avoid
+    signaling a false-positive pending condition for the newest month.
+    """
+    ipc_periods = missing_periods_by_code.get("IPC_CL")
+    if not ipc_periods:
+        return
+    ipc_periods.discard(latest_period)
+    if not ipc_periods:
+        missing_periods_by_code.pop("IPC_CL", None)
+
+
 class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
     """Persistence operations related to payroll imports."""
 
@@ -385,6 +403,9 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
 
         exchange_rate_dates: dict[str, set[date]] = {}
         economic_index_periods: dict[str, set[tuple[int, int]]] = {}
+        latest_period = max(
+            (period.period_year, period.period_month) for period in periods
+        )
 
         for period in {item.id: item for item in periods}.values():
             previous_period = await self._get_previous_period_for_employer(
@@ -402,6 +423,8 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                 previous_period,
                 economic_index_periods,
             )
+
+        suppress_latest_ipc_gap(economic_index_periods, latest_period)
 
         if not exchange_rate_dates and not economic_index_periods:
             return None

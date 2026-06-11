@@ -1027,7 +1027,33 @@ async def test_sa_payroll_repository_builds_sync_request_with_prior_gaps() -> No
         "UF": [date(2025, 12, 31), date(2026, 1, 31)],
         "UTM": [date(2026, 1, 1)],
     }
-    assert result.economic_index_periods == {"IPC_CL": [(2026, 1)]}
+    assert result.economic_index_periods == {}
+
+
+@pytest.mark.asyncio
+async def test_sa_payroll_repository_omits_latest_ipc_only_gap() -> None:
+    """Test sync request is skipped when only the latest IPC period is missing."""
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=None),
+            FakeResult(scalar_rows=[date(2026, 1, 31)]),
+            FakeResult(scalar_rows=[date(2026, 1, 31)]),
+            FakeResult(scalar_rows=[date(2026, 1, 31), date(2026, 1, 1)]),
+            FakeResult(scalar_rows=[date(2026, 1, 1)]),
+            FakeResult(joined_rows=[]),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+    period = PayrollPeriodModel(
+        id=5,
+        employer_id=10,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        status=PayrollStatus.PROJECTED,
+    )
+
+    assert await repository._build_market_data_sync_request([period]) is None
 
 
 @pytest.mark.asyncio

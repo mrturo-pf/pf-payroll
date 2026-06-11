@@ -130,9 +130,18 @@ INSERT INTO complementary_insurance_plans (
         (SELECT id FROM complementary_insurance_providers WHERE name = 'METLIFE'),
         'SEGURO DE SALUD - PLAN DESTACADO',
         'fixed_uf'::complementary_insurance_cost_type,
-        0.63,
+        0.25,
         'UF',
         DATE '2025-01-01',
+        DATE '2025-01-01'
+    ),
+    (
+        (SELECT id FROM complementary_insurance_providers WHERE name = 'METLIFE'),
+        'SEGURO DE SALUD - PLAN DESTACADO',
+        'fixed_uf'::complementary_insurance_cost_type,
+        0.83,
+        'UF',
+        DATE '2025-02-01',
         NULL
     ),
     (

@@ -19,7 +19,7 @@ class ComplementaryInsuranceValidationService:
 
     This service performs comprehensive validation of complementary insurance
     costs by:
-    1. Comparing calculated costs against declared employer contributions
+    1. Comparing calculated costs against declared employee health insurance
     2. Validating the chain: gross income → deductions → taxable → insurance
     3. Generating detailed audit trails for traceability
     """
@@ -32,8 +32,8 @@ class ComplementaryInsuranceValidationService:
         """Validate computed complementary insurance costs with full audit trail.
 
         Performs comprehensive validation including:
-        - Verification that declared contribution (employer + employee) relates
-          to calculated cost
+        - Verification that declared employee health insurance relates to
+          calculated cost
         - Validation of the deduction chain (gross → taxable → insurance)
         - Tolerance-based matching (100 CLP for rounding)
 
@@ -50,24 +50,21 @@ class ComplementaryInsuranceValidationService:
         if detail.summary is None:
             return True, warnings
 
-        # Extract key amounts from the payroll period
-        # Total declared = employer contribution + employee deduction (health_insurance)
+        # Extract key amounts from the payroll period.
+        # Business rule: complementary insurance validation compares against
+        # employee health insurance deduction only (HEALTH_INSURANCE).
         employer_declared = self._extract_declared_employer_contribution(detail)
         employee_declared = self._extract_employee_health_insurance(detail)
 
-        # If neither is present, skip validation
-        if employer_declared is None and employee_declared is None:
+        # If employee health insurance is absent, skip validation.
+        if employee_declared is None:
             warnings.append(
-                "No declared complementary insurance amounts found in CSV "
-                "(neither health_insurance_employer_contribution nor "
-                "health_insurance). Validation skipped."
+                "No declared health_insurance amount found in CSV. "
+                "Complementary insurance validation skipped."
             )
             return True, warnings
 
-        # Total declared amount (both employer and employee contributions)
-        total_declared = (employer_declared or Decimal("0")) + (
-            employee_declared or Decimal("0")
-        )
+        total_declared = employee_declared
 
         gross_income = detail.summary.gross_income_clp
         taxable_income = detail.summary.taxable_income_clp
@@ -106,8 +103,8 @@ class ComplementaryInsuranceValidationService:
                     audit_with_diff,
                     detail.summary.period_year,
                     detail.summary.period_month,
+                    total_declared,
                     employer_declared,
-                    employee_declared,
                 )
             )
 
@@ -122,30 +119,29 @@ class ComplementaryInsuranceValidationService:
         audit: ComplementaryInsuranceValidationAuditDTO,
         year: int,
         month: int,
+        declared_health_insurance: Decimal,
         employer_declared: Decimal | None,
-        employee_declared: Decimal | None,
     ) -> list[str]:
         """Build detailed warnings for cost discrepancies.
 
-        Shows breakdown of employer and employee contributions and compares
-        the total against calculated costs.
+        Shows declared employee health_insurance and compares it against
+        calculated complementary insurance costs.
         """
         warnings: list[str] = []
 
-        employer_part = employer_declared or Decimal("0")
-        employee_part = employee_declared or Decimal("0")
-        total_declared = employer_part + employee_part
-
         warnings.append(
             f"[{year}-{month:02d}] Complementary insurance cost discrepancy "
-            f"detected. CSV declares: "
-            f"employer contribution {employer_part} CLP + "
-            f"employee deduction {employee_part} CLP = "
-            f"{total_declared} CLP total, but calculation "
+            f"detected. CSV declares health_insurance "
+            f"{declared_health_insurance} CLP, but calculation "
             f"based on assigned plans yields {audit.calculated_total_cost_clp} CLP "
             f"(difference: {audit.difference_clp} CLP, "
             f"tolerance: {audit.tolerance_clp} CLP)."
         )
+        if employer_declared is not None:
+            warnings.append(
+                "health_insurance_employer_contribution is intentionally excluded "
+                "from complementary insurance validation."
+            )
 
         # Provide plan-level details
         if audit.individual_plan_costs:
@@ -161,10 +157,12 @@ class ComplementaryInsuranceValidationService:
 
         # Provide guidance on root cause
         calculated = audit.calculated_total_cost_clp
-        if calculated > total_declared:
-            if total_declared > 0:
+        if calculated > declared_health_insurance:
+            if declared_health_insurance > 0:
                 variance_pct = (
-                    (calculated - total_declared) / total_declared * Decimal(100)
+                    (calculated - declared_health_insurance)
+                    / declared_health_insurance
+                    * Decimal(100)
                 )
             else:
                 variance_pct = Decimal(0)
@@ -176,7 +174,11 @@ class ComplementaryInsuranceValidationService:
         else:
             # When calculated <= total_declared with a discrepancy > 100,
             # total_declared must be > 100 (so the division below is safe)
-            variance_pct = (total_declared - calculated) / total_declared * Decimal(100)
+            variance_pct = (
+                (declared_health_insurance - calculated)
+                / declared_health_insurance
+                * Decimal(100)
+            )
             warnings.append(
                 f"Declared total is {variance_pct:.1f}% higher than "
                 f"calculated. Verify plan assignments, rates, and salary data "

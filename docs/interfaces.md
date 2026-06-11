@@ -65,6 +65,12 @@ Run the CLI with:
 python -m payroll.interfaces.cli.main <command>
 ```
 
+Or use the Makefile shortcut for payroll import:
+
+```bash
+make import-payroll CSV_FILE=docs/payroll-input.csv
+```
+
 Available commands:
 
 | Command | Purpose |

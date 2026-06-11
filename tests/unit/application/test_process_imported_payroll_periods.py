@@ -18,7 +18,11 @@ from payroll.application.dto import (
 from payroll.application.use_cases.process_imported_payroll_periods import (
     ProcessImportedPayrollPeriods,
 )
-from payroll.domain.contributions import EmploymentContractKind, HealthInstitutionKind
+from payroll.domain.contributions import (
+    ComplementaryInsuranceCostType,
+    EmploymentContractKind,
+    HealthInstitutionKind,
+)
 
 
 def _sample_summary() -> PayrollSummaryDTO:
@@ -305,6 +309,32 @@ class StubComplementaryInsuranceRepository:
         return []
 
 
+class FixedUfComplementaryInsuranceRepository(StubComplementaryInsuranceRepository):
+    """Repository that returns a FIXED_UF plan."""
+
+    @staticmethod
+    def _fixed_uf_plan() -> object:
+        """Build a FIXED_UF plan object."""
+        return type(
+            "Plan",
+            (),
+            {
+                "id": 99,
+                "name": "Plan UF",
+                "cost_type": ComplementaryInsuranceCostType.FIXED_UF,
+                "cost_value": Decimal("1.5"),
+            },
+        )()
+
+    async def get_vigent_plans(self, reference_date: date) -> list:  # type: ignore[no-untyped-def]
+        """Get vigent plans."""
+        return [self._fixed_uf_plan()]
+
+    async def get_period_plans(self, period_id: int) -> list:  # type: ignore[no-untyped-def]
+        """Get plans assigned to the period."""
+        return [self._fixed_uf_plan()]
+
+
 @pytest.mark.asyncio
 async def test_process_imported_payroll_periods_compute_and_refresh() -> None:
     """Test post-processing computes missing derived items and refreshes periods."""
@@ -542,3 +572,44 @@ async def test_process_imported_payroll_periods_keeps_original_without_summary()
     )
 
     assert result.periods[0] == original_period
+
+
+@pytest.mark.asyncio
+async def test_process_imported_payroll_periods_keeps_import_when_uf_missing() -> None:
+    """Test post-processing keeps import result and surfaces pending UF warnings."""
+    repository = StubPayrollRepository()
+    result = await ProcessImportedPayrollPeriods(
+        repository,
+        StubMarketDataRepository(uf_value=None),  # type: ignore[arg-type]
+        FixedUfComplementaryInsuranceRepository(),  # type: ignore[arg-type]
+    ).execute(
+        ImportPayrollResultDTO(
+            imported_periods=1,
+            imported_items=5,
+            periods=[
+                ImportedPayrollPeriodDTO(
+                    id=7,
+                    employer="ACME",
+                    period_year=2026,
+                    period_month=4,
+                    payment_date=date(2026, 4, 30),
+                    status="actual",
+                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                    item_count=5,
+                    declared_net_pay_clp=Decimal("1050000"),
+                )
+            ],
+        )
+    )
+
+    assert repository.saved_unemployment == []
+    assert repository.saved_tax == []
+    assert result.periods[0].complementary_insurance_validation is not None
+    expected_warning = (
+        "Complementary insurance validation pending: UF rate not found for period "
+        "2026-04. Please load UF data before importing payroll."
+    )
+    assert (
+        result.periods[0].complementary_insurance_validation.warnings[0]
+        == expected_warning
+    )

@@ -59,6 +59,24 @@ import -> assign plans -> compute contributions -> compute tax -> review -> repo
    make db-reset-data
    ```
 
+   To wipe current data and rebuild schema plus seed base test data in the same local database:
+
+   ```bash
+   make db-reset-data-test
+   ```
+
+   To wipe current data and rebuild schema plus seed base real data in the same local database:
+
+   ```bash
+   make db-reset-data-real
+   ```
+
+   To start DB viewer (Adminer):
+
+   ```bash
+   make adminer-up
+   ```
+
 3. Run the API:
 
    ```bash

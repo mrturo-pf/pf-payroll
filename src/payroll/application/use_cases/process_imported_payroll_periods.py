@@ -1,5 +1,7 @@
 """Use case for post-processing imported payroll periods."""
 
+from dataclasses import replace
+
 from payroll.application.dto import (
     ComputeContributionsCommandDTO,
     ComputeIncomeTaxCommandDTO,
@@ -8,6 +10,7 @@ from payroll.application.dto import (
     ImportPayrollResultDTO,
     ImportedPayrollPeriodDTO,
 )
+from payroll.application.errors import EconomicIndexNotFoundError
 from payroll.application.ports.repositories import (
     ComplementaryInsuranceRepository,
     MarketDataRepository,
@@ -38,6 +41,9 @@ _REQUIRED_IMPORTED_CONTRIBUTION_CODES = frozenset(
         "HEALTH_BASE",
         "HEALTH_ADDITIONAL_UF",
     }
+)
+_COMPLEMENTARY_VALIDATION_PENDING_PREFIX = (
+    "Complementary insurance validation pending: "
 )
 
 
@@ -95,7 +101,13 @@ class ProcessImportedPayrollPeriods:
         await self._complementary_insurance.assign_plans_for_period(period_id)
 
         # Compute complementary insurance costs after assignment
-        computed_costs = await self._compute_complementary_insurance.execute(period_id)
+        try:
+            computed_costs = await self._compute_complementary_insurance.execute(
+                period_id
+            )
+        except EconomicIndexNotFoundError:
+            # Missing market data should not block payroll import post-processing.
+            return
 
         # Validate complementary insurance costs against declared amounts
         await self._validate_complementary_insurance.validate(detail, computed_costs)
@@ -128,25 +140,40 @@ class ProcessImportedPayrollPeriods:
             return period
 
         computed_contributions = None
+        contribution_warning: str | None = None
         if detail.pension_plan_id is not None and detail.health_plan_id is not None:
-            computed_contributions = await self._contributions.compute(
-                ComputeContributionsCommandDTO(
-                    period_id=detail.id,
-                    pension_plan_id=detail.pension_plan_id,
-                    health_plan_id=detail.health_plan_id,
+            try:
+                computed_contributions = await self._contributions.compute(
+                    ComputeContributionsCommandDTO(
+                        period_id=detail.id,
+                        pension_plan_id=detail.pension_plan_id,
+                        health_plan_id=detail.health_plan_id,
+                    )
                 )
-            )
+            except EconomicIndexNotFoundError as exc:
+                contribution_warning = str(exc)
 
         contribution_validation = build_imported_contribution_validation(
             detail,
             computed_contributions,
         )
+        if contribution_validation is not None and contribution_warning is not None:
+            contribution_validation = replace(
+                contribution_validation,
+                warning=contribution_warning,
+            )
 
         # Validate complementary insurance costs against declared amounts
-        computed_costs = await self._compute_complementary_insurance.execute(detail.id)
-        _is_valid, warnings = await self._validate_complementary_insurance.validate(
-            detail, computed_costs
-        )
+        warnings: list[str] = []
+        try:
+            computed_costs = await self._compute_complementary_insurance.execute(
+                detail.id
+            )
+            _is_valid, warnings = await self._validate_complementary_insurance.validate(
+                detail, computed_costs
+            )
+        except EconomicIndexNotFoundError as exc:
+            warnings = [f"{_COMPLEMENTARY_VALIDATION_PENDING_PREFIX}{exc}"]
         complementary_insurance_validation = (
             ImportedComplementaryInsuranceValidationDTO(warnings=warnings)
         )

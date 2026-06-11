@@ -83,6 +83,11 @@ local-up:
 run:
 	uvicorn payroll.interfaces.api.main:app --reload
 
+# Imports a payroll CSV/XLSX file through the CLI (usage: make import-payroll CSV_FILE=docs/payroll-input.csv).
+import-payroll:
+	@test -n "$(CSV_FILE)" || (echo "CSV_FILE is required. Usage: make import-payroll CSV_FILE=docs/payroll-input.csv" && exit 1)
+	PYTHONPATH=src "$(VENV)/bin/python" -m payroll.interfaces.cli.main import-payroll "$(CSV_FILE)"
+
 # Runs the complete test suite.
 test:
 	pytest

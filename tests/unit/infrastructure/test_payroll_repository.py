@@ -2256,7 +2256,6 @@ async def test_sqlalchemy_payroll_repository_lists_period_ranges() -> None:
     session = FakeSession(
         [
             FakeResult(first_row=(current_period, current_employer)),
-            FakeResult(first_row=None),
             FakeResult(scalar_rows=[previous_period]),
         ]
     )
@@ -2334,18 +2333,16 @@ async def test_sqlalchemy_payroll_repository_applies_effective_processing_dates(
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_payroll_repository_extends_current_period_until_today() -> (
-    None
-):
-    """Test a pending next payroll extends the current period through today."""
+async def test_sqlalchemy_payroll_repository_infers_current_month_offset() -> None:
+    """Test future ranges align to the observed current payment-month offset."""
     current_period = PayrollPeriodModel(
-        id=17,
+        id=19,
         employer_id=1,
         period_year=2026,
-        period_month=4,
-        payment_date=date(2026, 4, 29),
+        period_month=6,
+        payment_date=date(2026, 5, 28),
         status=PayrollStatus.ACTUAL,
-        declared_net_pay_clp=Decimal("2978086"),
+        declared_net_pay_clp=Decimal("3134978"),
     )
     current_employer = EmployerModel(
         id=1,
@@ -2360,28 +2357,45 @@ async def test_sqlalchemy_payroll_repository_extends_current_period_until_today(
         payment_effective_on_processing_next_day=True,
         payment_fixed_day_roll=EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY,
     )
-    pending_next_period = SimpleNamespace(id=18)
     session = FakeSession(
         [
             FakeResult(first_row=(current_period, current_employer)),
-            FakeResult(first_row=pending_next_period),
             FakeResult(scalar_rows=[]),
         ]
     )
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
-    result = await repository.list_period_ranges(today=date(2026, 5, 25))
+    result = await repository.list_period_ranges(today=date(2026, 6, 11))
 
     assert result[12].period_year == 2026
-    assert result[12].period_month == 4
-    assert result[12].start_date == date(2026, 4, 29)
-    assert result[12].end_date == date(2026, 5, 25)
-    assert result[12].net_pay_clp == Decimal("2978086")
-    assert result[12].is_current is True
+    assert result[12].period_month == 6
+    assert result[12].start_date == date(2026, 5, 28)
+    assert result[12].end_date == date(2026, 6, 25)
     assert result[13].period_year == 2026
-    assert result[13].period_month == 5
-    assert result[13].start_date == date(2026, 5, 26)
-    assert result[13].end_date == date(2026, 6, 25)
+    assert result[13].period_month == 7
+    assert result[13].start_date == date(2026, 6, 26)
+    assert result[13].end_date == date(2026, 7, 29)
+
+
+def test_sqlalchemy_payroll_repository_keeps_configured_offset_when_unmatched() -> None:
+    """Test month-offset inference falls back to the configured offset."""
+    repository = SqlAlchemyPayrollRepository(None)  # type: ignore[arg-type]
+
+    resolved_offset = repository._resolve_effective_month_offset(
+        period_year=2026,
+        period_month=6,
+        payment_date=date(2026, 5, 27),
+        country_code="CL",
+        payment_date_rule=EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH.value,
+        payment_month_offset=0,
+        payment_day_of_month=None,
+        payment_business_day_offset=1,
+        payment_calendar_day_offset=0,
+        payment_effective_on_processing_next_day=True,
+        payment_fixed_day_roll=EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY.value,
+    )
+
+    assert resolved_offset == 0
 
 
 @pytest.mark.asyncio

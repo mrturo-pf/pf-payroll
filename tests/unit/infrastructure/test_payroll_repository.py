@@ -2908,6 +2908,7 @@ async def test_predict_next_period_net_pay_calculates_correctly() -> None:
         period_month=6,
         payment_date=date(2026, 6, 26),
         status=PayrollStatus.ACTUAL,
+        worked_days=30,
     )
     items = [
         (Decimal("3000000"), "SALARY_BASE"),
@@ -2915,6 +2916,7 @@ async def test_predict_next_period_net_pay_calculates_correctly() -> None:
         (Decimal("100000"), "TELEWORK_REFUND"),
         (Decimal("100000"), "PENSION_BASE"),
         (Decimal("50000"), "HEALTH_BASE"),
+        (Decimal("30000"), "HEALTH_INSURANCE"),
         (Decimal("50000"), "INCOME_TAX"),
     ]
     session = FakeSession(
@@ -2929,9 +2931,54 @@ async def test_predict_next_period_net_pay_calculates_correctly() -> None:
     )
 
     expected_gross = Decimal("3300000")
-    expected_discount_ratio = Decimal("200000") / expected_gross
+    expected_discount_ratio = Decimal("230000") / expected_gross
     expected_discounts = expected_gross * expected_discount_ratio
     expected_net_pay = expected_gross - expected_discounts
+
+    assert result == expected_net_pay.quantize(Decimal("0.01"))
+
+
+@pytest.mark.asyncio
+async def test_predict_next_period_net_pay_adjusts_for_worked_days() -> None:
+    """Test predict adjusts income to 30 days if fewer days worked."""
+    current_period = PayrollPeriodModel(
+        id=1,
+        employer_id=1,
+        period_year=2026,
+        period_month=6,
+        payment_date=date(2026, 6, 26),
+        status=PayrollStatus.ACTUAL,
+        worked_days=20,
+    )
+    items = [
+        (Decimal("2000000"), "SALARY_BASE"),
+        (Decimal("100000"), "LEGAL_GRATUITY"),
+        (Decimal("50000"), "TELEWORK_REFUND"),
+        (Decimal("70000"), "PENSION_BASE"),
+        (Decimal("30000"), "HEALTH_BASE"),
+        (Decimal("20000"), "HEALTH_INSURANCE"),
+        (Decimal("35000"), "INCOME_TAX"),
+    ]
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=Decimal("40820.31")),
+            FakeResult(joined_rows=items),
+        ]
+    )
+
+    result = await predict_next_period_net_pay(
+        session, current_period, date(2026, 6, 1)
+    )
+
+    # Income for 20 days
+    income_20_days = Decimal("2150000")
+    discounts_20_days = Decimal("155000")
+
+    # Project to 30 days
+    income_30_days = income_20_days * Decimal(30) / Decimal(20)
+    discount_ratio = discounts_20_days / income_20_days
+    predicted_discounts = income_30_days * discount_ratio
+    expected_net_pay = income_30_days - predicted_discounts
 
     assert result == expected_net_pay.quantize(Decimal("0.01"))
 

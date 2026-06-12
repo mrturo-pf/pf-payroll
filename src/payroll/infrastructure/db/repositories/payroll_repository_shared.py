@@ -71,6 +71,8 @@ async def predict_next_period_net_pay(
     the current period and applies the same discount ratios using the
     UF value from the last day of the current period's month.
 
+    Adjusts income to 30-day accounting month if current period had fewer days.
+
     Args:
         session: Database session
         current_period: The current payroll period
@@ -112,6 +114,7 @@ async def predict_next_period_net_pay(
         "PENSION_ADDITIONAL",
         "HEALTH_BASE",
         "HEALTH_ADDITIONAL_UF",
+        "HEALTH_INSURANCE",
         "UNEMPLOYMENT_INSURANCE",
         "INCOME_TAX",
     }
@@ -131,10 +134,18 @@ async def predict_next_period_net_pay(
     if future_gross <= 0 or current_gross <= 0:
         return None
 
-    # Calculate discount ratio from current period
-    discount_ratio = (
-        current_discounts / current_gross if current_gross > 0 else Decimal("0")
-    )
+    # Adjust income and discounts to 30-day accounting month if needed
+    worked_days = current_period.worked_days or 30
+    discount_ratio = Decimal("0")
+
+    if current_gross > 0:
+        # Calculate discount ratio from current period
+        discount_ratio = current_discounts / current_gross
+
+    if worked_days > 0 and worked_days < 30:
+        # Project income to 30 days
+        current_gross = current_gross * Decimal(30) / Decimal(worked_days)
+        future_gross = future_gross * Decimal(30) / Decimal(worked_days)
 
     # Apply same ratio to future gross to estimate discounts
     future_discounts = future_gross * discount_ratio

@@ -279,6 +279,7 @@ class PayrollPeriodRangeRead(PayrollPeriodRangeFields):
 
     net_pay_clp: str | None
     position: Literal["previous", "current", "future"]
+    increase: bool | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -318,25 +319,31 @@ def to_payroll_period_range_reads(
         (index for index, item in enumerate(period_ranges) if item.is_current),
         None,
     )
-    return [
-        PayrollPeriodRangeRead(
-            period_year=item.period_year,
-            period_month=item.period_month,
-            start_date=item.start_date,
-            end_date=item.end_date,
-            net_pay_clp=(
-                str(item.net_pay_clp) if item.net_pay_clp is not None else None
-            ),
-            position=(
-                "current"
-                if item.is_current
-                else "previous"
-                if current_index is not None and index < current_index
-                else "future"
-            ),
+    ranges: list[PayrollPeriodRangeRead] = []
+    for index, item in enumerate(period_ranges):
+        position: Literal["previous", "current", "future"] = (
+            "current"
+            if item.is_current
+            else "previous"
+            if current_index is not None and index < current_index
+            else "future"
         )
-        for index, item in enumerate(period_ranges)
-    ]
+        ranges.append(
+            PayrollPeriodRangeRead(
+                period_year=item.period_year,
+                period_month=item.period_month,
+                start_date=item.start_date,
+                end_date=item.end_date,
+                net_pay_clp=(
+                    str(item.net_pay_clp) if item.net_pay_clp is not None else None
+                ),
+                position=position,
+                increase=None
+                if position in {"previous", "current"}
+                else bool(item.increase),
+            )
+        )
+    return ranges
 
 
 def to_deflated_amount_read(amount: DeflatedAmountDTO) -> DeflatedAmountRead:

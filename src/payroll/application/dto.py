@@ -470,6 +470,7 @@ class PayrollPeriodRangeDTO(PayrollPeriodRangeFields):
     net_pay_clp: Decimal | None
     is_current: bool
     inferred: bool
+    increase: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)

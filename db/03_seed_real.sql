@@ -33,6 +33,7 @@ SET
 -- ============================================================
 -- 4. Employers
 -- ============================================================
+
 INSERT INTO employers (
     name,
     tax_id,
@@ -44,7 +45,10 @@ INSERT INTO employers (
     payment_business_day_offset,
     payment_calendar_day_offset,
     payment_effective_on_processing_next_day,
-    payment_fixed_day_roll
+    payment_fixed_day_roll,
+    first_increase_period_year,
+    first_increase_period_month,
+    increase_frequency
 ) VALUES
     (
         'DALT-CONSULTORES',
@@ -57,7 +61,10 @@ INSERT INTO employers (
         0,
         0,
         FALSE,
-        'previous_business_day'
+        'previous_business_day',
+        NULL,
+        NULL,
+        NULL
     ),
     (
         'CLINICA-ALEMANA',
@@ -70,7 +77,10 @@ INSERT INTO employers (
         0,
         7,
         TRUE,
-        'previous_business_day'
+        'previous_business_day',
+        NULL,
+        NULL,
+        6
     ),
     (
         'WALMART-CHILE',
@@ -83,7 +93,10 @@ INSERT INTO employers (
         1,
         0,
         TRUE,
-        'previous_business_day'
+        'previous_business_day',
+        2026,
+        5,
+        NULL
     )
 ON CONFLICT (name) DO UPDATE
 SET

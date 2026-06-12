@@ -49,6 +49,9 @@ class EmployerModel(Base):
     country_code: Mapped[str] = mapped_column(String(2), default="CL")
     started_at: Mapped[date] = mapped_column(Date)
     ended_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    first_increase_period_year: Mapped[int | None] = mapped_column(nullable=True)
+    first_increase_period_month: Mapped[int | None] = mapped_column(nullable=True)
+    increase_frequency: Mapped[int | None] = mapped_column(nullable=True)
     payment_date_rule: Mapped[EmployerPaymentDateRule] = mapped_column(
         SAEnum(
             EmployerPaymentDateRule,

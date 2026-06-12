@@ -2464,17 +2464,21 @@ async def test_sqlalchemy_payroll_repository_lists_period_ranges() -> None:
     assert result[11].end_date == date(2026, 3, 27)
     assert result[11].net_pay_clp == Decimal("2983237")
     assert result[11].inferred is False
+    assert result[11].increase is None
     assert result[12].is_current is True
     assert result[12].start_date == date(2026, 3, 28)
     assert result[12].end_date == date(2026, 4, 28)
     assert result[12].net_pay_clp == Decimal("2978086")
+    assert result[12].increase is None
     assert result[13].period_year == 2026
     assert result[13].period_month == 4
     assert result[13].start_date == date(2026, 4, 29)
     assert result[13].end_date == date(2026, 5, 27)
+    assert result[13].increase is False
     assert result[20].period_year == 2026
     assert result[20].period_month == 11
     assert result[20].start_date == date(2026, 11, 27)
+    assert result[20].increase is True
     assert result[0].inferred is True
     assert result[0].start_date == date(2025, 3, 31)
 
@@ -2522,6 +2526,7 @@ async def test_sqlalchemy_payroll_repository_applies_effective_processing_dates(
     assert result[13].end_date == date(2026, 6, 22)
     assert result[13].net_pay_clp is None
     assert result[13].inferred is True
+    assert result[13].increase is False
 
 
 @pytest.mark.asyncio
@@ -2613,7 +2618,61 @@ async def test_sqlalchemy_payroll_repository_lists_period_ranges_without_current
     assert result[12].net_pay_clp is None
     assert result[12].is_current is True
     assert result[12].inferred is True
+    assert result[12].increase is None
     assert result[13].start_date == date(2026, 2, 27)
+    assert result[13].increase is False
+    assert result[24].period_year == 2027
+    assert result[24].period_month == 1
+    assert result[24].increase is True
+
+
+@pytest.mark.asyncio
+async def test_sqlalchemy_payroll_repository_marks_scheduled_future_increases() -> None:
+    """Test future periods flag increases using employer-defined schedule."""
+    current_period = PayrollPeriodModel(
+        id=20,
+        employer_id=1,
+        period_year=2026,
+        period_month=3,
+        payment_date=date(2026, 3, 28),
+        status=PayrollStatus.ACTUAL,
+        declared_net_pay_clp=Decimal("2900000"),
+    )
+    current_employer = EmployerModel(
+        id=1,
+        name="WALMART-CHILE",
+        country_code="CL",
+        started_at=date(2024, 11, 18),
+        first_increase_period_year=2026,
+        first_increase_period_month=8,
+        increase_frequency=6,
+        payment_date_rule=EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH,
+        payment_month_offset=0,
+        payment_day_of_month=None,
+        payment_business_day_offset=1,
+        payment_calendar_day_offset=0,
+        payment_effective_on_processing_next_day=True,
+        payment_fixed_day_roll=EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY,
+    )
+    session = FakeSession(
+        [
+            FakeResult(first_row=(current_period, current_employer)),
+            FakeResult(scalar_rows=[]),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_period_ranges(today=date(2026, 3, 31))
+
+    assert result[16].period_year == 2026
+    assert result[16].period_month == 7
+    assert result[16].increase is False
+    assert result[17].period_year == 2026
+    assert result[17].period_month == 8
+    assert result[17].increase is True
+    assert result[23].period_year == 2027
+    assert result[23].period_month == 2
+    assert result[23].increase is True
 
 
 @pytest.mark.asyncio

@@ -89,6 +89,46 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                 return candidate_offset
         return payment_month_offset
 
+    @staticmethod
+    def _resolve_increase_frequency(*, configured_frequency: int | None) -> int:
+        """Resolve the increase frequency in months using a safe default."""
+        return configured_frequency if configured_frequency is not None else 12
+
+    @staticmethod
+    def _resolve_first_increase_period(
+        *,
+        employer_started_at: date,
+        first_increase_period_year: int | None,
+        first_increase_period_month: int | None,
+        increase_frequency: int,
+    ) -> date:
+        """Resolve the first period where an increase should be applied."""
+        if (
+            first_increase_period_year is not None
+            and first_increase_period_month is not None
+        ):
+            return date(first_increase_period_year, first_increase_period_month, 1)
+        return add_months(
+            date(employer_started_at.year, employer_started_at.month, 1),
+            increase_frequency,
+        )
+
+    @staticmethod
+    def _is_increase_period(
+        *,
+        period_year: int,
+        period_month: int,
+        first_increase_period: date,
+        increase_frequency: int,
+    ) -> bool:
+        """Return whether the provided period matches the increase cadence."""
+        period_month_index = (period_year * 12) + period_month
+        first_increase_index = (
+            first_increase_period.year * 12
+        ) + first_increase_period.month
+        delta_months = period_month_index - first_increase_index
+        return delta_months >= 0 and delta_months % increase_frequency == 0
+
     async def list_period_ranges(
         self, *, today: date | None = None
     ) -> list[PayrollPeriodRangeDTO]:
@@ -111,6 +151,10 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             current_month = reference_date.month
             current_start = resolve_payment_date(current_year, current_month)
             current_net_pay_clp = None
+            current_employer_started_at = date(current_year, current_month, 1)
+            current_first_increase_period_year = None
+            current_first_increase_period_month = None
+            current_increase_frequency = None
             current_country_code = "CL"
             current_rule = EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH.value
             current_month_offset = 0
@@ -125,6 +169,14 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             current_year = current_period.period_year
             current_month = current_period.period_month
             current_start = current_period.payment_date
+            current_employer_started_at = current_employer.started_at
+            current_first_increase_period_year = (
+                current_employer.first_increase_period_year
+            )
+            current_first_increase_period_month = (
+                current_employer.first_increase_period_month
+            )
+            current_increase_frequency = current_employer.increase_frequency
             current_country_code = current_employer.country_code
             current_rule = current_employer.payment_date_rule.value
             current_month_offset = current_employer.payment_month_offset
@@ -153,6 +205,16 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             )
             current_inferred = False
 
+        effective_increase_frequency = self._resolve_increase_frequency(
+            configured_frequency=current_increase_frequency
+        )
+        first_increase_period = self._resolve_first_increase_period(
+            employer_started_at=current_employer_started_at,
+            first_increase_period_year=current_first_increase_period_year,
+            first_increase_period_month=current_first_increase_period_month,
+            increase_frequency=effective_increase_frequency,
+        )
+
         previous_result = await self._session.execute(
             select(PayrollPeriodModel)
             .where(PayrollPeriodModel.payment_date < current_start)
@@ -172,6 +234,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                 net_pay_clp=period.declared_net_pay_clp,
                 is_current=False,
                 inferred=False,
+                increase=None,
             )
             for period in reversed(previous_periods)
         ]
@@ -208,6 +271,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                         net_pay_clp=None,
                         is_current=False,
                         inferred=True,
+                        increase=None,
                     )
                 )
             previous_ranges = inferred_previous + previous_ranges
@@ -220,6 +284,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             net_pay_clp=current_net_pay_clp,
             is_current=True,
             inferred=current_inferred,
+            increase=None,
         )
 
         # Calculate predicted net_pay for the first future period
@@ -254,6 +319,12 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                 net_pay_clp=(first_future_net_pay_clp if month_offset == 1 else None),
                 is_current=False,
                 inferred=True,
+                increase=self._is_increase_period(
+                    period_year=period_month.year,
+                    period_month=period_month.month,
+                    first_increase_period=first_increase_period,
+                    increase_frequency=effective_increase_frequency,
+                ),
             )
             for month_offset, period_month in (
                 (
@@ -294,6 +365,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                     net_pay_clp=period_range.net_pay_clp,
                     is_current=period_range.is_current,
                     inferred=period_range.inferred,
+                    increase=period_range.increase,
                 )
             )
         return completed_ranges

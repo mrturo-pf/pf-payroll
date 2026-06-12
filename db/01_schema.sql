@@ -182,6 +182,12 @@ CREATE TABLE IF NOT EXISTS employers (
     country_code                CHAR(2)                    NOT NULL DEFAULT 'CL',
     started_at                  DATE                       NOT NULL,
     ended_at                    DATE,
+    first_increase_period_year  SMALLINT
+        CHECK (first_increase_period_year BETWEEN 1990 AND 2100),
+    first_increase_period_month SMALLINT
+        CHECK (first_increase_period_month BETWEEN 1 AND 12),
+    increase_frequency          SMALLINT
+        CHECK (increase_frequency > 0),
     payment_date_rule           employer_payment_date_rule NOT NULL
         DEFAULT 'last_business_day_of_month',
     payment_month_offset        SMALLINT                   NOT NULL DEFAULT 0

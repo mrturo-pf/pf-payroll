@@ -103,6 +103,7 @@ class FakePayrollQueries:
                 net_pay_clp=None,
                 is_current=False,
                 inferred=True,
+                increase=None,
             ),
             PayrollPeriodRangeDTO(
                 period_year=2026,
@@ -112,6 +113,17 @@ class FakePayrollQueries:
                 net_pay_clp=Decimal("830000"),
                 is_current=True,
                 inferred=False,
+                increase=None,
+            ),
+            PayrollPeriodRangeDTO(
+                period_year=2026,
+                period_month=2,
+                start_date=date(2026, 2, 28),
+                end_date=date(2026, 3, 30),
+                net_pay_clp=None,
+                is_current=False,
+                inferred=True,
+                increase=True,
             ),
         ]
 
@@ -137,6 +149,7 @@ def test_payroll_query_endpoints() -> None:
             "end_date": "2026-01-30",
             "net_pay_clp": None,
             "position": "previous",
+            "increase": None,
         },
         {
             "period_year": 2026,
@@ -145,6 +158,16 @@ def test_payroll_query_endpoints() -> None:
             "end_date": "2026-02-27",
             "net_pay_clp": "830000",
             "position": "current",
+            "increase": None,
+        },
+        {
+            "period_year": 2026,
+            "period_month": 2,
+            "start_date": "2026-02-28",
+            "end_date": "2026-03-30",
+            "net_pay_clp": None,
+            "position": "future",
+            "increase": True,
         },
     ]
     assert summary_response.status_code == 200

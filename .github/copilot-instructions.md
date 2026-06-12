@@ -6,6 +6,7 @@ This repository follows a modular monolith with **DDD** and **hexagonal architec
 - `src/payroll/application`: use cases, DTOs, ports, and application services.
 - `src/payroll/infrastructure`: adapters for database, importers, providers, reporting, and logging.
 - `src/payroll/interfaces`: API, CLI, and dashboard entrypoints.
+- `src/payroll/shared`: shared helpers and cross-cutting utilities used by multiple layers.
 
 ## Engineering standards
 
@@ -56,4 +57,6 @@ PATH=.venv/bin:$PATH make check
 ```
 
 - `make check` runs all quality gates in sequence: `lint`, `dead-code`, `typecheck`, `duplicate-code-src`, `duplicate-code-tests`, `test`, and `test-cov`.
-The repository expects **100% coverage** for `src`.
+- Duplicate-code thresholds are strict: `src` must stay at or below **1%** and `tests` at or below **10%**.
+- The repository expects **100% coverage** for `src`.
+- For local validation of payroll import or period-range changes, prefer resetting real data first with `make db-reset-data-real`.

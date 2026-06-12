@@ -46,6 +46,8 @@ from payroll.infrastructure.db.repositories.payroll_repository import (
 )
 from payroll.infrastructure.db.repositories.payroll_repository_shared import (
     build_net_pay_warning,
+    get_last_day_of_month,
+    predict_next_period_net_pay,
 )
 from payroll.interfaces.api import dependencies
 
@@ -2840,3 +2842,125 @@ def test_payroll_models_are_declared() -> None:
     assert PayrollSummaryModel.__tablename__ == "mv_payroll_summary"
     assert PayrollStatus.ACTUAL.value == "actual"
     assert EmploymentContractKind.INDEFINITE.value == "indefinite"
+
+
+def test_get_last_day_of_month_for_various_months() -> None:
+    """Test get_last_day_of_month returns correct last day for each month."""
+    assert get_last_day_of_month(date(2026, 1, 15)) == date(2026, 1, 31)
+    assert get_last_day_of_month(date(2026, 2, 15)) == date(2026, 2, 28)
+    assert get_last_day_of_month(date(2026, 4, 15)) == date(2026, 4, 30)
+    assert get_last_day_of_month(date(2026, 6, 15)) == date(2026, 6, 30)
+    assert get_last_day_of_month(date(2024, 2, 15)) == date(2024, 2, 29)
+
+
+@pytest.mark.asyncio
+async def test_predict_next_period_net_pay_returns_none_for_missing_uf() -> None:
+    """Test predict_next_period_net_pay returns None when UF data is missing."""
+    current_period = PayrollPeriodModel(
+        id=1,
+        employer_id=1,
+        period_year=2026,
+        period_month=6,
+        payment_date=date(2026, 6, 26),
+        status=PayrollStatus.ACTUAL,
+    )
+    session = FakeSession([FakeResult(scalar_one=None)])
+
+    result = await predict_next_period_net_pay(
+        session, current_period, date(2026, 6, 1)
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_predict_next_period_net_pay_returns_none_for_missing_income() -> None:
+    """Test predict_next_period_net_pay returns None when income is missing."""
+    current_period = PayrollPeriodModel(
+        id=1,
+        employer_id=1,
+        period_year=2026,
+        period_month=6,
+        payment_date=date(2026, 6, 26),
+        status=PayrollStatus.ACTUAL,
+    )
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=Decimal("40820.31")),
+            FakeResult(joined_rows=[]),
+        ]
+    )
+
+    result = await predict_next_period_net_pay(
+        session, current_period, date(2026, 6, 1)
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_predict_next_period_net_pay_calculates_correctly() -> None:
+    """Test predict_next_period_net_pay calculates with income and discounts."""
+    current_period = PayrollPeriodModel(
+        id=1,
+        employer_id=1,
+        period_year=2026,
+        period_month=6,
+        payment_date=date(2026, 6, 26),
+        status=PayrollStatus.ACTUAL,
+    )
+    items = [
+        (Decimal("3000000"), "SALARY_BASE"),
+        (Decimal("200000"), "LEGAL_GRATUITY"),
+        (Decimal("100000"), "TELEWORK_REFUND"),
+        (Decimal("100000"), "PENSION_BASE"),
+        (Decimal("50000"), "HEALTH_BASE"),
+        (Decimal("50000"), "INCOME_TAX"),
+    ]
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=Decimal("40820.31")),
+            FakeResult(joined_rows=items),
+        ]
+    )
+
+    result = await predict_next_period_net_pay(
+        session, current_period, date(2026, 6, 1)
+    )
+
+    expected_gross = Decimal("3300000")
+    expected_discount_ratio = Decimal("200000") / expected_gross
+    expected_discounts = expected_gross * expected_discount_ratio
+    expected_net_pay = expected_gross - expected_discounts
+
+    assert result == expected_net_pay.quantize(Decimal("0.01"))
+
+
+@pytest.mark.asyncio
+async def test_predict_next_period_net_pay_returns_none_zero_net_pay() -> None:
+    """Test predict_next_period_net_pay returns None when result would be <= 0."""
+    current_period = PayrollPeriodModel(
+        id=1,
+        employer_id=1,
+        period_year=2026,
+        period_month=6,
+        payment_date=date(2026, 6, 26),
+        status=PayrollStatus.ACTUAL,
+    )
+    items = [
+        (Decimal("100"), "SALARY_BASE"),
+        (Decimal("100"), "PENSION_BASE"),
+        (Decimal("100"), "INCOME_TAX"),
+    ]
+    session = FakeSession(
+        [
+            FakeResult(scalar_one=Decimal("40820.31")),
+            FakeResult(joined_rows=items),
+        ]
+    )
+
+    result = await predict_next_period_net_pay(
+        session, current_period, date(2026, 6, 1)
+    )
+
+    assert result is None

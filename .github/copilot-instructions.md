@@ -26,6 +26,7 @@ This repository follows a modular monolith with **DDD** and **hexagonal architec
 - Keep use cases decoupled from infrastructure. Application code should depend on **ports**, not concrete adapters.
 - Prefer small, focused classes and helpers. Avoid growing repository or service "god objects".
 - Extract repeated business constants and mapping logic to shared helpers instead of duplicating literals.
+- Be strict about duplication: do not leave duplicated code in source or tests; refactor to shared helpers before finishing.
 - Use **semantic application errors** from `src/payroll/application/errors.py` instead of ad-hoc generic errors whenever the failure is part of the business flow.
 - Do not use `assert` for production validation. Raise explicit errors instead.
 - Fail loudly and explicitly; do not hide invalid states with silent fallbacks or broad exception handling.

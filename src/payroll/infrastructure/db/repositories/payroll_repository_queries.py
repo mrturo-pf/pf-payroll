@@ -229,6 +229,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                 self._session,
                 current_period,
                 date(current_year, current_month, 1),
+                allow_provider_lookup=False,
             )
 
         future_ranges = [

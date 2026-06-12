@@ -34,7 +34,7 @@ from payroll.infrastructure.db.repositories.payroll_repository_shared import (
     SqlAlchemyPayrollRepositoryBase,
     build_net_pay_warning,
 )
-from payroll.shared.dates import last_day_of_month
+from payroll.shared.dates import add_months, last_day_of_month, resolve_payment_date
 from payroll.shared.constants import (
     DAILY_MARKET_RATE_CODES,
     MONTHLY_ECONOMIC_INDEX_CODES,
@@ -403,11 +403,12 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
 
         exchange_rate_dates: dict[str, set[date]] = {}
         economic_index_periods: dict[str, set[tuple[int, int]]] = {}
+        unique_periods = list({item.id: item for item in periods}.values())
         latest_period = max(
-            (period.period_year, period.period_month) for period in periods
+            (period.period_year, period.period_month) for period in unique_periods
         )
 
-        for period in {item.id: item for item in periods}.values():
+        for period in unique_periods:
             previous_period = await self._get_previous_period_for_employer(
                 employer_id=period.employer_id,
                 period_id=period.id,
@@ -424,6 +425,10 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                 economic_index_periods,
             )
 
+        await self._collect_current_period_uf_anchor_dates(
+            unique_periods,
+            exchange_rate_dates,
+        )
         suppress_latest_ipc_gap(economic_index_periods, latest_period)
 
         if not exchange_rate_dates and not economic_index_periods:
@@ -441,6 +446,77 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                 if periods
             },
         )
+
+    async def _collect_current_period_uf_anchor_dates(
+        self,
+        periods: list[PayrollPeriodModel],
+        missing_dates_by_code: dict[str, set[date]],
+    ) -> None:
+        """Collect UF anchor dates for the imported current period.
+
+        Anchors:
+        - Month-end derived from the `end_date` of the current payroll period.
+        - Today.
+
+        Requesting UF for today also allows providers that resolve
+        "latest available on or before" to return the latest source value.
+        """
+        today = date.today()
+        if not periods:
+            return
+
+        current_row_result = await self._session.execute(
+            select(PayrollPeriodModel, EmployerModel)
+            .join(EmployerModel, PayrollPeriodModel.employer_id == EmployerModel.id)
+            .where(PayrollPeriodModel.declared_net_pay_clp.is_not(None))
+            .where(PayrollPeriodModel.payment_date <= today)
+            .order_by(
+                PayrollPeriodModel.payment_date.desc(),
+                PayrollPeriodModel.id.desc(),
+            )
+            .limit(1)
+        )
+        current_row = current_row_result.first()
+        if current_row is None:
+            return
+        current_period, employer = current_row
+
+        next_period_result = await self._session.execute(
+            select(PayrollPeriodModel.payment_date)
+            .where(PayrollPeriodModel.employer_id == current_period.employer_id)
+            .where(PayrollPeriodModel.payment_date > current_period.payment_date)
+            .order_by(PayrollPeriodModel.payment_date.asc())
+            .limit(1)
+        )
+        next_period_start = next_period_result.scalar_one_or_none()
+        if next_period_start is None:
+            next_period_month = add_months(
+                date(current_period.period_year, current_period.period_month, 1),
+                1,
+            )
+            next_period_start = resolve_payment_date(
+                next_period_month.year,
+                next_period_month.month,
+                country_code=employer.country_code,
+                payment_date_rule=employer.payment_date_rule.value,
+                payment_month_offset=employer.payment_month_offset,
+                payment_day_of_month=employer.payment_day_of_month,
+                payment_business_day_offset=employer.payment_business_day_offset,
+                payment_calendar_day_offset=employer.payment_calendar_day_offset,
+                payment_effective_on_processing_next_day=(
+                    employer.payment_effective_on_processing_next_day
+                ),
+                payment_fixed_day_roll=employer.payment_fixed_day_roll.value,
+            )
+
+        current_end_date = next_period_start - timedelta(days=1)
+        requested_dates = sorted({last_day_of_month(current_end_date), today})
+        missing_dates = await self._list_missing_exchange_rate_dates(
+            currency_code="UF",
+            requested_dates=requested_dates,
+        )
+        if missing_dates:
+            missing_dates_by_code.setdefault("UF", set()).update(missing_dates)
 
     async def _collect_missing_exchange_rate_dates(
         self,

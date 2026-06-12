@@ -97,7 +97,7 @@ import -> assign plans -> compute contributions -> compute tax -> review -> repo
 | [`docs/interfaces.md`](docs/interfaces.md) | Complete API endpoint inventory, CLI commands, and dashboard usage. |
 | [`docs/payroll-workflow.md`](docs/payroll-workflow.md) | End-to-end payroll flow, full CSV/XLSX import format, supported taxable income columns, and examples. |
 | [`docs/local-development.md`](docs/local-development.md) | Rancher Desktop database workflow, Adminer, testing, linting, and cleanup. |
-| [`architectural-report.md`](architectural-report.md) | Architecture report and target design. |
+| [`docs/architectural-report.md`](docs/architectural-report.md) | Architecture report and target design. |
 
 ## Interfaces
 

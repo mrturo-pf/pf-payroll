@@ -15,6 +15,7 @@ from payroll.application.dto import (
     PayrollPeriodDetailDTO,
     PayrollSummaryDTO,
 )
+from payroll.application.errors import EconomicIndexNotFoundError
 from payroll.application.use_cases.process_imported_payroll_periods import (
     ProcessImportedPayrollPeriods,
 )
@@ -335,6 +336,45 @@ class FixedUfComplementaryInsuranceRepository(StubComplementaryInsuranceReposito
         return [self._fixed_uf_plan()]
 
 
+class EconomicIndexFailingContributions:
+    """Test double for a contribution service that raises a missing index error."""
+
+    async def compute(self, command: object) -> object:
+        """Raise the expected missing index error."""
+        raise EconomicIndexNotFoundError(
+            "UF rate not found for period 2026-04. Please load UF data before "
+            "importing payroll."
+        )
+
+
+class FailingUfMarketDataRepository(StubMarketDataRepository):
+    """Market data repository that keeps UF available for the import phase."""
+
+
+class MissingUfValidationRepository(StubPayrollRepository):
+    """Repository that returns imported contribution amounts for refresh validation."""
+
+    async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO | None:
+        """Get period detail."""
+        return _sample_detail(
+            item_codes=[
+                "SALARY_BASE",
+                "PENSION_BASE",
+                "PENSION_ADDITIONAL",
+                "HEALTH_BASE",
+                "HEALTH_ADDITIONAL_UF",
+            ],
+            pension_plan_id=1,
+            health_plan_id=2,
+            item_amounts={
+                "PENSION_BASE": Decimal("100000"),
+                "PENSION_ADDITIONAL": Decimal("12700"),
+                "HEALTH_BASE": Decimal("70000"),
+                "HEALTH_ADDITIONAL_UF": Decimal("213500"),
+            },
+        )
+
+
 @pytest.mark.asyncio
 async def test_process_imported_payroll_periods_compute_and_refresh() -> None:
     """Test post-processing computes missing derived items and refreshes periods."""
@@ -612,4 +652,42 @@ async def test_process_imported_payroll_periods_keeps_import_when_uf_missing() -
     assert (
         result.periods[0].complementary_insurance_validation.warnings[0]
         == expected_warning
+    )
+
+
+@pytest.mark.asyncio
+async def test_process_imported_payroll_periods_replaces_warning_on_missing_uf() -> (
+    None
+):
+    """Test refresh validation warning is replaced when UF is missing."""
+    use_case = ProcessImportedPayrollPeriods(
+        MissingUfValidationRepository(),
+        FailingUfMarketDataRepository(),
+        FixedUfComplementaryInsuranceRepository(),  # type: ignore[arg-type]
+    )
+    use_case._contributions = EconomicIndexFailingContributions()  # type: ignore[attr-defined]
+    result = await use_case.execute(
+        ImportPayrollResultDTO(
+            imported_periods=1,
+            imported_items=5,
+            periods=[
+                ImportedPayrollPeriodDTO(
+                    id=7,
+                    employer="ACME",
+                    period_year=2026,
+                    period_month=4,
+                    payment_date=date(2026, 4, 30),
+                    status="actual",
+                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                    item_count=5,
+                    declared_net_pay_clp=Decimal("1050000"),
+                )
+            ],
+        )
+    )
+
+    assert result.periods[0].contribution_validation is not None
+    assert result.periods[0].contribution_validation.warning == (
+        "UF rate not found for period 2026-04. Please load UF data before "
+        "importing payroll."
     )

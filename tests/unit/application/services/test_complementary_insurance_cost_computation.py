@@ -1,5 +1,6 @@
 """Tests for ComplementaryInsuranceCostComputationService."""
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from unittest.mock import AsyncMock
@@ -15,6 +16,27 @@ from payroll.domain.contributions import (
     ComplementaryInsuranceCostType,
     ComplementaryInsurancePlan,
 )
+
+
+def build_plan(
+    *,
+    plan_id: int,
+    name: str,
+    cost_type: ComplementaryInsuranceCostType,
+    cost_value: Decimal,
+    cost_currency: str = "CLP",
+) -> ComplementaryInsurancePlan:
+    """Build a complementary insurance plan for tests."""
+    return ComplementaryInsurancePlan(
+        id=plan_id,
+        provider_id=1,
+        name=name,
+        cost_type=cost_type,
+        cost_value=cost_value,
+        cost_currency=cost_currency,
+        valid_from=date(2024, 1, 1),
+        valid_to=None,
+    )
 
 
 @pytest.fixture
@@ -54,60 +76,34 @@ async def test_compute_with_fixed_and_variable_plans(
     service: ComplementaryInsuranceCostComputationService,
     mock_payroll_repository: AsyncMock,
     mock_complementary_insurance_repository: AsyncMock,
+    payroll_summary_dto: PayrollSummaryDTO,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
 ) -> None:
     """Test computing costs with both fixed and variable plans."""
     period_id = 123
-    summary = PayrollSummaryDTO(
+    summary = replace(
+        payroll_summary_dto,
         period_id=period_id,
-        employer_id=1,
-        employer_name="Test Corp",
-        period_year=2025,
-        period_month=5,
-        payment_date=date(2025, 5, 30),
-        taxable_income_clp=Decimal("1000000"),
-        gross_income_clp=Decimal("1250000"),
         total_discounts_clp=Decimal("180000"),
         net_pay_clp=Decimal("1070000"),
     )
-    detail = PayrollPeriodDetailDTO(
+    detail = replace(
+        payroll_period_detail_dto,
         id=period_id,
-        employer_id=1,
-        employer_name="Test Corp",
-        employer_tax_id="123456789",
-        employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
-        period_year=2025,
-        period_month=5,
-        payment_date=date(2025, 5, 30),
-        status="actual",
-        employment_contract_kind="indefinite",
-        worked_days=30,
         summary=summary,
-        items=[],
-        pension_plan_id=1,
-        health_plan_id=2,
     )
 
-    plan1 = ComplementaryInsurancePlan(
-        id=10,
-        provider_id=1,
+    plan1 = build_plan(
+        plan_id=10,
         name="Plan A (Fixed)",
         cost_type=ComplementaryInsuranceCostType.FIXED_CLP,
         cost_value=Decimal("50000"),
-        cost_currency="CLP",
-        valid_from=date(2024, 1, 1),
-        valid_to=None,
     )
-    plan2 = ComplementaryInsurancePlan(
-        id=20,
-        provider_id=1,
+    plan2 = build_plan(
+        plan_id=20,
         name="Plan B (2%)",
         cost_type=ComplementaryInsuranceCostType.VARIABLE_PERCENTAGE,
         cost_value=Decimal("2.5"),
-        cost_currency="CLP",
-        valid_from=date(2024, 1, 1),
-        valid_to=None,
     )
 
     mock_payroll_repository.get_period_detail.return_value = detail
@@ -133,39 +129,21 @@ async def test_compute_with_no_plans(
     service: ComplementaryInsuranceCostComputationService,
     mock_payroll_repository: AsyncMock,
     mock_complementary_insurance_repository: AsyncMock,
+    payroll_summary_dto: PayrollSummaryDTO,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
 ) -> None:
     """Test computing when no plans are assigned."""
     period_id = 123
-    summary = PayrollSummaryDTO(
+    summary = replace(
+        payroll_summary_dto,
         period_id=period_id,
-        employer_id=1,
-        employer_name="Test Corp",
-        period_year=2025,
-        period_month=5,
-        payment_date=date(2025, 5, 30),
-        taxable_income_clp=Decimal("1000000"),
-        gross_income_clp=Decimal("1250000"),
         total_discounts_clp=Decimal("180000"),
         net_pay_clp=Decimal("1070000"),
     )
-    detail = PayrollPeriodDetailDTO(
+    detail = replace(
+        payroll_period_detail_dto,
         id=period_id,
-        employer_id=1,
-        employer_name="Test Corp",
-        employer_tax_id="123456789",
-        employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
-        period_year=2025,
-        period_month=5,
-        payment_date=date(2025, 5, 30),
-        status="actual",
-        employment_contract_kind="indefinite",
-        worked_days=30,
         summary=summary,
-        items=[],
-        pension_plan_id=1,
-        health_plan_id=2,
     )
 
     mock_payroll_repository.get_period_detail.return_value = detail
@@ -202,28 +180,11 @@ async def test_compute_with_missing_summary(
     service: ComplementaryInsuranceCostComputationService,
     mock_payroll_repository: AsyncMock,
     mock_complementary_insurance_repository: AsyncMock,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
 ) -> None:
     """Test computing when summary is missing."""
     period_id = 123
-    detail = PayrollPeriodDetailDTO(
-        id=period_id,
-        employer_id=1,
-        employer_name="Test Corp",
-        employer_tax_id="123456789",
-        employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
-        period_year=2025,
-        period_month=5,
-        payment_date=date(2025, 5, 30),
-        status="actual",
-        employment_contract_kind="indefinite",
-        worked_days=30,
-        summary=None,
-        items=[],
-        pension_plan_id=1,
-        health_plan_id=2,
-    )
+    detail = replace(payroll_period_detail_dto, id=period_id, summary=None)
 
     mock_payroll_repository.get_period_detail.return_value = detail
 
@@ -240,16 +201,16 @@ async def test_compute_with_fixed_uf_plan(
     mock_payroll_repository: AsyncMock,
     mock_complementary_insurance_repository: AsyncMock,
     mock_market_data_repository: AsyncMock,
+    payroll_summary_dto: PayrollSummaryDTO,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
 ) -> None:
     """Test computing costs with a FIXED_UF plan fetches and converts UF rate."""
     period_id = 10
     payment_date = date(2025, 3, 31)
     reference_date = date(2025, 4, 1)  # First day of following month
-    summary = PayrollSummaryDTO(
+    summary = replace(
+        payroll_summary_dto,
         period_id=period_id,
-        employer_id=1,
-        employer_name="Test Corp",
-        period_year=2025,
         period_month=3,
         payment_date=payment_date,
         taxable_income_clp=Decimal("3000000"),
@@ -257,34 +218,19 @@ async def test_compute_with_fixed_uf_plan(
         total_discounts_clp=Decimal("400000"),
         net_pay_clp=Decimal("3100000"),
     )
-    detail = PayrollPeriodDetailDTO(
+    detail = replace(
+        payroll_period_detail_dto,
         id=period_id,
-        employer_id=1,
-        employer_name="Test Corp",
-        employer_tax_id="123456789",
-        employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
-        period_year=2025,
         period_month=3,
         payment_date=payment_date,
-        status="actual",
-        employment_contract_kind="indefinite",
-        worked_days=30,
         summary=summary,
-        items=[],
-        pension_plan_id=1,
-        health_plan_id=2,
     )
-    plan = ComplementaryInsurancePlan(
-        id=30,
-        provider_id=1,
+    plan = build_plan(
+        plan_id=30,
         name="Plan UF",
         cost_type=ComplementaryInsuranceCostType.FIXED_UF,
         cost_value=Decimal("2"),
         cost_currency="UF",
-        valid_from=date(2024, 1, 1),
-        valid_to=None,
     )
 
     mock_payroll_repository.get_period_detail.return_value = detail
@@ -312,6 +258,8 @@ async def test_compute_with_fixed_uf_plan_missing_rate_raises(
     mock_payroll_repository: AsyncMock,
     mock_complementary_insurance_repository: AsyncMock,
     mock_market_data_repository: AsyncMock,
+    payroll_summary_dto: PayrollSummaryDTO,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
 ) -> None:
     """Test that a FIXED_UF plan with missing UF rate raises EconomicIndexNotFoundError.
 
@@ -319,11 +267,9 @@ async def test_compute_with_fixed_uf_plan_missing_rate_raises(
     must surface an EconomicIndexNotFoundError.
     """
     period_id = 11
-    summary = PayrollSummaryDTO(
+    summary = replace(
+        payroll_summary_dto,
         period_id=period_id,
-        employer_id=1,
-        employer_name="Test Corp",
-        period_year=2025,
         period_month=3,
         payment_date=date(2025, 3, 31),
         taxable_income_clp=Decimal("3000000"),
@@ -331,34 +277,19 @@ async def test_compute_with_fixed_uf_plan_missing_rate_raises(
         total_discounts_clp=Decimal("400000"),
         net_pay_clp=Decimal("3100000"),
     )
-    detail = PayrollPeriodDetailDTO(
+    detail = replace(
+        payroll_period_detail_dto,
         id=period_id,
-        employer_id=1,
-        employer_name="Test Corp",
-        employer_tax_id="123456789",
-        employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
-        period_year=2025,
         period_month=3,
         payment_date=date(2025, 3, 31),
-        status="actual",
-        employment_contract_kind="indefinite",
-        worked_days=30,
         summary=summary,
-        items=[],
-        pension_plan_id=1,
-        health_plan_id=2,
     )
-    plan = ComplementaryInsurancePlan(
-        id=30,
-        provider_id=1,
+    plan = build_plan(
+        plan_id=30,
         name="Plan UF",
         cost_type=ComplementaryInsuranceCostType.FIXED_UF,
         cost_value=Decimal("2"),
         cost_currency="UF",
-        valid_from=date(2024, 1, 1),
-        valid_to=None,
     )
 
     mock_payroll_repository.get_period_detail.return_value = detail

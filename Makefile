@@ -11,6 +11,7 @@ ADMINER_CONTAINER ?= pf-payroll-adminer
 ADMINER_PORT ?= 8080
 APP_PORT ?= 8000
 ENV_FILE ?= .env
+VENV_BIN = PATH="$(VENV)/bin:$$PATH"
 
 DB_ENV = NERDCTL_BIN="$(NERDCTL)" DB_CONTAINER="$(DB_CONTAINER)" DB_VOLUME="$(DB_VOLUME)" DB_NAME="$(DB_NAME)" DB_USER="$(DB_USER)" DB_PASSWORD="$(DB_PASSWORD)" DB_PORT="$(DB_PORT)"
 DB_SEED_FLAG_base =
@@ -90,11 +91,11 @@ import-payroll:
 
 # Runs the complete test suite.
 test:
-	pytest
+	$(VENV_BIN) pytest
 
 # Runs the test suite with coverage and enforces 100% coverage.
 test-cov:
-	pytest --cov=src/payroll --cov-report=term-missing --cov-fail-under=100
+	$(VENV_BIN) pytest --cov=src/payroll --cov-report=term-missing --cov-fail-under=100
 
 # Executes all repository quality gates in sequence.
 check:
@@ -122,17 +123,17 @@ _duplicate-code:
 
 # Runs Ruff autofixes/formatting and then validates lint cleanliness.
 lint:
-	ruff check --fix --exit-zero src tests
-	ruff format src tests
-	ruff check src tests
+	$(VENV_BIN) ruff check --fix --exit-zero src tests
+	$(VENV_BIN) ruff format src tests
+	$(VENV_BIN) ruff check src tests
 
 # Reports potentially unused code via Vulture.
 dead-code:
-	vulture --config pyproject.toml
+	$(VENV_BIN) vulture --config pyproject.toml
 
 # Runs static type checking with mypy.
 typecheck:
-	mypy --install-types --non-interactive src
+	$(VENV_BIN) mypy --install-types --non-interactive src
 
 # Removes local caches and build artifacts.
 clean:

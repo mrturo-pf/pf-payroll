@@ -136,6 +136,159 @@ class FakeSession:
         self.commit_count += 1
 
 
+def build_period(
+    *,
+    period_id: int = 5,
+    employer_id: int = 10,
+    payment_date: date = date(2026, 1, 31),
+    status: PayrollStatus = PayrollStatus.PROJECTED,
+    employment_contract_kind: EmploymentContractKind = (
+        EmploymentContractKind.INDEFINITE
+    ),
+) -> PayrollPeriodModel:
+    """Build a payroll period model for repository tests."""
+    return PayrollPeriodModel(
+        id=period_id,
+        employer_id=employer_id,
+        period_year=payment_date.year,
+        period_month=payment_date.month,
+        payment_date=payment_date,
+        status=status,
+        employment_contract_kind=employment_contract_kind,
+    )
+
+
+def build_pension_pair(
+    *,
+    plan_id: int = 11,
+    institution_id: int = 1,
+    code: str = "AFP_UNO",
+    name: str = "AFP Uno",
+    additional_rate: Decimal = Decimal("0.0127"),
+    active: bool = True,
+) -> tuple[PensionPlanModel, PensionInstitutionModel]:
+    """Build a pension plan and institution pair."""
+    institution = PensionInstitutionModel(
+        id=institution_id,
+        code=code,
+        name=name,
+        mandatory_rate=Decimal("0.10"),
+        is_active=active,
+    )
+    plan = PensionPlanModel(
+        id=plan_id,
+        institution_id=institution_id,
+        valid_from=date(2026, 1, 1),
+        valid_to=None,
+        additional_rate=additional_rate,
+    )
+    return plan, institution
+
+
+def build_health_pair(
+    *,
+    plan_id: int = 22,
+    institution_id: int = 2,
+    code: str = "FONASA",
+    name: str = "Fonasa",
+    kind: HealthInstitutionKind = HealthInstitutionKind.FONASA,
+    active: bool = True,
+    contracted_uf: Decimal = Decimal("0"),
+    plan_name: str = "Base",
+) -> tuple[HealthPlanModel, HealthInstitutionModel]:
+    """Build a health plan and institution pair."""
+    institution = HealthInstitutionModel(
+        id=institution_id,
+        code=code,
+        name=name,
+        kind=kind,
+        mandatory_rate=Decimal("0.07"),
+        is_active=active,
+    )
+    plan = HealthPlanModel(
+        id=plan_id,
+        institution_id=institution_id,
+        valid_from=date(2026, 1, 1),
+        valid_to=None,
+        plan_name=plan_name,
+        contracted_uf=contracted_uf,
+    )
+    return plan, institution
+
+
+def build_contribution_cap(
+    *,
+    cap_id: int,
+    cap_type: ContributionCapType,
+    value_uf: Decimal,
+) -> ContributionCapModel:
+    """Build a contribution cap model."""
+    return ContributionCapModel(
+        id=cap_id,
+        cap_type=cap_type,
+        valid_from=date(2026, 1, 1),
+        valid_to=None,
+        value_uf=value_uf,
+    )
+
+
+def build_contribution_context_results(
+    *,
+    period: PayrollPeriodModel,
+    pension_pair: tuple[PensionPlanModel, PensionInstitutionModel],
+    health_pair: tuple[HealthPlanModel, HealthInstitutionModel],
+    taxable_income: Decimal = Decimal("1250000"),
+    health_plan_ids: list[int] | None = None,
+    period_health_pairs: list[tuple[HealthPlanModel, HealthInstitutionModel]]
+    | None = None,
+) -> list[FakeResult]:
+    """Build fake DB result sequence for contribution context queries."""
+    results = [
+        FakeResult(scalar_one=period),
+        FakeResult(first_row=pension_pair),
+        FakeResult(first_row=health_pair),
+        FakeResult(
+            scalar_one=build_contribution_cap(
+                cap_id=33,
+                cap_type=ContributionCapType.PENSION_HEALTH,
+                value_uf=Decimal("90.0000"),
+            )
+        ),
+        FakeResult(
+            scalar_one=build_contribution_cap(
+                cap_id=34,
+                cap_type=ContributionCapType.UNEMPLOYMENT,
+                value_uf=Decimal("135.0000"),
+            )
+        ),
+        FakeResult(scalar_one=taxable_income),
+    ]
+    if health_plan_ids is not None:
+        results.append(FakeResult(scalar_rows=health_plan_ids))
+    for period_health_pair in period_health_pairs or []:
+        results.append(FakeResult(first_row=period_health_pair))
+    return results
+
+
+def build_import_row(**overrides: object) -> SimpleNamespace:
+    """Build a default import row payload for repository import tests."""
+    payload = {
+        "employer": "ACME",
+        "period_year": 2026,
+        "period_month": 1,
+        "payment_date": date(2026, 1, 31),
+        "status": "actual",
+        "employment_contract_kind": EmploymentContractKind.INDEFINITE,
+        "concept_code": "SALARY_BASE",
+        "amount_clp": Decimal("1000000"),
+        "declared_net_pay_clp": None,
+        "expected_net_pay_clp": None,
+        "net_pay_difference_clp": None,
+    }
+    payload.update(overrides)
+    return SimpleNamespace(**payload)
+
+
 def test_build_net_pay_warning_reports_final_mismatch() -> None:
     """Test final net pay mismatch warning content."""
     assert build_net_pay_warning(
@@ -251,9 +404,7 @@ async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
         "UF": [date(2026, 1, 31)],
         "UTM": [date(2026, 1, 1)],
     }
-    assert result.market_data_sync_request.economic_index_periods == {
-        "IPC_CL": [(2026, 1)]
-    }
+    assert result.market_data_sync_request.economic_index_periods == {}
     assert session.flush_count == 1
     assert session.commit_count == 2
     assert any(isinstance(item, PayrollPeriodModel) for item in session.added)
@@ -264,35 +415,17 @@ async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
 async def test_sa_payroll_repository_assigns_plan_ids_from_import_rows() -> None:
     """Test import rows assign period plan ids when provided in the payload."""
     employer = EmployerModel(id=10, name="ACME", started_at=date(2026, 1, 31))
-    pension_plan = PensionPlanModel(
-        id=1,
+    pension_plan, pension_institution = build_pension_pair(
+        plan_id=1,
         institution_id=5,
-        valid_from=date(2024, 11, 1),
-        valid_to=None,
-        additional_rate=Decimal("0.0116"),
-    )
-    pension_institution = PensionInstitutionModel(
-        id=5,
         code="AFP_MODEL",
         name="AFP Model",
-        mandatory_rate=Decimal("0.10"),
-        is_active=True,
+        additional_rate=Decimal("0.0116"),
     )
-    health_plan = HealthPlanModel(
-        id=2,
+    health_plan, health_institution = build_health_pair(
+        plan_id=2,
         institution_id=6,
-        valid_from=date(2024, 11, 1),
-        valid_to=None,
-        plan_name="Base",
         contracted_uf=Decimal("5.42"),
-    )
-    health_institution = HealthInstitutionModel(
-        id=6,
-        code="FONASA",
-        name="Fonasa",
-        kind=HealthInstitutionKind.FONASA,
-        mandatory_rate=Decimal("0.07"),
-        is_active=True,
     )
     session = FakeSession(
         [
@@ -519,23 +652,7 @@ async def test_sa_payroll_repository_rejects_missing_pension_plan_deduction() ->
         ValueError,
         match="No valid pension plan found for reference date",
     ):
-        await repository.import_rows(
-            [
-                SimpleNamespace(
-                    employer="ACME",
-                    period_year=2026,
-                    period_month=1,
-                    payment_date=date(2026, 1, 31),
-                    status="actual",
-                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
-                    concept_code="SALARY_BASE",
-                    amount_clp=Decimal("1000000"),
-                    declared_net_pay_clp=None,
-                    expected_net_pay_clp=None,
-                    net_pay_difference_clp=None,
-                ),
-            ]
-        )
+        await repository.import_rows([build_import_row()])
 
 
 @pytest.mark.asyncio
@@ -570,23 +687,7 @@ async def test_sa_payroll_repository_rejects_missing_health_plans_deduction() ->
         ValueError,
         match="No valid health plans found for reference date",
     ):
-        await repository.import_rows(
-            [
-                SimpleNamespace(
-                    employer="ACME",
-                    period_year=2026,
-                    period_month=1,
-                    payment_date=date(2026, 1, 31),
-                    status="actual",
-                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
-                    concept_code="SALARY_BASE",
-                    amount_clp=Decimal("1000000"),
-                    declared_net_pay_clp=None,
-                    expected_net_pay_clp=None,
-                    net_pay_difference_clp=None,
-                ),
-            ]
-        )
+        await repository.import_rows([build_import_row()])
 
     """Test import rows update existing period with provided plan ids."""
     employer = EmployerModel(id=10, name="ACME", started_at=date(2026, 1, 31))
@@ -598,35 +699,17 @@ async def test_sa_payroll_repository_rejects_missing_health_plans_deduction() ->
         payment_date=date(2026, 1, 31),
         status=PayrollStatus.PROJECTED,
     )
-    pension_plan = PensionPlanModel(
-        id=1,
+    pension_plan, pension_institution = build_pension_pair(
+        plan_id=1,
         institution_id=5,
-        valid_from=date(2024, 11, 1),
-        valid_to=None,
-        additional_rate=Decimal("0.0116"),
-    )
-    pension_institution = PensionInstitutionModel(
-        id=5,
         code="AFP_MODEL",
         name="AFP Model",
-        mandatory_rate=Decimal("0.10"),
-        is_active=True,
+        additional_rate=Decimal("0.0116"),
     )
-    health_plan = HealthPlanModel(
-        id=2,
+    health_plan, health_institution = build_health_pair(
+        plan_id=2,
         institution_id=6,
-        valid_from=date(2024, 11, 1),
-        valid_to=None,
-        plan_name="Base",
         contracted_uf=Decimal("5.42"),
-    )
-    health_institution = HealthInstitutionModel(
-        id=6,
-        code="FONASA",
-        name="Fonasa",
-        kind=HealthInstitutionKind.FONASA,
-        mandatory_rate=Decimal("0.07"),
-        is_active=True,
     )
     session = FakeSession(
         [
@@ -1081,68 +1164,13 @@ async def test_sa_payroll_repository_handles_empty_gap_requests() -> None:
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_builds_contribution_context() -> None:
     """Test sqlalchemy payroll repository builds contribution context."""
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.PROJECTED,
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
-    )
-    pension_institution = PensionInstitutionModel(
-        id=1,
-        code="AFP_UNO",
-        name="AFP Uno",
-        mandatory_rate=Decimal("0.10"),
-        is_active=True,
-    )
-    pension_plan = PensionPlanModel(
-        id=11,
-        institution_id=1,
-        valid_from=date(2026, 1, 1),
-        valid_to=None,
-        additional_rate=Decimal("0.0127"),
-    )
-    health_institution = HealthInstitutionModel(
-        id=2,
-        code="FONASA",
-        name="Fonasa",
-        kind=HealthInstitutionKind.FONASA,
-        mandatory_rate=Decimal("0.07"),
-        is_active=True,
-    )
-    health_plan = HealthPlanModel(
-        id=22,
-        institution_id=2,
-        valid_from=date(2026, 1, 1),
-        valid_to=None,
-        plan_name="Base",
-        contracted_uf=Decimal("0"),
-    )
-    cap = ContributionCapModel(
-        id=33,
-        cap_type=ContributionCapType.PENSION_HEALTH,
-        valid_from=date(2026, 1, 1),
-        valid_to=None,
-        value_uf=Decimal("90.0000"),
-    )
-    unemployment_cap = ContributionCapModel(
-        id=34,
-        cap_type=ContributionCapType.UNEMPLOYMENT,
-        valid_from=date(2026, 1, 1),
-        valid_to=None,
-        value_uf=Decimal("135.0000"),
-    )
+    period = build_period()
     session = FakeSession(
-        [
-            FakeResult(scalar_one=period),
-            FakeResult(first_row=(pension_plan, pension_institution)),
-            FakeResult(first_row=(health_plan, health_institution)),
-            FakeResult(scalar_one=cap),
-            FakeResult(scalar_one=unemployment_cap),
-            FakeResult(scalar_one=Decimal("1250000")),
-        ]
+        build_contribution_context_results(
+            period=period,
+            pension_pair=build_pension_pair(),
+            health_pair=build_health_pair(),
+        )
     )
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
@@ -1162,76 +1190,17 @@ async def test_sqlalchemy_payroll_repository_builds_contribution_context() -> No
 @pytest.mark.asyncio
 async def test_repository_allows_inactive_health_institution_for_history() -> None:
     """Test contribution context keeps inactive institutions for existing history."""
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.PROJECTED,
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
-    )
+    period = build_period()
     session = FakeSession(
-        [
-            FakeResult(scalar_one=period),
-            FakeResult(
-                first_row=(
-                    PensionPlanModel(
-                        id=11,
-                        institution_id=1,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
-                        additional_rate=Decimal("0.0127"),
-                    ),
-                    PensionInstitutionModel(
-                        id=1,
-                        code="AFP_UNO",
-                        name="AFP Uno",
-                        mandatory_rate=Decimal("0.10"),
-                        is_active=True,
-                    ),
-                )
+        build_contribution_context_results(
+            period=period,
+            pension_pair=build_pension_pair(),
+            health_pair=build_health_pair(
+                code="LEGACY",
+                name="Legacy",
+                active=False,
             ),
-            FakeResult(
-                first_row=(
-                    HealthPlanModel(
-                        id=22,
-                        institution_id=2,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
-                        plan_name="Base",
-                        contracted_uf=Decimal("0"),
-                    ),
-                    HealthInstitutionModel(
-                        id=2,
-                        code="LEGACY",
-                        name="Legacy",
-                        kind=HealthInstitutionKind.FONASA,
-                        mandatory_rate=Decimal("0.07"),
-                        is_active=False,
-                    ),
-                )
-            ),
-            FakeResult(
-                scalar_one=ContributionCapModel(
-                    id=33,
-                    cap_type=ContributionCapType.PENSION_HEALTH,
-                    valid_from=date(2026, 1, 1),
-                    valid_to=None,
-                    value_uf=Decimal("90.0000"),
-                )
-            ),
-            FakeResult(
-                scalar_one=ContributionCapModel(
-                    id=34,
-                    cap_type=ContributionCapType.UNEMPLOYMENT,
-                    valid_from=date(2026, 1, 1),
-                    valid_to=None,
-                    value_uf=Decimal("135.0000"),
-                )
-            ),
-            FakeResult(scalar_one=Decimal("1250000")),
-        ]
+        )
     )
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
@@ -1245,117 +1214,22 @@ async def test_repository_allows_inactive_health_institution_for_history() -> No
 @pytest.mark.asyncio
 async def test_repository_sums_contracted_uf_for_multiple_period_health_plans() -> None:
     """Test contribution context sums contracted UF across period health plans."""
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.PROJECTED,
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
-    )
+    period = build_period()
     session = FakeSession(
-        [
-            FakeResult(scalar_one=period),
-            FakeResult(
-                first_row=(
-                    PensionPlanModel(
-                        id=11,
-                        institution_id=1,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
-                        additional_rate=Decimal("0.0127"),
-                    ),
-                    PensionInstitutionModel(
-                        id=1,
-                        code="AFP_UNO",
-                        name="AFP Uno",
-                        mandatory_rate=Decimal("0.10"),
-                        is_active=True,
-                    ),
-                )
-            ),
-            FakeResult(
-                first_row=(
-                    HealthPlanModel(
-                        id=22,
-                        institution_id=2,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
-                        plan_name="Base",
-                        contracted_uf=Decimal("5.42"),
-                    ),
-                    HealthInstitutionModel(
-                        id=2,
-                        code="FONASA",
-                        name="Fonasa",
-                        kind=HealthInstitutionKind.FONASA,
-                        mandatory_rate=Decimal("0.07"),
-                        is_active=True,
-                    ),
-                )
-            ),
-            FakeResult(
-                scalar_one=ContributionCapModel(
-                    id=33,
-                    cap_type=ContributionCapType.PENSION_HEALTH,
-                    valid_from=date(2026, 1, 1),
-                    valid_to=None,
-                    value_uf=Decimal("90.0000"),
-                )
-            ),
-            FakeResult(
-                scalar_one=ContributionCapModel(
-                    id=34,
-                    cap_type=ContributionCapType.UNEMPLOYMENT,
-                    valid_from=date(2026, 1, 1),
-                    valid_to=None,
-                    value_uf=Decimal("135.0000"),
-                )
-            ),
-            FakeResult(scalar_one=Decimal("1250000")),
-            FakeResult(scalar_rows=[22, 23]),
-            FakeResult(
-                first_row=(
-                    HealthPlanModel(
-                        id=22,
-                        institution_id=2,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
-                        plan_name="Base",
-                        contracted_uf=Decimal("5.42"),
-                    ),
-                    HealthInstitutionModel(
-                        id=2,
-                        code="FONASA",
-                        name="Fonasa",
-                        kind=HealthInstitutionKind.FONASA,
-                        mandatory_rate=Decimal("0.07"),
-                        is_active=True,
-                    ),
-                )
-            ),
-            FakeResult(
-                first_row=(
-                    HealthPlanModel(
-                        id=23,
-                        institution_id=2,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
-                        plan_name="GES",
-                        contracted_uf=Decimal("0.91"),
-                    ),
-                    HealthInstitutionModel(
-                        id=2,
-                        code="FONASA",
-                        name="Fonasa",
-                        kind=HealthInstitutionKind.FONASA,
-                        mandatory_rate=Decimal("0.07"),
-                        is_active=True,
-                    ),
-                )
-            ),
-        ]
+        build_contribution_context_results(
+            period=period,
+            pension_pair=build_pension_pair(),
+            health_pair=build_health_pair(contracted_uf=Decimal("5.42")),
+            health_plan_ids=[22, 23],
+            period_health_pairs=[
+                build_health_pair(plan_id=22, contracted_uf=Decimal("5.42")),
+                build_health_pair(
+                    plan_id=23,
+                    contracted_uf=Decimal("0.91"),
+                    plan_name="GES",
+                ),
+            ],
+        )
     )
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
@@ -1371,77 +1245,14 @@ async def test_repository_rejects_contribution_context_health_plan_not_in_period
     None
 ):
     """Test contribution context rejects health plans outside period snapshots."""
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.PROJECTED,
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
-    )
+    period = build_period()
     session = FakeSession(
-        [
-            FakeResult(scalar_one=period),
-            FakeResult(
-                first_row=(
-                    PensionPlanModel(
-                        id=11,
-                        institution_id=1,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
-                        additional_rate=Decimal("0.0127"),
-                    ),
-                    PensionInstitutionModel(
-                        id=1,
-                        code="AFP_UNO",
-                        name="AFP Uno",
-                        mandatory_rate=Decimal("0.10"),
-                        is_active=True,
-                    ),
-                )
-            ),
-            FakeResult(
-                first_row=(
-                    HealthPlanModel(
-                        id=22,
-                        institution_id=2,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
-                        plan_name="Base",
-                        contracted_uf=Decimal("5.42"),
-                    ),
-                    HealthInstitutionModel(
-                        id=2,
-                        code="FONASA",
-                        name="Fonasa",
-                        kind=HealthInstitutionKind.FONASA,
-                        mandatory_rate=Decimal("0.07"),
-                        is_active=True,
-                    ),
-                )
-            ),
-            FakeResult(
-                scalar_one=ContributionCapModel(
-                    id=33,
-                    cap_type=ContributionCapType.PENSION_HEALTH,
-                    valid_from=date(2026, 1, 1),
-                    valid_to=None,
-                    value_uf=Decimal("90.0000"),
-                )
-            ),
-            FakeResult(
-                scalar_one=ContributionCapModel(
-                    id=34,
-                    cap_type=ContributionCapType.UNEMPLOYMENT,
-                    valid_from=date(2026, 1, 1),
-                    valid_to=None,
-                    value_uf=Decimal("135.0000"),
-                )
-            ),
-            FakeResult(scalar_one=Decimal("1250000")),
-            FakeResult(scalar_rows=[23]),
-        ]
+        build_contribution_context_results(
+            period=period,
+            pension_pair=build_pension_pair(),
+            health_pair=build_health_pair(contracted_uf=Decimal("5.42")),
+            health_plan_ids=[23],
+        )
     )
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
@@ -1458,117 +1269,26 @@ async def test_repository_rejects_contribution_context_mixed_health_institutions
     None
 ):
     """Test contribution context rejects mixed institutions in period health plans."""
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.PROJECTED,
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
-    )
+    period = build_period()
     session = FakeSession(
-        [
-            FakeResult(scalar_one=period),
-            FakeResult(
-                first_row=(
-                    PensionPlanModel(
-                        id=11,
-                        institution_id=1,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
-                        additional_rate=Decimal("0.0127"),
-                    ),
-                    PensionInstitutionModel(
-                        id=1,
-                        code="AFP_UNO",
-                        name="AFP Uno",
-                        mandatory_rate=Decimal("0.10"),
-                        is_active=True,
-                    ),
-                )
-            ),
-            FakeResult(
-                first_row=(
-                    HealthPlanModel(
-                        id=22,
-                        institution_id=2,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
-                        plan_name="Base",
-                        contracted_uf=Decimal("5.42"),
-                    ),
-                    HealthInstitutionModel(
-                        id=2,
-                        code="FONASA",
-                        name="Fonasa",
-                        kind=HealthInstitutionKind.FONASA,
-                        mandatory_rate=Decimal("0.07"),
-                        is_active=True,
-                    ),
-                )
-            ),
-            FakeResult(
-                scalar_one=ContributionCapModel(
-                    id=33,
-                    cap_type=ContributionCapType.PENSION_HEALTH,
-                    valid_from=date(2026, 1, 1),
-                    valid_to=None,
-                    value_uf=Decimal("90.0000"),
-                )
-            ),
-            FakeResult(
-                scalar_one=ContributionCapModel(
-                    id=34,
-                    cap_type=ContributionCapType.UNEMPLOYMENT,
-                    valid_from=date(2026, 1, 1),
-                    valid_to=None,
-                    value_uf=Decimal("135.0000"),
-                )
-            ),
-            FakeResult(scalar_one=Decimal("1250000")),
-            FakeResult(scalar_rows=[22, 23]),
-            FakeResult(
-                first_row=(
-                    HealthPlanModel(
-                        id=22,
-                        institution_id=2,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
-                        plan_name="Base",
-                        contracted_uf=Decimal("5.42"),
-                    ),
-                    HealthInstitutionModel(
-                        id=2,
-                        code="FONASA",
-                        name="Fonasa",
-                        kind=HealthInstitutionKind.FONASA,
-                        mandatory_rate=Decimal("0.07"),
-                        is_active=True,
-                    ),
-                )
-            ),
-            FakeResult(
-                first_row=(
-                    HealthPlanModel(
-                        id=23,
-                        institution_id=3,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
-                        plan_name="Other",
-                        contracted_uf=Decimal("0.91"),
-                    ),
-                    HealthInstitutionModel(
-                        id=3,
-                        code="ISAPRE_X",
-                        name="Isapre X",
-                        kind=HealthInstitutionKind.ISAPRE,
-                        mandatory_rate=Decimal("0.07"),
-                        is_active=True,
-                    ),
-                )
-            ),
-        ]
+        build_contribution_context_results(
+            period=period,
+            pension_pair=build_pension_pair(),
+            health_pair=build_health_pair(contracted_uf=Decimal("5.42")),
+            health_plan_ids=[22, 23],
+            period_health_pairs=[
+                build_health_pair(plan_id=22, contracted_uf=Decimal("5.42")),
+                build_health_pair(
+                    plan_id=23,
+                    institution_id=3,
+                    code="ISAPRE_X",
+                    name="Isapre X",
+                    kind=HealthInstitutionKind.ISAPRE,
+                    contracted_uf=Decimal("0.91"),
+                    plan_name="Other",
+                ),
+            ],
+        )
     )
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
@@ -1581,55 +1301,12 @@ async def test_repository_rejects_contribution_context_mixed_health_institutions
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_assigns_plans_to_period() -> None:
     """Test sqlalchemy payroll repository assigns plans to period."""
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=1,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.ACTUAL,
-    )
+    period = build_period(employer_id=1, status=PayrollStatus.ACTUAL)
     session = FakeSession(
         [
             FakeResult(scalar_one=period),
-            FakeResult(
-                first_row=(
-                    PensionPlanModel(
-                        id=11,
-                        institution_id=1,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
-                        additional_rate=Decimal("0.0127"),
-                    ),
-                    PensionInstitutionModel(
-                        id=1,
-                        code="AFP_UNO",
-                        name="AFP Uno",
-                        mandatory_rate=Decimal("0.10"),
-                        is_active=True,
-                    ),
-                )
-            ),
-            FakeResult(
-                first_row=(
-                    HealthPlanModel(
-                        id=22,
-                        institution_id=2,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
-                        plan_name="Base",
-                        contracted_uf=Decimal("0"),
-                    ),
-                    HealthInstitutionModel(
-                        id=2,
-                        code="FONASA",
-                        name="Fonasa",
-                        kind=HealthInstitutionKind.FONASA,
-                        mandatory_rate=Decimal("0.07"),
-                        is_active=True,
-                    ),
-                )
-            ),
+            FakeResult(first_row=build_pension_pair()),
+            FakeResult(first_row=build_health_pair()),
         ]
     )
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
@@ -1648,53 +1325,16 @@ async def test_sqlalchemy_payroll_repository_assigns_plans_to_period() -> None:
 @pytest.mark.asyncio
 async def test_repository_rejects_assigning_inactive_health_institution() -> None:
     """Test assign plans rejects inactive health institutions."""
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=1,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.ACTUAL,
-    )
+    period = build_period(employer_id=1, status=PayrollStatus.ACTUAL)
     session = FakeSession(
         [
             FakeResult(scalar_one=period),
+            FakeResult(first_row=build_pension_pair()),
             FakeResult(
-                first_row=(
-                    PensionPlanModel(
-                        id=11,
-                        institution_id=1,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
-                        additional_rate=Decimal("0.0127"),
-                    ),
-                    PensionInstitutionModel(
-                        id=1,
-                        code="AFP_UNO",
-                        name="AFP Uno",
-                        mandatory_rate=Decimal("0.10"),
-                        is_active=True,
-                    ),
-                )
-            ),
-            FakeResult(
-                first_row=(
-                    HealthPlanModel(
-                        id=22,
-                        institution_id=2,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
-                        plan_name="Base",
-                        contracted_uf=Decimal("0"),
-                    ),
-                    HealthInstitutionModel(
-                        id=2,
-                        code="LEGACY",
-                        name="Legacy",
-                        kind=HealthInstitutionKind.FONASA,
-                        mandatory_rate=Decimal("0.07"),
-                        is_active=False,
-                    ),
+                first_row=build_health_pair(
+                    code="LEGACY",
+                    name="Legacy",
+                    active=False,
                 )
             ),
         ]

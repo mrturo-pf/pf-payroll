@@ -95,7 +95,7 @@ test:
 
 # Runs the test suite with coverage and enforces 100% coverage.
 test-cov:
-	$(VENV_BIN) pytest --cov=src/payroll --cov-report=term-missing --cov-fail-under=100
+	$(VENV_BIN) pytest --cov=src --cov-report=term-missing --cov-fail-under=100
 
 # Executes all repository quality gates in sequence.
 check:

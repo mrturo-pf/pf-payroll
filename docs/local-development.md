@@ -149,7 +149,7 @@ source .venv/bin/activate
 make test-cov
 ```
 
-The repository requires **100% coverage** for `src/payroll`.
+The repository requires **100% coverage** for `src`.
 
 ## Linting and type checking
 

@@ -135,7 +135,7 @@ Validation and standards enforcement are split as follows:
 - `make typecheck` uses **mypy** to validate the repository typing baseline based on **PEP 484**, **PEP 544**, **PEP 585**, and **PEP 604**.
 - Project metadata is maintained in `pyproject.toml` using **PEP 621** fields.
 
-The project requires **100% coverage** for `src/payroll`.
+The project requires **100% coverage** for `src`.
 
 ## Engineering policy
 

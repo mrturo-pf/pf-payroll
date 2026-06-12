@@ -51,13 +51,8 @@ This repository follows a modular monolith with **DDD** and **hexagonal architec
 Before finishing changes, validate with:
 
 ```bash
-PATH=.venv/bin:$PATH make lint
-PATH=.venv/bin:$PATH make dead-code
-PATH=.venv/bin:$PATH make typecheck
-PATH=.venv/bin:$PATH make test-cov
+PATH=.venv/bin:$PATH make check
 ```
 
-- `make lint` uses **Ruff** as the repository lint and formatting enforcement tool.
-- `make dead-code` uses **Vulture** to detect potentially unused production code under `src`.
-- `make typecheck` uses **mypy** to enforce the typing standards derived from PEP 484, 544, 585, and 604.
-The repository expects **100% coverage** for `src/payroll`.
+- `make check` runs all quality gates in sequence: `lint`, `dead-code`, `typecheck`, `duplicate-code-src`, `duplicate-code-tests`, `test`, and `test-cov`.
+The repository expects **100% coverage** for `src`.

@@ -1,6 +1,7 @@
 """Query-oriented payroll repository operations."""
 
 from datetime import date, timedelta
+from decimal import Decimal
 
 from sqlalchemy import select
 
@@ -27,6 +28,7 @@ from payroll.infrastructure.db.models.payroll import (
 from payroll.infrastructure.db.repositories.payroll_repository_shared import (
     SqlAlchemyPayrollRepositoryBase,
     build_payroll_summary_dto,
+    predict_next_period_net_pay,
 )
 from payroll.shared.dates import add_months, resolve_payment_date
 
@@ -220,6 +222,15 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             inferred=current_inferred,
         )
 
+        # Calculate predicted net_pay for the first future period
+        first_future_net_pay_clp: Decimal | None = None
+        if current_row is not None and not current_inferred:
+            first_future_net_pay_clp = await predict_next_period_net_pay(
+                self._session,
+                current_period,
+                date(current_year, current_month, 1),
+            )
+
         future_ranges = [
             PayrollPeriodRangeDTO(
                 period_year=period_month.year,
@@ -239,7 +250,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                     payment_fixed_day_roll=current_fixed_day_roll,
                 ),
                 end_date=date(period_month.year, period_month.month, 1),
-                net_pay_clp=None,
+                net_pay_clp=(first_future_net_pay_clp if month_offset == 1 else None),
                 is_current=False,
                 inferred=True,
             )

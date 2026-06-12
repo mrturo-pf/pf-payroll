@@ -1,5 +1,6 @@
 """Shared helpers for SQLAlchemy payroll repositories."""
 
+from calendar import monthrange
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -51,6 +52,101 @@ def build_net_pay_warning(
         "Declared net_pay does not match the fully computed payroll totals. "
         f"Difference: {net_pay_difference_clp} CLP."
     )
+
+
+def get_last_day_of_month(target_date: date) -> date:
+    """Get the last day of the month for the given date."""
+    last_day = monthrange(target_date.year, target_date.month)[1]
+    return date(target_date.year, target_date.month, last_day)
+
+
+async def predict_next_period_net_pay(
+    session: AsyncSession,
+    current_period: PayrollPeriodModel,
+    current_period_end_month: date,
+) -> Decimal | None:
+    """Predict net_pay_clp for the next period based on current period data.
+
+    Uses income items (SALARY_BASE, LEGAL_GRATUITY, TELEWORK_REFUND) from
+    the current period and applies the same discount ratios using the
+    UF value from the last day of the current period's month.
+
+    Args:
+        session: Database session
+        current_period: The current payroll period
+        current_period_end_month: Date in month to extract UF from (e.g., end_date)
+
+    Returns:
+        Predicted net_pay_clp for the next period, or None if calculation fails
+    """
+    from payroll.infrastructure.db.models import ExchangeRateModel
+
+    # Get UF from the last day of the current period's month
+    last_day_of_month = get_last_day_of_month(current_period_end_month)
+
+    uf_result = await session.execute(
+        select(ExchangeRateModel.value_clp)
+        .where(ExchangeRateModel.currency_code == "UF")
+        .where(ExchangeRateModel.rate_date == last_day_of_month)
+    )
+    uf_value = uf_result.scalar_one_or_none()
+
+    if uf_value is None or uf_value <= 0:
+        return None
+
+    # Get current period's income and discount items
+    items_result = await session.execute(
+        select(PayrollItemModel.amount_clp, PayrollConceptModel.code)
+        .join(
+            PayrollConceptModel,
+            PayrollItemModel.concept_id == PayrollConceptModel.id,
+        )
+        .where(PayrollItemModel.period_id == current_period.id)
+    )
+    items = items_result.all()
+
+    # Extract specific income components
+    income_codes = {"SALARY_BASE", "LEGAL_GRATUITY", "TELEWORK_REFUND"}
+    discount_codes = {
+        "PENSION_BASE",
+        "PENSION_ADDITIONAL",
+        "HEALTH_BASE",
+        "HEALTH_ADDITIONAL_UF",
+        "UNEMPLOYMENT_INSURANCE",
+        "INCOME_TAX",
+    }
+
+    future_gross = Decimal("0")
+    current_gross = Decimal("0")
+    current_discounts = Decimal("0")
+
+    for amount, code in items:
+        if code in income_codes:
+            future_gross += amount
+            current_gross += amount
+        elif code in discount_codes:
+            current_discounts += amount
+
+    # If no income or gross income is zero, cannot predict
+    if future_gross <= 0 or current_gross <= 0:
+        return None
+
+    # Calculate discount ratio from current period
+    discount_ratio = (
+        current_discounts / current_gross if current_gross > 0 else Decimal("0")
+    )
+
+    # Apply same ratio to future gross to estimate discounts
+    future_discounts = future_gross * discount_ratio
+
+    # Calculate predicted net pay
+    predicted_net_pay = future_gross - future_discounts
+
+    if predicted_net_pay <= 0:
+        return None
+
+    # Quantize to 2 decimal places (CLP cents)
+    return predicted_net_pay.quantize(Decimal("0.01"))
 
 
 def build_payroll_summary_dto(

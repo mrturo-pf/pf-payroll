@@ -247,9 +247,6 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                 column_name="pension_plan_id",
             )
             health_plan_ids = self._resolve_period_health_plan_ids(period_rows)
-            health_plan_id = (
-                None if health_plan_ids is None else int(health_plan_ids[0])
-            )
 
             # Check if both or neither are provided
             if (pension_plan_id is None) != (health_plan_ids is None):
@@ -266,7 +263,6 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                 health_plan_ids = await self._deduce_health_plan_ids_for_date(
                     reference_date
                 )
-                health_plan_id = int(health_plan_ids[0]) if health_plan_ids else None
 
             # Validate the plans exist
             await self._get_pension_plan(pension_plan_id, first_row.payment_date)
@@ -324,7 +320,6 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                     expected_net_pay_clp=None,
                     net_pay_difference_clp=None,
                     pension_plan_id=pension_plan_id,
-                    health_plan_id=health_plan_id,
                 )
                 self._session.add(period)
                 await self._session.flush()
@@ -340,7 +335,6 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                 period.net_pay_difference_clp = None
                 if pension_plan_id is not None and health_plan_ids is not None:
                     period.pension_plan_id = pension_plan_id
-                    period.health_plan_id = health_plan_id
                     await self._sync_period_health_plans(period, health_plan_ids)
                 await self._session.execute(
                     delete(PayrollItemModel).where(

@@ -54,6 +54,28 @@ from payroll.shared.constants import (
 class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
     """Write and calculation-context payroll operations."""
 
+    async def _replace_period_health_plan_snapshots(
+        self,
+        *,
+        period_id: int,
+        health_plan_ids: list[int],
+    ) -> None:
+        """Replace health plan snapshots for a payroll period."""
+        await self._session.execute(
+            delete(PayrollPeriodHealthPlanModel).where(
+                PayrollPeriodHealthPlanModel.period_id == period_id
+            )
+        )
+        self._session.add_all(
+            [
+                PayrollPeriodHealthPlanModel(
+                    period_id=period_id,
+                    health_plan_id=health_plan_id,
+                )
+                for health_plan_id in health_plan_ids
+            ]
+        )
+
     async def _get_taxable_income_clp(self, period_id: int) -> Decimal:
         """Return taxable income for the given period."""
         result = await self._session.execute(
@@ -143,7 +165,10 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
         )
 
         period.pension_plan_id = command.pension_plan_id
-        period.health_plan_id = command.health_plan_id
+        await self._replace_period_health_plan_snapshots(
+            period_id=period.id,
+            health_plan_ids=[command.health_plan_id],
+        )
 
         await self._session.commit()
 
@@ -151,7 +176,7 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
             period_id=period.id,
             payment_date=period.payment_date,
             pension_plan_id=period.pension_plan_id,
-            health_plan_id=period.health_plan_id,
+            health_plan_id=command.health_plan_id,
         )
 
     async def review_period(
@@ -159,7 +184,15 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
     ) -> ReviewPayrollPeriodResultDTO:
         """Review period."""
         period = await self._get_period(command.period_id)
-        if period.pension_plan_id is None or period.health_plan_id is None:
+        assigned_plan_ids_result = await self._session.execute(
+            select(PayrollPeriodHealthPlanModel.health_plan_id).where(
+                PayrollPeriodHealthPlanModel.period_id == period.id
+            )
+        )
+        assigned_plan_ids = [
+            int(plan_id) for plan_id in assigned_plan_ids_result.scalars().all()
+        ]
+        if period.pension_plan_id is None or not assigned_plan_ids:
             raise PayrollConflictError(
                 f"Payroll period {period.id} must have pension "
                 "and health plans assigned before review."
@@ -232,30 +265,31 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
         assigned_plan_ids = [
             int(plan_id) for plan_id in assigned_plan_ids_result.scalars().all()
         ]
-        if assigned_plan_ids:
-            if command.health_plan_id not in assigned_plan_ids:
+        if not assigned_plan_ids:
+            raise PayrollConflictError(
+                f"Payroll period {period.id} must have health plan snapshots "
+                "assigned before computing contributions."
+            )
+        if command.health_plan_id not in assigned_plan_ids:
+            raise PayrollConflictError(
+                "The provided health_plan_id does not match the period health "
+                "plan snapshots."
+            )
+        aggregated_contracted_uf = Decimal("0")
+        for assigned_plan_id in assigned_plan_ids:
+            (
+                assigned_health_plan_model,
+                assigned_health_institution_model,
+            ) = await self._get_health_plan(
+                assigned_plan_id,
+                period.payment_date,
+            )
+            if assigned_health_institution_model.code != health_institution_model.code:
                 raise PayrollConflictError(
-                    "The provided health_plan_id does not match the period health "
-                    "plan snapshots."
+                    "All assigned health plans for a payroll period must belong "
+                    "to the same health institution."
                 )
-            aggregated_contracted_uf = Decimal("0")
-            for assigned_plan_id in assigned_plan_ids:
-                (
-                    assigned_health_plan_model,
-                    assigned_health_institution_model,
-                ) = await self._get_health_plan(
-                    assigned_plan_id,
-                    period.payment_date,
-                )
-                if (
-                    assigned_health_institution_model.code
-                    != health_institution_model.code
-                ):
-                    raise PayrollConflictError(
-                        "All assigned health plans for a payroll period must belong "
-                        "to the same health institution."
-                    )
-                aggregated_contracted_uf += assigned_health_plan_model.contracted_uf
+            aggregated_contracted_uf += assigned_health_plan_model.contracted_uf
 
         return ContributionComputationContextDTO(
             period_id=period.id,
@@ -313,7 +347,6 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
         )
 
         period.pension_plan_id = result.pension_plan_id
-        period.health_plan_id = result.health_plan_id
 
         await self._session.execute(
             delete(PayrollItemModel).where(

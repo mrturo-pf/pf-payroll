@@ -113,9 +113,6 @@ class PayrollPeriodModel(Base):
     pension_plan_id: Mapped[int | None] = mapped_column(
         ForeignKey("pension_plans.id"), nullable=True
     )
-    health_plan_id: Mapped[int | None] = mapped_column(
-        ForeignKey("health_plans.id"), nullable=True
-    )
 
     employer: Mapped[EmployerModel] = relationship(back_populates="payroll_periods")
     items: Mapped[list["PayrollItemModel"]] = relationship(back_populates="period")

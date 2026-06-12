@@ -310,15 +310,26 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             return None
         period, employer = period_row
         employer_ended_at = await self._get_effective_employer_ended_at(employer)
+
+        health_plan_ids_result = await self._session.execute(
+            select(PayrollPeriodHealthPlanModel.health_plan_id)
+            .where(PayrollPeriodHealthPlanModel.period_id == period.id)
+            .order_by(PayrollPeriodHealthPlanModel.health_plan_id.asc())
+        )
+        health_plan_ids = tuple(
+            int(plan_id) for plan_id in health_plan_ids_result.scalars().all()
+        )
+        primary_health_plan_id = int(health_plan_ids[0]) if health_plan_ids else None
+
         health_institution_is_active = None
-        if period.health_plan_id is not None:
+        if primary_health_plan_id is not None:
             health_institution_result = await self._session.execute(
                 select(HealthInstitutionModel.is_active)
                 .join(
                     HealthPlanModel,
                     HealthPlanModel.institution_id == HealthInstitutionModel.id,
                 )
-                .where(HealthPlanModel.id == period.health_plan_id)
+                .where(HealthPlanModel.id == primary_health_plan_id)
             )
             health_institution_is_active = (
                 health_institution_result.scalar_one_or_none()
@@ -344,15 +355,6 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             )
             for item, concept in items_result.all()
         ]
-
-        health_plan_ids_result = await self._session.execute(
-            select(PayrollPeriodHealthPlanModel.health_plan_id)
-            .where(PayrollPeriodHealthPlanModel.period_id == period.id)
-            .order_by(PayrollPeriodHealthPlanModel.health_plan_id.asc())
-        )
-        health_plan_ids = tuple(
-            int(plan_id) for plan_id in health_plan_ids_result.scalars().all()
-        )
 
         summary_result = await self._session.execute(
             select(PayrollSummaryModel, EmployerModel)
@@ -384,7 +386,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             status=period.status.value,
             employment_contract_kind=period.employment_contract_kind,
             pension_plan_id=period.pension_plan_id,
-            health_plan_id=period.health_plan_id,
+            health_plan_id=primary_health_plan_id,
             items=items,
             summary=summary,
             health_plan_ids=health_plan_ids or None,

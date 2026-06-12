@@ -24,6 +24,7 @@ from payroll.domain.taxes import IncomeTaxBracket
 from payroll.infrastructure.db.models import (
     EmployerModel,
     PayrollItemModel,
+    PayrollPeriodHealthPlanModel,
     PayrollPeriodModel,
     PayrollSummaryModel,
 )
@@ -261,6 +262,9 @@ def build_contribution_context_results(
     | None = None,
 ) -> list[FakeResult]:
     """Build fake DB result sequence for contribution context queries."""
+    resolved_health_plan_ids = (
+        [int(health_pair[0].id)] if health_plan_ids is None else health_plan_ids
+    )
     results = [
         FakeResult(scalar_one=period),
         FakeResult(first_row=pension_pair),
@@ -280,10 +284,14 @@ def build_contribution_context_results(
             )
         ),
         FakeResult(scalar_one=taxable_income),
+        FakeResult(scalar_rows=resolved_health_plan_ids),
     ]
-    if health_plan_ids is not None:
-        results.append(FakeResult(scalar_rows=health_plan_ids))
-    for period_health_pair in period_health_pairs or []:
+    resolved_period_health_pairs = (
+        [health_pair for _ in resolved_health_plan_ids]
+        if period_health_pairs is None
+        else period_health_pairs
+    )
+    for period_health_pair in resolved_period_health_pairs:
         results.append(FakeResult(first_row=period_health_pair))
     return results
 
@@ -502,7 +510,12 @@ async def test_sa_payroll_repository_assigns_plan_ids_from_import_rows() -> None
         item for item in session.added if isinstance(item, PayrollPeriodModel)
     )
     assert created_period.pension_plan_id == 1
-    assert created_period.health_plan_id == 2
+    assert any(
+        isinstance(item, PayrollPeriodHealthPlanModel)
+        and item.health_plan_id == 2
+        and item.period_id == created_period.id
+        for item in session.added
+    )
 
 
 @pytest.mark.asyncio
@@ -762,9 +775,14 @@ async def test_sa_payroll_repository_rejects_missing_health_plans_deduction() ->
             ),
         ]
     )
-
     assert existing_period.pension_plan_id == 1
-    assert existing_period.health_plan_id == 2
+    assert existing_period.pension_plan_id == 1
+    assert any(
+        isinstance(item, PayrollPeriodHealthPlanModel)
+        and item.health_plan_id == 2
+        and item.period_id == existing_period.id
+        for item in session.added
+    )
 
 
 @pytest.mark.asyncio
@@ -1356,6 +1374,29 @@ async def test_repository_allows_inactive_health_institution_for_history() -> No
 
 
 @pytest.mark.asyncio
+async def test_repository_rejects_context_without_health_snapshots() -> None:
+    """Test contribution context requires relation-table health plan snapshots."""
+    period = build_period()
+    session = FakeSession(
+        build_contribution_context_results(
+            period=period,
+            pension_pair=build_pension_pair(),
+            health_pair=build_health_pair(contracted_uf=Decimal("5.42")),
+            health_plan_ids=[],
+        )
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(
+        ValueError,
+        match="must have health plan snapshots assigned before computing contributions",
+    ):
+        await repository.get_contribution_context(
+            SimpleNamespace(period_id=5, pension_plan_id=11, health_plan_id=22)
+        )
+
+
+@pytest.mark.asyncio
 async def test_repository_sums_contracted_uf_for_multiple_period_health_plans() -> None:
     """Test contribution context sums contracted UF across period health plans."""
     period = build_period()
@@ -1462,7 +1503,12 @@ async def test_sqlalchemy_payroll_repository_assigns_plans_to_period() -> None:
     assert result.period_id == 5
     assert result.payment_date == date(2026, 1, 31)
     assert period.pension_plan_id == 11
-    assert period.health_plan_id == 22
+    assert any(
+        isinstance(item, PayrollPeriodHealthPlanModel)
+        and item.period_id == period.id
+        and item.health_plan_id == 22
+        for item in session.added
+    )
     assert session.commit_count == 1
 
 
@@ -1861,11 +1907,11 @@ async def test_sqlalchemy_payroll_repository_reviews_period() -> None:
         status=PayrollStatus.ACTUAL,
         employment_contract_kind=EmploymentContractKind.INDEFINITE,
         pension_plan_id=11,
-        health_plan_id=22,
     )
     session = FakeSession(
         [
             FakeResult(scalar_one=period),
+            FakeResult(scalar_rows=[22]),
             FakeResult(
                 scalar_rows=[
                     "PENSION_BASE",
@@ -1890,7 +1936,7 @@ async def test_sqlalchemy_payroll_repository_reviews_period() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("period", "present_codes", "message"),
+    ("period", "assigned_plan_ids", "present_codes", "message"),
     [
         (
             PayrollPeriodModel(
@@ -1901,8 +1947,8 @@ async def test_sqlalchemy_payroll_repository_reviews_period() -> None:
                 payment_date=date(2026, 1, 31),
                 status=PayrollStatus.ACTUAL,
                 pension_plan_id=None,
-                health_plan_id=22,
             ),
+            [],
             [],
             "must have pension and health plans assigned before review",
         ),
@@ -1915,8 +1961,8 @@ async def test_sqlalchemy_payroll_repository_reviews_period() -> None:
                 payment_date=date(2026, 1, 31),
                 status=PayrollStatus.ACTUAL,
                 pension_plan_id=11,
-                health_plan_id=22,
             ),
+            [22],
             ["PENSION_BASE", "INCOME_TAX"],
             "must have computed contributions and income tax before review",
         ),
@@ -1924,12 +1970,16 @@ async def test_sqlalchemy_payroll_repository_reviews_period() -> None:
 )
 async def test_sqlalchemy_payroll_repository_rejects_invalid_review_period_inputs(
     period: PayrollPeriodModel,
+    assigned_plan_ids: list[int],
     present_codes: list[str],
     message: str,
 ) -> None:
     """Test sqlalchemy payroll repository rejects invalid review period inputs."""
-    results = [FakeResult(scalar_one=period)]
-    if period.pension_plan_id is not None and period.health_plan_id is not None:
+    results = [
+        FakeResult(scalar_one=period),
+        FakeResult(scalar_rows=assigned_plan_ids),
+    ]
+    if period.pension_plan_id is not None and assigned_plan_ids:
         results.append(FakeResult(scalar_rows=present_codes))
     repository = SqlAlchemyPayrollRepository(FakeSession(results))  # type: ignore[arg-type]
 
@@ -2005,7 +2055,6 @@ async def test_sqlalchemy_payroll_repository_saves_computed_contributions() -> N
 
     assert result.period_id == 5
     assert period.pension_plan_id == 11
-    assert period.health_plan_id == 22
     assert sum(isinstance(item, PayrollItemModel) for item in session.added) == 5
     assert session.commit_count == 3
     assert any(
@@ -2164,7 +2213,6 @@ async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary()
         status=PayrollStatus.ACTUAL,
         employment_contract_kind=EmploymentContractKind.INDEFINITE,
         pension_plan_id=1,
-        health_plan_id=2,
     )
     employer = EmployerModel(
         id=1,
@@ -2189,6 +2237,7 @@ async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary()
         [
             FakeResult(first_row=(period, employer)),
             FakeResult(scalar_one=next_employer_started_at),
+            FakeResult(scalar_rows=[2, 3]),
             FakeResult(scalar_one=True),
             FakeResult(
                 joined_rows=[
@@ -2212,7 +2261,6 @@ async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary()
                     ),
                 ]
             ),
-            FakeResult(scalar_rows=[2, 3]),
             FakeResult(first_row=(summary, employer)),
         ]
     )
@@ -2244,7 +2292,6 @@ async def test_repository_returns_period_detail_without_end_date() -> None:
         worked_days=30,
         status=PayrollStatus.ACTUAL,
         employment_contract_kind=EmploymentContractKind.INDEFINITE,
-        health_plan_id=2,
     )
     employer = EmployerModel(
         id=1,
@@ -2257,6 +2304,7 @@ async def test_repository_returns_period_detail_without_end_date() -> None:
         [
             FakeResult(first_row=(period, employer)),
             FakeResult(scalar_one=None),
+            FakeResult(scalar_rows=[]),
             FakeResult(joined_rows=[]),
             FakeResult(first_row=None),
         ]
@@ -2281,7 +2329,6 @@ async def test_repository_returns_explicit_period_detail_end_date() -> None:
         worked_days=30,
         status=PayrollStatus.ACTUAL,
         employment_contract_kind=EmploymentContractKind.INDEFINITE,
-        health_plan_id=2,
     )
     employer = EmployerModel(
         id=1,
@@ -2294,6 +2341,7 @@ async def test_repository_returns_explicit_period_detail_end_date() -> None:
     session = FakeSession(
         [
             FakeResult(first_row=(period, employer)),
+            FakeResult(scalar_rows=[2]),
             FakeResult(scalar_one=False),
             FakeResult(joined_rows=[]),
             FakeResult(first_row=None),

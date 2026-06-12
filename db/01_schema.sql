@@ -197,28 +197,6 @@ CREATE TABLE IF NOT EXISTS employers (
         DEFAULT 'previous_business_day'
 );
 
-ALTER TABLE employers
-    ADD COLUMN IF NOT EXISTS payment_date_rule employer_payment_date_rule NOT NULL
-        DEFAULT 'last_business_day_of_month';
-ALTER TABLE employers
-    ADD COLUMN IF NOT EXISTS payment_month_offset SMALLINT NOT NULL DEFAULT 0
-        CHECK (payment_month_offset >= 0);
-ALTER TABLE employers
-    ADD COLUMN IF NOT EXISTS payment_day_of_month SMALLINT
-        CHECK (payment_day_of_month BETWEEN 1 AND 31);
-ALTER TABLE employers
-    ADD COLUMN IF NOT EXISTS payment_business_day_offset SMALLINT NOT NULL DEFAULT 0
-        CHECK (payment_business_day_offset >= 0);
-ALTER TABLE employers
-    ADD COLUMN IF NOT EXISTS payment_calendar_day_offset SMALLINT NOT NULL DEFAULT 0
-        CHECK (payment_calendar_day_offset >= 0);
-ALTER TABLE employers
-    ADD COLUMN IF NOT EXISTS payment_effective_on_processing_next_day BOOLEAN
-        NOT NULL DEFAULT FALSE;
-ALTER TABLE employers
-    ADD COLUMN IF NOT EXISTS payment_fixed_day_roll employer_fixed_day_roll
-        NOT NULL DEFAULT 'previous_business_day';
-
 CREATE TABLE IF NOT EXISTS payroll_periods (
     id              BIGSERIAL PRIMARY KEY,
     employer_id     BIGINT         NOT NULL REFERENCES employers(id),
@@ -232,7 +210,6 @@ CREATE TABLE IF NOT EXISTS payroll_periods (
     expected_net_pay_clp NUMERIC(18,2),
     net_pay_difference_clp NUMERIC(18,2),
     pension_plan_id BIGINT         REFERENCES pension_plans(id),
-    health_plan_id  BIGINT         REFERENCES health_plans(id),
     UNIQUE (employer_id, period_year, period_month)
 );
 
@@ -247,15 +224,6 @@ CREATE TABLE IF NOT EXISTS payroll_complementary_insurance (
     complementary_insurance_plan_id BIGINT NOT NULL REFERENCES complementary_insurance_plans(id),
     PRIMARY KEY (period_id, complementary_insurance_plan_id)
 );
-
-ALTER TABLE payroll_periods
-    ADD COLUMN IF NOT EXISTS employment_contract_kind employment_contract_kind NOT NULL DEFAULT 'indefinite';
-ALTER TABLE payroll_periods
-    ADD COLUMN IF NOT EXISTS declared_net_pay_clp NUMERIC(18,2);
-ALTER TABLE payroll_periods
-    ADD COLUMN IF NOT EXISTS expected_net_pay_clp NUMERIC(18,2);
-ALTER TABLE payroll_periods
-    ADD COLUMN IF NOT EXISTS net_pay_difference_clp NUMERIC(18,2);
 
 CREATE TABLE IF NOT EXISTS payroll_concepts (
     id          BIGSERIAL PRIMARY KEY,

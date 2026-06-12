@@ -95,16 +95,16 @@ def parse_worked_days(raw_value: object) -> int:
         decimal_value = Decimal(normalized)
     except ArithmeticError as exc:
         raise PayrollValidationError(
-            "worked_days must be a whole number between 0 and 31."
+            "worked_days must be a whole number between 0 and 30."
         ) from exc
     if decimal_value != decimal_value.to_integral_value():
         raise PayrollValidationError(
-            "worked_days must be a whole number between 0 and 31."
+            "worked_days must be a whole number between 0 and 30."
         )
     worked_days = int(decimal_value)
-    if worked_days < 0 or worked_days > 31:
+    if worked_days < 0 or worked_days > 30:
         raise PayrollValidationError(
-            "worked_days must be a whole number between 0 and 31."
+            "worked_days must be a whole number between 0 and 30."
         )
     return worked_days
 

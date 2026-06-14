@@ -11,8 +11,8 @@ Modular monolith (DDD + Hexagonal):
 
 - Apply DRY, SOLID, Clean Code, DDD.
 - Strict English: All thoughts, reasoning, code, and agent responses must be in English, regardless of user input language.
-- Minimalist Output: Return raw code, commands, or data directly. No natural language explanations, conversational filler, prefaces, or post-scripts unless explicitly requested.
-- Structured Schema: If requested, explanations must use only this compact JSON block. Do not add text outside it. Use "Unknown" for missing fields. Ensure text complies with max constraints:
+- Output Optimization: Do not include natural language explanations, markdown formatting (except standard code blocks), or introductory/concluding prose. Output raw source code or raw data structures only.
+- Structured Schema: If code explanation is explicitly requested, ignore previous rules and output only a single minified JSON block using the exact schema (Do not add text outside the block):
 
 ```json
 {
@@ -27,7 +27,7 @@ Modular monolith (DDD + Hexagonal):
 
 - Naming: Identifiers, comments, docs, and files in English.
 - Domain Exceptions: Preserve official domain/regulatory terms (e.g., Chilean laws), source literals, seed data, and localized UI content in original language only if translation alters meaning. Surrounding code/docs stay English.
-- Python PEPs: PEP 8 (style), PEP 257 (all artifacts must have docstrings), PEP 484 (typing in public APIs/DTOs/ports/services; validated via `mypy`), PEP 544 (protocols for ports), PEP 585 (built-in generics), PEP 604 (unions `X | None`), PEP 498 (f-strings), PEP 492 (`async`/`await` for I/O), PEP 654 (`ExceptionGroup`/`except*` for concurrent failures), PEP 621 (`pyproject.toml` metadata).
+- Python Standards: Follow PEP 8 (style), PEP 257 (docstrings), PEP 484 (types verified with `mypy`), PEP 544 (protocols for ports), PEP 585 (built-in generics), PEP 604 (unions `X | None`), PEP 498 (f-strings), PEP 492 (`async`/`await`), PEP 654 (`ExceptionGroup`), and PEP 621 (`pyproject.toml`). Docstrings are required only for public modules, classes, and functions; internal implementations should use minimal inline code comments.
 - Decouple use cases from infra; depend on ports, not concrete adapters.
 - Avoid god objects; prefer small, focused classes.
 - Extract repeated constants, mapping, and literals to shared helpers. Zero tolerance for duplication in source or tests.

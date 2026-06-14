@@ -41,6 +41,7 @@ This repository follows a modular monolith with **DDD** and **hexagonal architec
 
 ## Scalability and safety
 
+- **Strict Operational Control**: Never execute git commits, push code to remote branches, generate tickets/issues, or open Pull Requests autonomously under any circumstances. These lifecycle actions are strictly prohibited unless the user provides an explicit, unambiguous command to proceed in the current turn.
 - Follow **SemVer** for project versioning: breaking changes increment major, backward-compatible features increment minor, and fixes increment patch.
 - Write git commit messages in **English** and follow the **Conventional Commits** specification.
 - Follow **Twelve-Factor** principles where they apply to this service: keep config in environment variables, declare dependencies explicitly, keep processes disposable and stateless, and write logs to standard output/error.

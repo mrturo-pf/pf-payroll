@@ -1,76 +1,61 @@
 # Copilot instructions for `pf-payroll`
 
-This repository follows a modular monolith with **DDD** and **hexagonal architecture**:
-
-- `src/payroll/domain`: business rules, entities, value objects, and pure calculations.
-- `src/payroll/application`: use cases, DTOs, ports, and application services.
-- `src/payroll/infrastructure`: adapters for database, importers, providers, reporting, and logging.
-- `src/payroll/interfaces`: API, CLI, and dashboard entrypoints.
-- `src/payroll/shared`: shared helpers and cross-cutting utilities used by multiple layers.
+Modular monolith (DDD + Hexagonal):
+- `src/payroll/domain`: Business rules, entities, VOs, pure calculations.
+- `src/payroll/application`: Use cases, DTOs, ports, application services.
+- `src/payroll/infrastructure`: DB, importers, providers, reporting, logging adapters.
+- `src/payroll/interfaces`: API, CLI, dashboard entrypoints.
+- `src/payroll/shared`: Cross-cutting utilities.
 
 ## Engineering standards
 
-- Apply **DRY, SOLID, Clean Code, and DDD** consistently in every change.
-- **Strict Lingua Franca**: Execute all internal thoughts, reasoning, code explanations, step-by-step analyses, and final agent responses exclusively in **English**. Regardless of the input language used by the user, the AI agent must process the request and reply solely in English.
-- **Minimalist Output Control**: Do not include natural language explanations in responses by default unless explicitly requested by the user. Deliver raw code, commands, or data directly without conversational filler, prefaces, or post-scripts.
-- **Structured Explanation Schema**: If the user explicitly requests an explanation or analysis, you must provide it solely within the boundaries of the following Markdown table structure. Do not add text or sections outside this table. If information for a cell is missing or unavailable, write "Unknown" inside that cell.
+- Apply DRY, SOLID, Clean Code, DDD.
+- Strict English: All thoughts, reasoning, code, and agent responses must be in English, regardless of user input language.
+- Minimalist Output: Return raw code, commands, or data directly. No natural language explanations, conversational filler, prefaces, or post-scripts unless explicitly requested.
+- Structured Schema: If requested, explanations must use only this compact JSON block. Do not add text outside it. Use "Unknown" for missing fields. Ensure text complies with max constraints:
 
-| Field                | Content                                                                            |
-| -------------------- | ---------------------------------------------------------------------------------- |
-| Problem summary      | One sentence (max 20 words).                                                       |
-| Suspected root cause | One sentence (max 20 words).                                                       |
-| Evidence needed      | Max 3 short bullets (max 20 words per bullet).                                     |
-| Proposed fix          | Max 3 short bullets (max 20 words per bullet).                                     |
-| Risks & Side Effects | Max 2 bullets tracking technical/financial blast radius (max 20 words per bullet).  |
-| Done when            | Verifiable criteria (max 20 words per bullet).                                      |
+```json
+{
+  "problem_summary": "1 sentence, max 20 words.",
+  "suspected_root_cause": "1 sentence, max 20 words.",
+  "evidence_needed": ["Max 3 items", "max 20 words each"],
+  "proposed_fix": ["Max 3 items", "max 20 words each"],
+  "risks_side_effects": ["Max 2 items tracking blast radius", "max 20 words each"],
+  "done_when": ["Verifiable criteria", "max 20 words each"]
+}
+```
 
-- Keep all identifiers, internal comments, and authored documentation in **English**, including file names, modules, classes, methods, functions, variables, and constants.
-- Preserve **official domain terms, legal or regulatory wording, source-system literals, seed or reference data values, and user-facing localized content** in their original language (e.g., Spanish for Chilean regulatory terms) only when translation would change meaning, break parsing, or reduce domain fidelity.
-- When these specific domain exceptions are necessary, keep the surrounding code, comments, documentation, and agent explanations strictly in **English**.
-- Follow **PEP 8** for Python style and formatting so code stays compatible with the repository lint rules.
-- Follow **PEP 257** docstring conventions for every Python artifact. Module, package, class, function, method, and script docstrings must all be present; no Python artifact should be left undocumented.
-- Follow **PEP 484** typing consistently in public APIs, DTOs, ports, and application services; type safety is validated with `mypy`.
-- Use **PEP 544** protocols for application ports and structural contracts between the application layer and adapters.
-- Prefer **PEP 585** built-in generics like `list[str]` and `dict[str, Decimal]` instead of legacy `typing.List` or `typing.Dict`.
-- Prefer **PEP 604** unions like `X | None` instead of `Optional[X]` and `Union[...]`.
-- Prefer **PEP 498** f-strings for string interpolation unless another API requires a different formatting style.
-- Use **PEP 492** `async` / `await` for I/O-bound workflows and adapters so asynchronous boundaries stay explicit.
-- Treat **PEP 654** as the guideline for concurrent failure aggregation: use `ExceptionGroup` and `except*` only when multiple async or concurrent failures must be surfaced together.
-- Keep package metadata in **PEP 621** `pyproject.toml` fields instead of legacy setup metadata files.
-- Keep use cases decoupled from infrastructure. Application code should depend on **ports**, not concrete adapters.
-- Prefer small, focused classes and helpers. Avoid growing repository or service "god objects".
-- Extract repeated business constants and mapping logic to shared helpers instead of duplicating literals.
-- Be strict about duplication: do not leave duplicated code in source or tests; refactor to shared helpers before finishing.
-- Use **semantic application errors** from `src/payroll/application/errors.py` instead of ad-hoc generic errors whenever the failure is part of the business flow.
-- Do not use `assert` for production validation. Raise explicit errors instead.
-- Fail loudly and explicitly; do not hide invalid states with silent fallbacks or broad exception handling.
+- Naming: Identifiers, comments, docs, and files in English.
+- Domain Exceptions: Preserve official domain/regulatory terms (e.g., Chilean laws), source literals, seed data, and localized UI content in original language only if translation alters meaning. Surrounding code/docs stay English.
+- Python PEPs: PEP 8 (style), PEP 257 (all artifacts must have docstrings), PEP 484 (typing in public APIs/DTOs/ports/services; validated via `mypy`), PEP 544 (protocols for ports), PEP 585 (built-in generics), PEP 604 (unions `X | None`), PEP 498 (f-strings), PEP 492 (`async`/`await` for I/O), PEP 654 (`ExceptionGroup`/`except*` for concurrent failures), PEP 621 (`pyproject.toml` metadata).
+- Decouple use cases from infra; depend on ports, not concrete adapters.
+- Avoid god objects; prefer small, focused classes.
+- Extract repeated constants, mapping, and literals to shared helpers. Zero tolerance for duplication in source or tests.
+- Use `src/payroll/application/errors.py` for business flow errors.
+- Never use `assert` for production validation. Raise explicit errors. Fail loudly; no silent fallbacks.
 
 ## Financial and domain rules
 
-- Preserve strict financial precision with `Decimal` in Python and `NUMERIC` in PostgreSQL.
-- Never introduce float-based monetary calculations.
-- Keep Chilean payroll rules explicit and historically traceable.
+- Strict precision: `Decimal` in Python, `NUMERIC` in PostgreSQL. Float-based monetary calculation is forbidden.
+- Chilean payroll rules must be explicit and historically traceable.
 
 ## Scalability and safety
 
-- **Strict Operational Control**: Never execute git commits, push code to remote branches, generate tickets/issues, or open Pull Requests autonomously under any circumstances. These lifecycle actions are strictly prohibited unless the user provides an explicit, unambiguous command to proceed in the current turn.
-- Follow **SemVer** for project versioning: breaking changes increment major, backward-compatible features increment minor, and fixes increment patch.
-- Write git commit messages in **English** and follow the **Conventional Commits** specification.
-- Follow **Twelve-Factor** principles where they apply to this service: keep config in environment variables, declare dependencies explicitly, keep processes disposable and stateless, and write logs to standard output/error.
-- Keep HTTP, CLI, and dashboard layers thin; orchestration belongs in application use cases.
-- Prefer reusable mappers, normalization helpers, and shared constants when multiple flows use the same rule.
-- Keep validations explicit and close to the boundary or domain rule they protect.
-- Preserve existing behavior unless the change intentionally updates a business rule.
+- Strict Operational Control: Prohibited from executing git commits, pushing branches, creating tickets/issues, or opening PRs autonomously. Requires explicit user command per turn.
+- SemVer for versioning. English Conventional Commits for git messages.
+- Follow 12-Factor (env vars for config, explicit deps, stateless/disposable processes, stdout/stderr logs).
+- Thin HTTP/CLI/dashboard layers; orchestration stays in use cases.
+- Validations must be explicit and close to boundaries or domain rules.
 
 ## Repository validation
 
-Before finishing changes, validate with:
+Validate before finishing:
 
 ```bash
 PATH=.venv/bin:$PATH make check
 ```
 
-- `make check` runs all quality gates in sequence: `lint`, `dead-code`, `typecheck`, `duplicate-code-src`, `duplicate-code-tests`, `test`, and `test-cov`.
-- Duplicate-code thresholds are strict: `src` must stay at or below **1%** and `tests` at or below **10%**.
-- The repository expects **100% coverage** for `src`.
-- For local validation of payroll import or period-range changes, prefer resetting real data first with `make db-reset-data-real`.
+- `make check` runs: `lint` -> `dead-code` -> `typecheck` -> `duplicate-code-src` -> `duplicate-code-tests` -> `test` -> `test-cov`.
+- Duplication thresholds: `src` <= 1%, `tests` <= 10%.
+- Coverage target: 100% for `src`.
+- Data reset for local validation: `make db-reset-data-real`.

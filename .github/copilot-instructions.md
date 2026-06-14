@@ -11,9 +11,10 @@ This repository follows a modular monolith with **DDD** and **hexagonal architec
 ## Engineering standards
 
 - Apply **DRY, SOLID, Clean Code, and DDD** consistently in every change.
-- Keep identifiers, internal comments, and authored documentation in **English** by default, including file names, modules, classes, methods, functions, variables, and constants.
-- Preserve **official domain terms, legal or regulatory wording, source-system literals, seed or reference data values, and user-facing localized content** in their original language when translation would change meaning, break parsing, or reduce domain fidelity.
-- When these exceptions are necessary, keep the surrounding code, comments, and explanations in **English**.
+- **Strict Lingua Franca**: Execute all internal thoughts, reasoning, code explanations, step-by-step analyses, and final agent responses exclusively in **English**. Regardless of the input language used by the user, the AI agent must process the request and reply solely in English.
+- Keep all identifiers, internal comments, and authored documentation in **English**, including file names, modules, classes, methods, functions, variables, and constants.
+- Preserve **official domain terms, legal or regulatory wording, source-system literals, seed or reference data values, and user-facing localized content** in their original language (e.g., Spanish for Chilean regulatory terms) only when translation would change meaning, break parsing, or reduce domain fidelity.
+- When these specific domain exceptions are necessary, keep the surrounding code, comments, documentation, and agent explanations strictly in **English**.
 - Follow **PEP 8** for Python style and formatting so code stays compatible with the repository lint rules.
 - Follow **PEP 257** docstring conventions for every Python artifact. Module, package, class, function, method, and script docstrings must all be present; no Python artifact should be left undocumented.
 - Follow **PEP 484** typing consistently in public APIs, DTOs, ports, and application services; type safety is validated with `mypy`.

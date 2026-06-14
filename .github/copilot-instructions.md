@@ -12,6 +12,18 @@ This repository follows a modular monolith with **DDD** and **hexagonal architec
 
 - Apply **DRY, SOLID, Clean Code, and DDD** consistently in every change.
 - **Strict Lingua Franca**: Execute all internal thoughts, reasoning, code explanations, step-by-step analyses, and final agent responses exclusively in **English**. Regardless of the input language used by the user, the AI agent must process the request and reply solely in English.
+- **Minimalist Output Control**: Do not include natural language explanations in responses by default unless explicitly requested by the user. Deliver raw code, commands, or data directly without conversational filler, prefaces, or post-scripts.
+- **Structured Explanation Schema**: If the user explicitly requests an explanation or analysis, you must provide it solely within the boundaries of the following Markdown table structure. Do not add text or sections outside this table. If information for a cell is missing or unavailable, write "Unknown" inside that cell.
+
+| Field                | Content                                                                            |
+| -------------------- | ---------------------------------------------------------------------------------- |
+| Problem summary      | One sentence (max 20 words).                                                       |
+| Suspected root cause | One sentence (max 20 words).                                                       |
+| Evidence needed      | Max 3 short bullets (max 20 words per bullet).                                     |
+| Proposed fix          | Max 3 short bullets (max 20 words per bullet).                                     |
+| Risks & Side Effects | Max 2 bullets tracking technical/financial blast radius (max 20 words per bullet).  |
+| Done when            | Verifiable criteria (max 20 words per bullet).                                      |
+
 - Keep all identifiers, internal comments, and authored documentation in **English**, including file names, modules, classes, methods, functions, variables, and constants.
 - Preserve **official domain terms, legal or regulatory wording, source-system literals, seed or reference data values, and user-facing localized content** in their original language (e.g., Spanish for Chilean regulatory terms) only when translation would change meaning, break parsing, or reduce domain fidelity.
 - When these specific domain exceptions are necessary, keep the surrounding code, comments, documentation, and agent explanations strictly in **English**.

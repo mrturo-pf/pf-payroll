@@ -4,29 +4,16 @@ from payroll.application.dto import (
     ComputeUnemploymentInsuranceCommandDTO,
     ComputeUnemploymentInsuranceResultDTO,
 )
-from payroll.application.ports.repositories import (
-    MarketDataRepository,
-    PayrollRepository,
+from payroll.application.services.contribution_computation import (
+    _WithContributionCalculator,
 )
 from payroll.application.services.exchange_rates import (
     resolve_month_end_uf_exchange_rate,
 )
-from payroll.domain.contribution_calculator import ContributionCalculator
 
 
-class ComputeUnemploymentInsurance:
+class ComputeUnemploymentInsurance(_WithContributionCalculator):
     """Computes and persists unemployment insurance for a payroll period."""
-
-    def __init__(
-        self,
-        repository: PayrollRepository,
-        market_data_repository: MarketDataRepository,
-        calculator: ContributionCalculator | None = None,
-    ) -> None:
-        """Initialize the instance."""
-        self._repository = repository
-        self._market_data_repository = market_data_repository
-        self._calculator = calculator or ContributionCalculator()
 
     async def execute(
         self, command: ComputeUnemploymentInsuranceCommandDTO

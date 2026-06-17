@@ -43,17 +43,11 @@ from payroll.application.use_cases.refresh_income_tax_brackets import (
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.application.use_cases.refresh_rates import RefreshRates
 from payroll.application.use_cases.sync_recent_market_data import SyncRecentMarketData
-from payroll.infrastructure.db.repositories.market_data_repository import (
-    SqlAlchemyMarketDataRepository,
-)
-from payroll.infrastructure.db.repositories.payroll_repository import (
-    SqlAlchemyPayrollRepository,
-)
-from payroll.infrastructure.db.repositories.reference_data_repository import (
-    SqlAlchemyReferenceDataRepository,
-)
-from payroll.infrastructure.db.repositories.complementary_insurance_repository import (
+from payroll.interfaces.repositories import (
     SqlAlchemyComplementaryInsuranceRepository,
+    SqlAlchemyMarketDataRepository,
+    SqlAlchemyPayrollRepository,
+    SqlAlchemyReferenceDataRepository,
 )
 from payroll.config import settings
 from payroll.interfaces.session import SessionLocal, open_session

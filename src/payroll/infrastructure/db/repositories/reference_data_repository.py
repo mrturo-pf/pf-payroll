@@ -1,9 +1,11 @@
 """SQLAlchemy repository for reference data."""
 
+from collections.abc import Sequence
 from datetime import date
 
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy import and_, or_, select
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from payroll.application.dto import (
@@ -27,6 +29,25 @@ from payroll.infrastructure.db.models.reference_data import (
     PensionInstitutionModel,
     PensionPlanModel,
 )
+
+
+def _to_health_plan_dtos(
+    rows: Sequence[Row[tuple[HealthPlanModel, HealthInstitutionModel]]],
+) -> list[HealthPlanDTO]:
+    """Map (HealthPlanModel, HealthInstitutionModel) rows to HealthPlanDTOs."""
+    return [
+        HealthPlanDTO(
+            id=plan.id,
+            institution_code=institution.code,
+            institution_name=institution.name,
+            institution_kind=institution.kind,
+            valid_from=plan.valid_from,
+            valid_to=plan.valid_to,
+            plan_name=plan.plan_name,
+            contracted_uf=plan.contracted_uf,
+        )
+        for plan, institution in rows
+    ]
 
 
 class SqlAlchemyReferenceDataRepository:
@@ -122,19 +143,7 @@ class SqlAlchemyReferenceDataRepository:
         if not include_inactive:
             statement = statement.where(HealthInstitutionModel.is_active.is_(True))
         result = await self._session.execute(statement)
-        return [
-            HealthPlanDTO(
-                id=plan.id,
-                institution_code=institution.code,
-                institution_name=institution.name,
-                institution_kind=institution.kind,
-                valid_from=plan.valid_from,
-                valid_to=plan.valid_to,
-                plan_name=plan.plan_name,
-                contracted_uf=plan.contracted_uf,
-            )
-            for plan, institution in result.all()
-        ]
+        return _to_health_plan_dtos(result.all())
 
     async def list_contribution_caps(self) -> list[ContributionCapDTO]:
         """List contribution caps."""
@@ -290,16 +299,4 @@ class SqlAlchemyReferenceDataRepository:
             )
             .order_by(HealthPlanModel.valid_from.desc())
         )
-        return [
-            HealthPlanDTO(
-                id=plan.id,
-                institution_code=institution.code,
-                institution_name=institution.name,
-                institution_kind=institution.kind,
-                valid_from=plan.valid_from,
-                valid_to=plan.valid_to,
-                plan_name=plan.plan_name,
-                contracted_uf=plan.contracted_uf,
-            )
-            for plan, institution in result.all()
-        ]
+        return _to_health_plan_dtos(result.all())

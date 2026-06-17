@@ -163,8 +163,8 @@ def build_imported_contribution_validation(
     )
 
 
-class ContributionComputationService:
-    """Compute payroll contributions without persisting them."""
+class _WithContributionCalculator:
+    """Base for classes that need a calculator, payroll repo, and market-data repo."""
 
     def __init__(
         self,
@@ -176,6 +176,10 @@ class ContributionComputationService:
         self._repository = repository
         self._market_data_repository = market_data_repository
         self._calculator = calculator or ContributionCalculator()
+
+
+class ContributionComputationService(_WithContributionCalculator):
+    """Compute payroll contributions without persisting them."""
 
     async def compute(
         self, command: ComputeContributionsCommandDTO

@@ -9,7 +9,7 @@ from calendar import monthrange
 from datetime import date, datetime
 from decimal import Decimal
 from html import unescape
-from collections.abc import Callable, Hashable
+from collections.abc import Awaitable, Callable, Hashable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -110,6 +110,19 @@ def _build_exchange_rate_entry(
         value_clp=value_clp,
         source=source,
     )
+
+
+async def _rate_entry_from_rate(
+    currency_code: str,
+    on: date,
+    fetch_rate: Callable[[str, date], Awaitable[Decimal | None]],
+    source: str,
+) -> ExchangeRateWriteDTO | None:
+    """Build an exchange-rate entry using a fetch_rate callback."""
+    value = await fetch_rate(currency_code, on)
+    if value is None:
+        return None
+    return _build_exchange_rate_entry(currency_code, on, value, source)
 
 
 def _extract_observation_value(observation: dict[str, object]) -> Decimal | None:
@@ -292,7 +305,27 @@ def _build_monthly_income_tax_brackets(
     return brackets
 
 
-class MindicadorRateProvider:
+class _FetchRateEntryMixin:
+    """Mixin that derives fetch_rate_entry from fetch_rate and name."""
+
+    name: str
+
+    async def fetch_rate(  # pragma: no cover
+        self, currency_code: str, on: date
+    ) -> Decimal | None:
+        """Handle fetch rate."""
+        raise NotImplementedError
+
+    async def fetch_rate_entry(
+        self, currency_code: str, on: date
+    ) -> ExchangeRateWriteDTO | None:
+        """Handle fetch rate entry."""
+        return await _rate_entry_from_rate(
+            currency_code, on, self.fetch_rate, self.name
+        )
+
+
+class MindicadorRateProvider(_FetchRateEntryMixin):
     """Provide mindicador rate provider."""
 
     name = "mindicador"
@@ -368,15 +401,6 @@ class MindicadorRateProvider:
             return None
         return await self._get_latest_value_on_or_before(indicator, on)
 
-    async def fetch_rate_entry(
-        self, currency_code: str, on: date
-    ) -> ExchangeRateWriteDTO | None:
-        """Handle fetch rate entry."""
-        value = await self.fetch_rate(currency_code, on)
-        if value is None:
-            return None
-        return _build_exchange_rate_entry(currency_code, on, value, self.name)
-
     async def fetch_rate_entries(
         self, currency_code: str, requested_dates: list[date]
     ) -> list[ExchangeRateWriteDTO]:
@@ -412,10 +436,8 @@ class MindicadorRateProvider:
         return _ordered_entries(entries_by_date, requested_dates)
 
 
-class SiiIndicatorsProvider:
-    """Provide sii indicators provider."""
-
-    name = "sii"
+class _SiiBaseProvider:
+    """Shared HTTP-fetcher setup for SII providers."""
 
     def __init__(
         self,
@@ -427,6 +449,23 @@ class SiiIndicatorsProvider:
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._fetcher = fetcher or _fetch_url
+
+
+class SiiIndicatorsProvider(_SiiBaseProvider, _FetchRateEntryMixin):
+    """Provide sii indicators provider."""
+
+    name = "sii"
+
+    def __init__(
+        self,
+        base_url: str = "https://www.sii.cl",
+        timeout_seconds: int = 10,
+        fetcher: Callable[[str, int], str] | None = None,
+    ) -> None:
+        """Initialize the instance."""
+        super().__init__(
+            base_url=base_url, timeout_seconds=timeout_seconds, fetcher=fetcher
+        )
         self._rows_cache: dict[int, dict[int, list[str]]] = {}
 
     async def _get_rows(self, year: int) -> dict[int, list[str]]:
@@ -452,20 +491,6 @@ class SiiIndicatorsProvider:
         if row is None or len(row) < 2:
             return None
         return _parse_chilean_decimal(row[1])
-
-    async def fetch_rate_entry(
-        self, currency_code: str, on: date
-    ) -> ExchangeRateWriteDTO | None:
-        """Handle fetch rate entry."""
-        value = await self.fetch_rate(currency_code, on)
-        if value is None:
-            return None
-        return ExchangeRateWriteDTO(
-            currency_code=currency_code.upper(),
-            rate_date=on,
-            value_clp=value,
-            source=self.name,
-        )
 
     async def fetch_rate_entries(
         self, currency_code: str, requested_dates: list[date]
@@ -550,21 +575,10 @@ class SiiIndicatorsProvider:
         return _ordered_entries(entries_by_period, requested_periods)
 
 
-class SiiIncomeTaxBracketProvider:
+class SiiIncomeTaxBracketProvider(_SiiBaseProvider):
     """Provide sii income tax bracket provider."""
 
     name = "sii"
-
-    def __init__(
-        self,
-        base_url: str = "https://www.sii.cl",
-        timeout_seconds: int = 10,
-        fetcher: Callable[[str, int], str] | None = None,
-    ) -> None:
-        """Initialize the instance."""
-        self._base_url = base_url.rstrip("/")
-        self._timeout_seconds = timeout_seconds
-        self._fetcher = fetcher or _fetch_url
 
     async def fetch_income_tax_brackets(
         self, year: int
@@ -585,7 +599,7 @@ class SiiIncomeTaxBracketProvider:
         return brackets
 
 
-class BcchSeriesProvider:
+class BcchSeriesProvider(_FetchRateEntryMixin):
     """Provide bcch series provider."""
 
     name = "bcch"
@@ -654,15 +668,6 @@ class BcchSeriesProvider:
                 continue
             return value
         return None
-
-    async def fetch_rate_entry(
-        self, currency_code: str, on: date
-    ) -> ExchangeRateWriteDTO | None:
-        """Handle fetch rate entry."""
-        value = await self.fetch_rate(currency_code, on)
-        if value is None:
-            return None
-        return _build_exchange_rate_entry(currency_code, on, value, self.name)
 
     async def fetch_rate_entries(
         self, currency_code: str, requested_dates: list[date]

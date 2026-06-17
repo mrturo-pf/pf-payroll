@@ -33,17 +33,11 @@ from payroll.application.use_cases.process_imported_payroll_periods import (
 )
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
-from payroll.infrastructure.db.repositories.market_data_repository import (
-    SqlAlchemyMarketDataRepository,
-)
-from payroll.infrastructure.db.repositories.payroll_repository import (
-    SqlAlchemyPayrollRepository,
-)
-from payroll.infrastructure.db.repositories.reference_data_repository import (
-    SqlAlchemyReferenceDataRepository,
-)
-from payroll.infrastructure.db.repositories.complementary_insurance_repository import (
+from payroll.interfaces.repositories import (
     SqlAlchemyComplementaryInsuranceRepository,
+    SqlAlchemyMarketDataRepository,
+    SqlAlchemyPayrollRepository,
+    SqlAlchemyReferenceDataRepository,
 )
 from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
 from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import (

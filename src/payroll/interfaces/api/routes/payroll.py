@@ -1,6 +1,6 @@
 """Payroll routes."""
 
-from dataclasses import asdict, replace
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from typing import Literal
@@ -14,6 +14,7 @@ from payroll.application.errors import PayrollError
 from payroll.application.dto import (
     AssignPlansCommandDTO,
     GeneratedPayrollReportDTO,
+    ImportedPayrollPeriodDTO,
     ReviewPayrollPeriodCommandDTO,
     ComputeContributionsCommandDTO,
     DeflateAmountsCommandDTO,
@@ -55,58 +56,12 @@ from payroll.interfaces.api.dependencies import (
 router = APIRouter(prefix="/payroll", tags=["payroll"])
 
 
-class ImportedContributionValidationRead(BaseModel):
-    """Represent Imported Contribution Validation Read."""
-
-    declared_pension_base_clp: Decimal | None = None
-    expected_pension_base_clp: Decimal | None = None
-    pension_base_difference_clp: Decimal | None = None
-    declared_pension_additional_clp: Decimal | None = None
-    expected_pension_additional_clp: Decimal | None = None
-    pension_additional_difference_clp: Decimal | None = None
-    declared_health_base_clp: Decimal | None = None
-    expected_health_base_clp: Decimal | None = None
-    health_base_difference_clp: Decimal | None = None
-    declared_health_plan_additional_clp: Decimal | None = None
-    expected_health_plan_additional_clp: Decimal | None = None
-    health_plan_additional_difference_clp: Decimal | None = None
-    warning: str | None = None
-
-
-class ImportedComplementaryInsuranceValidationRead(BaseModel):
-    """Represent Imported Complementary Insurance Validation Read."""
-
-    warnings: list[str] = []
-
-
-class ImportedPayrollPeriodRead(BaseModel):
-    """Represent Imported Payroll Period Read."""
-
-    id: int
-    employer: str
-    period_year: int
-    period_month: int
-    payment_date: date
-    worked_days: int
-    status: str
-    employment_contract_kind: str
-    item_count: int
-    declared_net_pay_clp: Decimal | None = None
-    expected_net_pay_clp: Decimal | None = None
-    net_pay_difference_clp: Decimal | None = None
-    net_pay_warning: str | None = None
-    contribution_validation: ImportedContributionValidationRead | None = None
-    complementary_insurance_validation: (
-        ImportedComplementaryInsuranceValidationRead | None
-    ) = None
-
-
 class ImportPayrollResponse(BaseModel):
     """Represent Import Payroll Response."""
 
     imported_periods: int
     imported_items: int
-    periods: list[ImportedPayrollPeriodRead]
+    periods: list[ImportedPayrollPeriodDTO]
 
 
 class ComputeContributionsRequest(BaseModel):
@@ -389,9 +344,7 @@ async def import_payroll(
     return ImportPayrollResponse(
         imported_periods=result.imported_periods,
         imported_items=result.imported_items,
-        periods=[
-            ImportedPayrollPeriodRead(**asdict(period)) for period in result.periods
-        ],
+        periods=list(result.periods),
     )
 
 

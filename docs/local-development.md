@@ -153,12 +153,25 @@ The repository requires **100% coverage** for `src`.
 
 ## Linting and type checking
 
+Run the full validation flow:
+
 ```bash
 source .venv/bin/activate
-make lint
-make dead-code
-make typecheck
+make check
 ```
+
+`make check` runs `lint`, `dead-code`, `typecheck`, `duplicate-code`, `test`, and `test-cov` in that order and stops on the first failure.
+
+Each step can also be run individually:
+
+```bash
+make lint           # Ruff: auto-fix and validate style (PEP 8, PEP 257)
+make dead-code      # Vulture: detect unused production code under src
+make typecheck      # mypy: validate typing baseline (PEP 484, 544, 585, 604)
+make duplicate-code # detect duplicated code blocks
+```
+
+For `make test` and `make test-cov` see [Testing](#testing) above.
 
 ## Cleaning generated files
 

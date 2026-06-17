@@ -19,75 +19,9 @@ This repository implements a modular monolith for Chilean payroll operations wit
 - FastAPI API, Typer CLI, and an operational HTML dashboard
 - PostgreSQL persistence with local Rancher Desktop workflows
 
-## Supported business flow
-
-The core payroll flow currently supported is:
-
-```text
-import -> assign plans -> compute contributions -> compute tax -> review -> report PDF
-```
-
 ## Quick start
 
-1. Install dependencies:
-
-   ```bash
-   make install
-   ```
-
-2. Start the local PostgreSQL database:
-
-   ```bash
-   make db-up
-   ```
-
-   To also load test-only fixtures into the local database:
-
-   ```bash
-   make db-up-test
-   ```
-
-   To also load real fixtures into the local database:
-
-   ```bash
-   make db-up-real
-   ```
-
-   To wipe current data and rebuild schema plus seed base data in the same local database:
-
-   ```bash
-   make db-reset-data
-   ```
-
-   To wipe current data and rebuild schema plus seed base test data in the same local database:
-
-   ```bash
-   make db-reset-data-test
-   ```
-
-   To wipe current data and rebuild schema plus seed base real data in the same local database:
-
-   ```bash
-   make db-reset-data-real
-   ```
-
-   To start DB viewer (Adminer):
-
-   ```bash
-   make adminer-up
-   ```
-
-3. Run the API:
-
-   ```bash
-   make run
-   ```
-
-4. Open the API docs:
-
-   ```text
-   http://127.0.0.1:8000/docs
-   ```
+See [`docs/getting-started.md`](docs/getting-started.md) to install, set up the database, and run the API.
 
 ## Documentation map
 
@@ -98,44 +32,6 @@ import -> assign plans -> compute contributions -> compute tax -> review -> repo
 | [`docs/payroll-workflow.md`](docs/payroll-workflow.md) | End-to-end payroll flow, full CSV/XLSX import format, supported taxable income columns, and examples. |
 | [`docs/local-development.md`](docs/local-development.md) | Rancher Desktop database workflow, Adminer, testing, linting, and cleanup. |
 | [`docs/architectural-report.md`](docs/architectural-report.md) | Architecture report and target design. |
-
-## Interfaces
-
-| Interface | Entry point | Notes |
-| --- | --- | --- |
-| API | `make run` | FastAPI app with `/docs`, `/redoc`, and JSON endpoints. |
-| CLI | `python -m payroll.interfaces.cli.main` | Operational commands for payroll import, calculation, review, and PDF export. |
-| Dashboard | `python -m payroll.interfaces.dashboard.app > payroll-dashboard.html` | HTML view showing payroll periods and next business action. |
-
-The **complete API endpoint list** is maintained in [`docs/interfaces.md`](docs/interfaces.md).
-
-## Validation commands
-
-```bash
-source .venv/bin/activate
-make lint
-make dead-code
-make typecheck
-```
-
-Run the full validation flow:
-
-```bash
-source .venv/bin/activate
-make check
-```
-
-`make check` runs `lint`, `dead-code`, `typecheck`, `duplicate-code`, `test`,
-and `test-cov` in that order and stops on the first failure.
-
-Validation and standards enforcement are split as follows:
-
-- `make lint` uses **Ruff** to auto-fix and validate repository Python style rules, including the adopted **PEP 8** and **PEP 257** conventions.
-- `make dead-code` uses **Vulture** to detect potentially unused production code under `src`.
-- `make typecheck` uses **mypy** to validate the repository typing baseline based on **PEP 484**, **PEP 544**, **PEP 585**, and **PEP 604**.
-- Project metadata is maintained in `pyproject.toml` using **PEP 621** fields.
-
-The project requires **100% coverage** for `src`.
 
 ## Engineering policy
 
@@ -162,10 +58,3 @@ This repository adopts the following engineering standards and conventions:
 - `tests`: unit and integration coverage
 - `db`: SQL schema, default seed data, and test-only seed data
 
-## Next reading
-
-If you want to operate the system end to end, start here:
-
-1. [`docs/getting-started.md`](docs/getting-started.md)
-2. [`docs/payroll-workflow.md`](docs/payroll-workflow.md)
-3. [`docs/interfaces.md`](docs/interfaces.md)

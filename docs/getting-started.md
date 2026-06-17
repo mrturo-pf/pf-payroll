@@ -30,30 +30,7 @@ Activate the virtual environment:
 source .venv/bin/activate
 ```
 
-Start the local database:
-
-```bash
-make db-up
-```
-
-If you also want local test-only fixtures loaded:
-
-```bash
-make db-up-test
-```
-```
-
-If you also want local real fixtures loaded:
-
-```bash
-make db-up-real
-```
-
-If you need to wipe local data and rebuild the database contents from scratch:
-
-```bash
-make db-reset-data
-```
+Start the local database — see [`local-development.md`](local-development.md#rancher-desktop-postgresql) for all `db-up` variants, fixture options, and reset commands.
 
 Run the API:
 
@@ -87,15 +64,8 @@ Expected response:
 
 ## First validation pass
 
-```bash
-make lint
-make dead-code
-make typecheck
-make test-cov
-```
+See [`local-development.md`](local-development.md#linting-and-type-checking) for linting, type checking, and coverage commands.
 
 ## Where to go next
 
-- End-to-end payroll flow: [`payroll-workflow.md`](payroll-workflow.md)
-- Complete API endpoint inventory, CLI, and dashboard usage: [`interfaces.md`](interfaces.md)
-- Local DB and tooling: [`local-development.md`](local-development.md)
+See the [documentation map](../README.md#documentation-map) for all available guides.

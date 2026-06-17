@@ -266,6 +266,28 @@ def to_payroll_summary_read(summary: PayrollSummaryDTO) -> PayrollSummaryRead:
     )
 
 
+def _compute_increase(
+    item: PayrollPeriodRangeDTO,
+    predecessor: PayrollPeriodRangeDTO | None,
+) -> bool | None:
+    """Return whether salary increased relative to the preceding period.
+
+    Compares (salary_base / worked_days) * 30 for both periods.
+    Returns None when data is insufficient to determine the direction.
+    """
+    if (
+        predecessor is None
+        or item.salary_base is None
+        or not item.worked_days
+        or predecessor.salary_base is None
+        or not predecessor.worked_days
+    ):
+        return None
+    current_normalized = (item.salary_base / item.worked_days) * 30
+    prev_normalized = (predecessor.salary_base / predecessor.worked_days) * 30
+    return current_normalized > prev_normalized
+
+
 def to_payroll_period_range_reads(
     period_ranges: list[PayrollPeriodRangeDTO],
 ) -> list[PayrollPeriodRangeRead]:
@@ -276,6 +298,8 @@ def to_payroll_period_range_reads(
     )
     ranges: list[PayrollPeriodRangeRead] = []
     for index, item in enumerate(period_ranges):
+        if item.is_lookback:
+            continue  # ghost predecessor — not emitted, used only via index lookup
         position: Literal["previous", "current", "future"] = (
             "current"
             if item.is_current
@@ -283,6 +307,12 @@ def to_payroll_period_range_reads(
             if current_index is not None and index < current_index
             else "future"
         )
+        if position in {"previous", "current"}:
+            increase: bool | None = _compute_increase(
+                item, period_ranges[index - 1] if index > 0 else None
+            )
+        else:
+            increase = bool(item.increase)
         ranges.append(
             PayrollPeriodRangeRead(
                 period_year=item.period_year,
@@ -293,9 +323,7 @@ def to_payroll_period_range_reads(
                     str(item.net_pay_clp) if item.net_pay_clp is not None else None
                 ),
                 position=position,
-                increase=None
-                if position in {"previous", "current"}
-                else bool(item.increase),
+                increase=increase,
             )
         )
     return ranges

@@ -3,7 +3,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from payroll.application.dto import (
     PayrollItemDetailDTO,
@@ -215,6 +215,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             increase_frequency=effective_increase_frequency,
         )
 
+        # Fetch one extra period (13th) to serve as lookback for the oldest window entry
         previous_result = await self._session.execute(
             select(PayrollPeriodModel)
             .where(PayrollPeriodModel.payment_date < current_start)
@@ -222,9 +223,44 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                 PayrollPeriodModel.payment_date.desc(),
                 PayrollPeriodModel.id.desc(),
             )
-            .limit(12)
+            .limit(13)
         )
-        previous_periods = list(previous_result.scalars().all())
+        all_previous_fetched = list(previous_result.scalars().all())
+        # all_previous_fetched is ordered most-recent-first (DESC); the last item is oldest.
+        # If 13 were returned, the oldest is the lookback and is excluded from the window.
+        if len(all_previous_fetched) > 12:
+            lookback_period_model: PayrollPeriodModel | None = all_previous_fetched[-1]
+            previous_periods = all_previous_fetched[:-1]
+        else:
+            lookback_period_model = None
+            previous_periods = all_previous_fetched
+
+        # Fetch salary_base (sum of SALARY_BASE items) for previous, lookback and current
+        salary_base_map: dict[int, Decimal] = {}
+        period_ids = [period.id for period in previous_periods]
+        if lookback_period_model is not None:
+            period_ids.append(lookback_period_model.id)
+        current_period_id: int | None = (
+            current_period.id if current_row is not None else None
+        )
+        if current_period_id is not None:
+            period_ids.append(current_period_id)
+        if period_ids:
+            salary_result = await self._session.execute(
+                select(
+                    PayrollItemModel.period_id,
+                    func.sum(PayrollItemModel.amount_clp).label("salary_base"),
+                )
+                .join(
+                    PayrollConceptModel,
+                    PayrollItemModel.concept_id == PayrollConceptModel.id,
+                )
+                .where(PayrollItemModel.period_id.in_(period_ids))
+                .where(PayrollConceptModel.code == "SALARY_BASE")
+                .group_by(PayrollItemModel.period_id)
+            )
+            salary_base_map = {row[0]: row[1] for row in salary_result.all()}
+
         previous_ranges = [
             PayrollPeriodRangeDTO(
                 period_year=period.period_year,
@@ -235,6 +271,8 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                 is_current=False,
                 inferred=False,
                 increase=None,
+                salary_base=salary_base_map.get(period.id),
+                worked_days=period.worked_days,
             )
             for period in reversed(previous_periods)
         ]
@@ -276,6 +314,24 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                 )
             previous_ranges = inferred_previous + previous_ranges
 
+        # Prepend lookback ghost: not part of the response window but provides
+        # salary context so the oldest previous period can have its increase computed.
+        if lookback_period_model is not None:
+            lookback_dto = PayrollPeriodRangeDTO(
+                period_year=lookback_period_model.period_year,
+                period_month=lookback_period_model.period_month,
+                start_date=lookback_period_model.payment_date,
+                end_date=lookback_period_model.payment_date,
+                net_pay_clp=lookback_period_model.declared_net_pay_clp,
+                is_current=False,
+                inferred=False,
+                increase=None,
+                salary_base=salary_base_map.get(lookback_period_model.id),
+                worked_days=lookback_period_model.worked_days,
+                is_lookback=True,
+            )
+            previous_ranges = [lookback_dto] + previous_ranges
+
         current_range = PayrollPeriodRangeDTO(
             period_year=current_year,
             period_month=current_month,
@@ -285,6 +341,14 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             is_current=True,
             inferred=current_inferred,
             increase=None,
+            salary_base=(
+                salary_base_map.get(current_period_id)
+                if current_period_id is not None
+                else None
+            ),
+            worked_days=(
+                current_period.worked_days if current_row is not None else None
+            ),
         )
 
         # Calculate predicted net_pay for the first future period
@@ -366,6 +430,9 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                     is_current=period_range.is_current,
                     inferred=period_range.inferred,
                     increase=period_range.increase,
+                    salary_base=period_range.salary_base,
+                    worked_days=period_range.worked_days,
+                    is_lookback=period_range.is_lookback,
                 )
             )
         return completed_ranges

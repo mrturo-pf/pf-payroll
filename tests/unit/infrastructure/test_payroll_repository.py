@@ -2484,6 +2484,73 @@ async def test_sqlalchemy_payroll_repository_lists_period_ranges() -> None:
 
 
 @pytest.mark.asyncio
+async def test_sqlalchemy_payroll_repository_attaches_lookback_for_full_previous_window() -> (
+    None
+):
+    """When 13 previous periods exist, the 13th becomes a lookback ghost at result[0]."""
+    current_period = PayrollPeriodModel(
+        id=100,
+        employer_id=1,
+        period_year=2026,
+        period_month=3,
+        payment_date=date(2026, 3, 28),
+        status=PayrollStatus.ACTUAL,
+        declared_net_pay_clp=Decimal("3000000"),
+    )
+    current_employer = EmployerModel(
+        id=1,
+        name="WALMART-CHILE",
+        country_code="CL",
+        started_at=date(2024, 11, 18),
+        payment_date_rule=EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH,
+        payment_month_offset=0,
+        payment_day_of_month=None,
+        payment_business_day_offset=1,
+        payment_calendar_day_offset=0,
+        payment_effective_on_processing_next_day=True,
+        payment_fixed_day_roll=EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY,
+    )
+    # 13 previous periods — most-recent-first (DESC), so index 0 = Feb 2026, index 12 = Mar 2025
+    previous_periods = [
+        PayrollPeriodModel(
+            id=i,
+            employer_id=1,
+            period_year=2026 if m > 0 else 2025,
+            period_month=m if m > 0 else m + 12,
+            payment_date=date(2026 if m > 0 else 2025, m if m > 0 else m + 12, 26),
+            status=PayrollStatus.ACTUAL,
+            declared_net_pay_clp=Decimal("2800000"),
+            worked_days=30,
+        )
+        for i, m in enumerate(range(2, -11, -1), start=50)
+        # generates months: 2, 1, 0→12, -1→11, ..., -9→3  (Feb 2026 → Mar 2025)
+    ]
+    session = FakeSession(
+        [
+            FakeResult(first_row=(current_period, current_employer)),
+            FakeResult(scalar_rows=previous_periods),  # 13 items
+            FakeResult(joined_rows=[]),  # salary query → empty
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_period_ranges(today=date(2026, 3, 31))
+
+    # With 13 previous periods the 13th (oldest) becomes a lookback ghost prepended at index 0.
+    assert len(result) == 26  # 1 lookback + 12 previous + 1 current + 12 future
+    assert result[0].is_lookback is True
+    assert result[0].is_current is False
+    # The 12 window previous periods follow; none are lookbacks
+    for idx in range(1, 13):
+        assert result[idx].is_lookback is False
+    # Current period is at index 13 (shifted by the lookback)
+    assert result[13].is_current is True
+    # Future periods start at index 14
+    assert result[14].is_current is False
+    assert result[14].is_lookback is False
+
+
+@pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_applies_effective_processing_dates() -> (
     None
 ):

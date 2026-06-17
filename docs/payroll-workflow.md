@@ -224,25 +224,15 @@ Computed concepts are intentionally **not** imported from the CSV:
 - `UNEMPLOYMENT_INSURANCE`
 - `INCOME_TAX`
 
-Those values are generated later through the workflow steps `compute-contributions`
-and `compute-tax`.
+Those values are generated later through the workflow steps `compute-contributions` and `compute-tax`.
 
 Column semantics:
 
-- `health_insurance_employer_contribution` imports an additional **taxable**
-  income item, so it affects derived unemployment insurance and income tax.
-- `vacation_incentive`, `holiday_bonus`, `availability_bonus`,
-  `legal_gratuity_adjustment`, and `prior_salary_difference` import additional
-  **taxable** income items, so they also affect derived unemployment insurance
-  and income tax.
-- `health_insurance` imports an extra discount item for payroll deductions such
-  as grouped complementary health-insurance charges; it affects net pay but is
-  not treated as a mandatory social-security deduction.
-- `vacation_bonus_advance`, `holiday_bonus_advance`, and `salary_advance`
-  import advance discount items; they affect net pay only and are not treated
-  as mandatory social-security deductions.
-- `prior_month_leave_absence_discount` imports carry-over payroll discounts such
-  as prior-month leave or absence adjustments; it affects net pay only.
+- `health_insurance_employer_contribution` imports an additional **taxable** income item, so it affects derived unemployment insurance and income tax.
+- `vacation_incentive`, `holiday_bonus`, `availability_bonus`, `legal_gratuity_adjustment`, and `prior_salary_difference` import additional **taxable** income items, so they also affect derived unemployment insurance and income tax.
+- `health_insurance` imports an extra discount item for payroll deductions such as grouped complementary health-insurance charges; it affects net pay but is not treated as a mandatory social-security deduction.
+- `vacation_bonus_advance`, `holiday_bonus_advance`, and `salary_advance` import advance discount items; they affect net pay only and are not treated as mandatory social-security deductions.
+- `prior_month_leave_absence_discount` imports carry-over payroll discounts such as prior-month leave or absence adjustments; it affects net pay only.
 
 Import notes:
 

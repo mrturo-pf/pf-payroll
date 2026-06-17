@@ -73,8 +73,7 @@ make db-up DB_CONTAINER=my-payroll-db DB_PORT=5433 DB_PASSWORD=secret
 
 The schema lives in `db/01_schema.sql`, the default catalog data in `db/02_seed_base.sql`, the real operational bootstrap data in `db/03_seed_real.sql`, and test-only fixtures in `db/03_seed_test.sql`.
 
-Employer payment-date rules are currently configured **directly in the
-`employers` table**. New employers default to:
+Employer payment-date rules are currently configured **directly in the `employers` table**. New employers default to:
 
 - `payment_date_rule = 'last_business_day_of_month'`
 - `payment_month_offset = 0`
@@ -88,18 +87,10 @@ Examples:
 
 - last business day of the remuneration month: keep the defaults
 - penultimate business day: set `payment_business_day_offset = 1`
-- day 28 of the remuneration month: set `payment_date_rule = 'fixed_day_of_month'`
-  and `payment_day_of_month = 28`
-- day 5 of the following month: set `payment_date_rule = 'fixed_day_of_month'`,
-  `payment_month_offset = 1`, and `payment_day_of_month = 5`
-- 7 calendar days before month end: set
-  `payment_date_rule = 'calendar_days_before_end_of_month'` and
-  `payment_calendar_day_offset = 7`
-- when the employer initiates the transfer on the previous business day and it
-  settles on the next calendar day, set
-  `payment_effective_on_processing_next_day = TRUE`; this only shifts inferred
-  payment dates when non-business gaps exist between processing and the nominal
-  payment date
+- day 28 of the remuneration month: set `payment_date_rule = 'fixed_day_of_month'` and `payment_day_of_month = 28`
+- day 5 of the following month: set `payment_date_rule = 'fixed_day_of_month'`, `payment_month_offset = 1`, and `payment_day_of_month = 5`
+- 7 calendar days before month end: set `payment_date_rule = 'calendar_days_before_end_of_month'` and `payment_calendar_day_offset = 7`
+- when the employer initiates the transfer on the previous business day and it settles on the next calendar day, set `payment_effective_on_processing_next_day = TRUE`; this only shifts inferred payment dates when non-business gaps exist between processing and the nominal payment date
 
 ## Adminer
 
@@ -125,14 +116,11 @@ Write the local `.env` file with default database connection values:
 make env-write
 ```
 
-This is called automatically by `make local-up`. Run it standalone if you need
-to regenerate `.env` without restarting the full stack.
+This is called automatically by `make local-up`. Run it standalone if you need to regenerate `.env` without restarting the full stack.
 
 ## Proxy settings
 
-If your environment has proxy variables set (`http_proxy`, `https_proxy`,
-`HTTP_PROXY`, `HTTPS_PROXY`, etc.), they can interfere with local container
-networking. Unset them for the current shell invocation:
+If your environment has proxy variables set (`http_proxy`, `https_proxy`, `HTTP_PROXY`, `HTTPS_PROXY`, etc.), they can interfere with local container networking. Unset them for the current shell invocation:
 
 ```bash
 make unset-proxy-vars
@@ -201,14 +189,25 @@ For `make test` and `make test-cov` see [Testing](#testing) above.
 make clean
 ```
 
+To wipe all generated artifacts and reinstall dependencies from scratch:
+
+```bash
+make reinstall
+```
+
+This runs `make clean` followed by `make install`.
+
 This removes:
 
 - `__pycache__`
 - `.pytest_cache`
 - `.mypy_cache`
 - `.ruff_cache`
-- `.coverage`
+- `.coverage`, `.coverage.*`
+- `.dmypy.json`, `dmypy.json`
 - `htmlcov`
 - `build`
 - `dist`
 - `*.egg-info`
+- `payroll-dashboard.html`
+- `*.pdf` files in the project root

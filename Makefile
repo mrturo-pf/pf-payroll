@@ -24,6 +24,9 @@ install:
 	$(PYTHON) -m venv $(VENV)
 	bash -eu -o pipefail -c 'vars=(http_proxy https_proxy all_proxy no_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY); for v in "$${vars[@]}"; do if [[ -n "$${!v-}" ]]; then printf "  ✓ Unsetting %s → %s\n" "$$v" "$${!v}"; unset "$$v"; else printf "  • %s not set\n" "$$v"; fi; done; . "$(VENV)/bin/activate" && python -m pip install -U pip && python -m pip install -e ".[dev]"'
 
+# Removes all generated artifacts and recreates the virtual environment from scratch.
+reinstall: clean install
+
 # Runs the DB script with a selected action and optional seed mode.
 _db-flow:
 	$(DB_ENV) $(DB_SEED_FLAG_$(SEED_MODE)) ./scripts/rancher_db.sh $(DB_ACTION)
@@ -135,8 +138,11 @@ dead-code:
 typecheck:
 	$(VENV_BIN) mypy --install-types --non-interactive src
 
-# Removes local caches and build artifacts.
+# Removes local caches, build artifacts, and generated output files.
 clean:
 	rm -rf .coverage htmlcov .pytest_cache .mypy_cache .ruff_cache build dist
+	rm -f .coverage.* .dmypy.json dmypy.json
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 	find . -type d -name "*.egg-info" -prune -exec rm -rf {} +
+	rm -f payroll-dashboard.html
+	find . -maxdepth 1 -name "*.pdf" -delete

@@ -117,6 +117,27 @@ make adminer-down
 
 If the preferred port is busy, the script chooses a free one automatically and prints the exact URL.
 
+## Environment file
+
+Write the local `.env` file with default database connection values:
+
+```bash
+make env-write
+```
+
+This is called automatically by `make local-up`. Run it standalone if you need
+to regenerate `.env` without restarting the full stack.
+
+## Proxy settings
+
+If your environment has proxy variables set (`http_proxy`, `https_proxy`,
+`HTTP_PROXY`, `HTTPS_PROXY`, etc.), they can interfere with local container
+networking. Unset them for the current shell invocation:
+
+```bash
+make unset-proxy-vars
+```
+
 ## Full local stack
 
 Bring the whole stack up in one command:
@@ -160,15 +181,16 @@ source .venv/bin/activate
 make check
 ```
 
-`make check` runs `lint`, `dead-code`, `typecheck`, `duplicate-code`, `test`, and `test-cov` in that order and stops on the first failure.
+`make check` runs `lint`, `dead-code`, `typecheck`, `duplicate-code-src`, `duplicate-code-tests`, `test`, and `test-cov` in that order and stops on the first failure.
 
 Each step can also be run individually:
 
 ```bash
-make lint           # Ruff: auto-fix and validate style (PEP 8, PEP 257)
-make dead-code      # Vulture: detect unused production code under src
-make typecheck      # mypy: validate typing baseline (PEP 484, 544, 585, 604)
-make duplicate-code # detect duplicated code blocks
+make lint                 # Ruff: auto-fix and validate style (PEP 8, PEP 257)
+make dead-code            # Vulture: detect unused production code under src
+make typecheck            # mypy: validate typing baseline (PEP 484, 544, 585, 604)
+make duplicate-code-src   # jscpd: detect duplicated blocks in src (1% threshold)
+make duplicate-code-tests # jscpd: detect duplicated blocks in tests (10% threshold)
 ```
 
 For `make test` and `make test-cov` see [Testing](#testing) above.

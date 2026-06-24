@@ -191,15 +191,15 @@ check:
 
 # Detects duplicated code in tests with a 10% threshold.
 duplicate-code-tests:
-	$(MAKE) --no-print-directory _duplicate-code DUPLICATE_PATH=tests DUPLICATE_THRESHOLD=10
+	$(MAKE) --no-print-directory _duplicate-code DUPLICATE_PATH=tests DUPLICATE_THRESHOLD=0
 
 # Detects duplicated code across the entire repository (all languages, cross-boundary clones included).
 duplicate-code:
-	$(MAKE) --no-print-directory _duplicate-code DUPLICATE_PATH=. DUPLICATE_THRESHOLD=10
+	$(MAKE) --no-print-directory _duplicate-code DUPLICATE_PATH=. DUPLICATE_THRESHOLD=0
 
 # Detects duplicated code in src with a 1% threshold.
 duplicate-code-src:
-	$(MAKE) --no-print-directory _duplicate-code DUPLICATE_PATH=src DUPLICATE_THRESHOLD=1
+	$(MAKE) --no-print-directory _duplicate-code DUPLICATE_PATH=src DUPLICATE_THRESHOLD=0
 
 # Runs jscpd with configurable path and threshold.
 _duplicate-code:

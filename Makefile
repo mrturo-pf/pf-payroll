@@ -153,7 +153,19 @@ unset-proxy-vars:
 
 # Brings up the full local stack (DB, Adminer, env, deps, and API).
 local-up:
-	NERDCTL_BIN="$(NERDCTL)" DB_CONTAINER="$(DB_CONTAINER)" DB_VOLUME="$(DB_VOLUME)" DB_NAME="$(DB_NAME)" DB_USER="$(DB_USER)" DB_PASSWORD="$(DB_PASSWORD)" DB_PORT="$(DB_PORT)" ADMINER_CONTAINER="$(ADMINER_CONTAINER)" ADMINER_PORT="$(ADMINER_PORT)" APP_PORT="$(APP_PORT)" VENV="$(VENV)" ENV_FILE="$(ENV_FILE)" ./scripts/local_stack.sh
+	NERDCTL_BIN="$(NERDCTL)" \
+	  APP_PORT="$(APP_PORT)" \
+	  VENV="$(VENV)" \
+	  DB_CONTAINER="$(DB_CONTAINER)" \
+	  DB_VOLUME="$(DB_VOLUME)" \
+	  DB_NAME="$(DB_NAME)" \
+	  DB_USER="$(DB_USER)" \
+	  DB_PASSWORD="$(DB_PASSWORD)" \
+	  DB_PORT="$(DB_PORT)" \
+	  ADMINER_CONTAINER="$(ADMINER_CONTAINER)" \
+	  ADMINER_PORT="$(ADMINER_PORT)" \
+	  ENV_FILE="$(ENV_FILE)" \
+	  ./scripts/local_stack.sh
 
 # Runs the FastAPI server in development mode with auto-reload.
 run:

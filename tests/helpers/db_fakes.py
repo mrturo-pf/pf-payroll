@@ -6,6 +6,27 @@ from types import ModuleType
 import pytest
 
 
+class FakeAllMixin:
+    """Mixin that provides all() for joined-row results.
+
+    Subclasses must set self._joined_rows in their __init__.
+    """
+
+    _joined_rows: list[tuple[object, object]]
+
+    def all(self) -> list[tuple[object, object]]:
+        """Handle all."""
+        return self._joined_rows
+
+
+class FakeResultsQueueBase:
+    """Base that holds a queue of FakeResult objects for FakeSession subclasses."""
+
+    def __init__(self, results: list[object]) -> None:
+        """Initialize the instance."""
+        self._results = results
+
+
 class FakeScalarResult:
     """Test double for Scalar Result."""
 

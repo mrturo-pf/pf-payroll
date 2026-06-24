@@ -6,7 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from helpers.db_fakes import FakeScalarResult, assert_get_session_lifecycle
+from helpers.db_fakes import (
+    FakeAllMixin,
+    FakeResultsQueueBase,
+    FakeScalarResult,
+    assert_get_session_lifecycle,
+)
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.application.use_cases.refresh_income_tax_brackets import (
     RefreshIncomeTaxBrackets,
@@ -32,7 +37,7 @@ from payroll.infrastructure.db.repositories.reference_data_repository import (
 from payroll.interfaces.api import dependencies
 
 
-class FakeResult:
+class FakeResult(FakeAllMixin):
     """Test double for Result."""
 
     def __init__(
@@ -48,17 +53,13 @@ class FakeResult:
         """Handle scalars."""
         return FakeScalarResult(self._scalar_rows)
 
-    def all(self) -> list[tuple[object, object]]:
-        """Handle all."""
-        return self._joined_rows
 
-
-class FakeSession:
+class FakeSession(FakeResultsQueueBase):
     """Test double for Session."""
 
     def __init__(self, results: list[FakeResult]) -> None:
         """Initialize the instance."""
-        self._results = results
+        super().__init__(results)  # type: ignore[arg-type]
         self.statements: list[object] = []
         self.commit_calls = 0
 

@@ -176,9 +176,7 @@ CREATE TABLE IF NOT EXISTS payroll_periods (
     UNIQUE (employer_id, period_year, period_month)
 );
 
--- ============================================================
--- 4. Analytics Vista Materializada
--- ============================================================
+-- 4. Analytics Vista Materializada (ver definición completa en db/01_schema.sql)
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv_payroll_summary AS
 SELECT
     p.id AS period_id,
@@ -186,13 +184,15 @@ SELECT
     p.period_year,
     p.period_month,
     p.payment_date,
+    -- Ingresos imponibles, brutos, descuentos y neto:
     SUM(CASE WHEN c.kind = 'income' AND c.is_taxable THEN i.amount_clp ELSE 0 END) AS taxable_income_clp,
-    SUM(CASE WHEN c.kind = 'income' THEN i.amount_clp ELSE 0 END) AS gross_income_clp,
+    SUM(CASE WHEN c.kind = 'income'   THEN i.amount_clp ELSE 0 END) AS gross_income_clp,
     SUM(CASE WHEN c.kind = 'discount' THEN i.amount_clp ELSE 0 END) AS total_discounts_clp,
-    SUM(CASE WHEN c.kind = 'income' THEN i.amount_clp ELSE 0 END) - 
-    SUM(CASE WHEN c.kind = 'discount' THEN i.amount_clp ELSE 0 END) AS net_pay_clp
+    -- net_pay = gross - discounts (calculado en la vista)
+    SUM(CASE WHEN c.kind = 'income'   THEN i.amount_clp ELSE 0 END)
+  - SUM(CASE WHEN c.kind = 'discount' THEN i.amount_clp ELSE 0 END) AS net_pay_clp
 FROM payroll_periods p
-JOIN payroll_items i ON i.period_id = p.id
+JOIN payroll_items   i ON i.period_id = p.id
 JOIN payroll_concepts c ON c.id = i.concept_id
 GROUP BY p.id;
 ```
@@ -258,29 +258,25 @@ class ContributionCalculator:
         cap: ContributionCap, 
         uf_value_clp: Decimal
     ) -> HealthContribution:
+        # Aplica tope imponible (igual que pension)
         cap_clp = _quantize_clp(cap.value_uf * uf_value_clp)
         capped_base = min(taxable_clp, cap_clp)
-
-        # Base mandatory 7% deduction
         base_amount = _quantize_clp(capped_base * plan.institution.mandatory_rate)
 
+        # Isapre: recargo sobre el plan contratado; Fonasa: sin recargo adicional
         if plan.institution.kind is HealthInstitutionKind.ISAPRE and plan.contracted_uf > 0:
             contracted_clp = _quantize_clp(plan.contracted_uf * uf_value_clp)
             additional_amount = max(Decimal("0"), contracted_clp - base_amount)
         else:
-            contracted_clp = Decimal("0")
-            additional_amount = Decimal("0")
+            contracted_clp, additional_amount = Decimal("0"), Decimal("0")
 
+        # Ver src/payroll/domain/contribution_calculator.py para la implementación completa
         return HealthContribution(
             institution_code=plan.institution.code,
             institution_kind=plan.institution.kind,
-            taxable_clp=taxable_clp,
-            cap_clp=cap_clp,
-            capped_base_clp=capped_base,
-            base_amount_clp=base_amount,
-            contracted_uf=plan.contracted_uf,
-            contracted_clp=contracted_clp,
-            additional_amount_clp=additional_amount,
+            taxable_clp=taxable_clp, cap_clp=cap_clp, capped_base_clp=capped_base,
+            base_amount_clp=base_amount, contracted_uf=plan.contracted_uf,
+            contracted_clp=contracted_clp, additional_amount_clp=additional_amount,
         )
 ```
 

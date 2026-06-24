@@ -78,6 +78,23 @@ reinstall: clean
 	rm -rf $(VENV)
 	@$(MAKE) --no-print-directory install
 
+# Writes a local .env file with database connection and tooling defaults.
+env-write:
+	@printf 'PAYROLL_ENV=development\n' > $(ENV_FILE)
+	@printf 'PAYROLL_DATABASE_URL=postgresql+asyncpg://$(DB_USER):$(DB_PASSWORD)@localhost:$(DB_PORT)/$(DB_NAME)\n' >> $(ENV_FILE)
+	@printf 'PAYROLL_LOG_LEVEL=INFO\n' >> $(ENV_FILE)
+	@printf 'PAYROLL_DB_HOST=localhost\n' >> $(ENV_FILE)
+	@printf 'PAYROLL_DB_PORT=$(DB_PORT)\n' >> $(ENV_FILE)
+	@printf 'PAYROLL_DB_NAME=$(DB_NAME)\n' >> $(ENV_FILE)
+	@printf 'PAYROLL_DB_USER=$(DB_USER)\n' >> $(ENV_FILE)
+	@printf 'PAYROLL_DB_PASSWORD=$(DB_PASSWORD)\n' >> $(ENV_FILE)
+	@printf 'PAYROLL_ADMINER_URL=http://localhost:$(ADMINER_PORT)\n' >> $(ENV_FILE)
+	@printf '\n# Tooling — corporate pip/npm registries (used by make install/check on VPN)\n' >> $(ENV_FILE)
+	@printf 'CORPORATIVE_PIP_INDEX=https://pypi.ci.artifacts.corporative.com/artifactory/api/pypi/pythonhosted-pypi-release-remote/simple\n' >> $(ENV_FILE)
+	@printf 'CORPORATIVE_NPM_REGISTRY=https://npm.ci.artifacts.corporative.com/artifactory/api/npm/external-npm\n' >> $(ENV_FILE)
+	@printf 'CORPORATIVE_PROXY=http://sysproxy.corpo-rative.com:8080\n' >> $(ENV_FILE)
+	@echo "  ✓ $(ENV_FILE) written"
+
 # Internal: run scripts/rancher_db.sh with a selected action and optional seed mode.
 _db-flow:
 	$(DB_ENV) $(DB_SEED_FLAG_$(SEED_MODE)) ./scripts/rancher_db.sh $(DB_ACTION)
@@ -122,30 +139,13 @@ adminer-up: db-up
 	$(ADMINER_ENV) ./scripts/adminer.sh up
 
 # Stops and removes the Adminer container.
-adminer-down:
+adminer-down: db-down
 	$(ADMINER_ENV) ./scripts/adminer.sh down
 
 # Stops Adminer (if running) and starts it again — does not restart the database.
 adminer-restart:
 	-$(ADMINER_ENV) ./scripts/adminer.sh down
 	$(ADMINER_ENV) ./scripts/adminer.sh up
-
-# Writes a local .env file with database connection and tooling defaults.
-env-write:
-	@printf 'PAYROLL_ENV=development\n' > $(ENV_FILE)
-	@printf 'PAYROLL_DATABASE_URL=postgresql+asyncpg://$(DB_USER):$(DB_PASSWORD)@localhost:$(DB_PORT)/$(DB_NAME)\n' >> $(ENV_FILE)
-	@printf 'PAYROLL_LOG_LEVEL=INFO\n' >> $(ENV_FILE)
-	@printf 'PAYROLL_DB_HOST=localhost\n' >> $(ENV_FILE)
-	@printf 'PAYROLL_DB_PORT=$(DB_PORT)\n' >> $(ENV_FILE)
-	@printf 'PAYROLL_DB_NAME=$(DB_NAME)\n' >> $(ENV_FILE)
-	@printf 'PAYROLL_DB_USER=$(DB_USER)\n' >> $(ENV_FILE)
-	@printf 'PAYROLL_DB_PASSWORD=$(DB_PASSWORD)\n' >> $(ENV_FILE)
-	@printf 'PAYROLL_ADMINER_URL=http://localhost:$(ADMINER_PORT)\n' >> $(ENV_FILE)
-	@printf '\n# Tooling — corporate pip/npm registries (used by make install/check on VPN)\n' >> $(ENV_FILE)
-	@printf 'CORPORATIVE_PIP_INDEX=https://pypi.ci.artifacts.corporative.com/artifactory/api/pypi/pythonhosted-pypi-release-remote/simple\n' >> $(ENV_FILE)
-	@printf 'CORPORATIVE_NPM_REGISTRY=https://npm.ci.artifacts.corporative.com/artifactory/api/npm/external-npm\n' >> $(ENV_FILE)
-	@printf 'CORPORATIVE_PROXY=http://sysproxy.corpo-rative.com:8080\n' >> $(ENV_FILE)
-	@echo "  ✓ $(ENV_FILE) written"
 
 # Unsets common proxy variables in the current shell invocation.
 unset-proxy-vars:
@@ -189,15 +189,15 @@ check:
 	done; \
 	echo "All checks passed."
 
-# Detects duplicated code in tests with a 10% threshold.
-duplicate-code-tests:
-	$(MAKE) --no-print-directory _duplicate-code DUPLICATE_PATH=tests DUPLICATE_THRESHOLD=0
-
 # Detects duplicated code across the entire repository (all languages, cross-boundary clones included).
 duplicate-code:
 	$(MAKE) --no-print-directory _duplicate-code DUPLICATE_PATH=. DUPLICATE_THRESHOLD=0
 
-# Detects duplicated code in src with a 1% threshold.
+# Detects duplicated code in tests only.
+duplicate-code-tests:
+	$(MAKE) --no-print-directory _duplicate-code DUPLICATE_PATH=tests DUPLICATE_THRESHOLD=0
+
+# Detects duplicated code in src only.
 duplicate-code-src:
 	$(MAKE) --no-print-directory _duplicate-code DUPLICATE_PATH=src DUPLICATE_THRESHOLD=0
 

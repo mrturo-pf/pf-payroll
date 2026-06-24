@@ -109,6 +109,9 @@ db-reset-data-real:
 db-down:
 	$(MAKE) --no-print-directory _db-flow DB_ACTION=down SEED_MODE=base
 
+# Stops PostgreSQL (if running) and starts it again with the base schema and seed data.
+db-restart: db-down db-up
+
 # Opens an interactive psql session inside the PostgreSQL container.
 db-psql:
 	$(MAKE) --no-print-directory _db-flow DB_ACTION=psql SEED_MODE=base
@@ -120,6 +123,11 @@ adminer-up: db-up
 # Stops and removes the Adminer container.
 adminer-down:
 	$(ADMINER_ENV) ./scripts/adminer.sh down
+
+# Stops Adminer (if running) and starts it again — does not restart the database.
+adminer-restart:
+	-$(ADMINER_ENV) ./scripts/adminer.sh down
+	$(ADMINER_ENV) ./scripts/adminer.sh up
 
 # Writes a local .env file with database connection and tooling defaults.
 env-write:
@@ -154,6 +162,11 @@ import-payroll:
 	@test -n "$(CSV_FILE)" || (echo "CSV_FILE is required. Usage: make import-payroll CSV_FILE=docs/payroll-input.csv" && exit 1)
 	PYTHONPATH=src "$(VENV)/bin/python" -m payroll.interfaces.cli.main import-payroll "$(CSV_FILE)"
 
+# Scans filesystem for misconfigurations and secrets (no network DB required).
+# Vulnerability scanning is handled by trivy image in the CI build job.
+security-scan:
+	trivy fs --scanners misconfig,secret --severity HIGH,CRITICAL --skip-files '.env' .
+
 # Runs the complete test suite.
 test:
 	$(_DOCKER_ENV) $(VENV_BIN) pytest
@@ -165,7 +178,7 @@ test-cov:
 # Executes all repository quality gates in sequence.
 check:
 	@set -e; \
-	for target in lint dead-code typecheck duplicate-code-src duplicate-code-tests test test-cov; do \
+	for target in lint dead-code typecheck duplicate-code-src duplicate-code-tests duplicate-code test test-cov security-scan; do \
 		echo "==> make $$target"; \
 		if ! $(MAKE) --no-print-directory $$target; then \
 			echo "FAILED: $$target"; \
@@ -178,6 +191,10 @@ check:
 duplicate-code-tests:
 	$(MAKE) --no-print-directory _duplicate-code DUPLICATE_PATH=tests DUPLICATE_THRESHOLD=10
 
+# Detects duplicated code across the entire repository (all languages, cross-boundary clones included).
+duplicate-code:
+	$(MAKE) --no-print-directory _duplicate-code DUPLICATE_PATH=. DUPLICATE_THRESHOLD=10
+
 # Detects duplicated code in src with a 1% threshold.
 duplicate-code-src:
 	$(MAKE) --no-print-directory _duplicate-code DUPLICATE_PATH=src DUPLICATE_THRESHOLD=1
@@ -188,7 +205,7 @@ _duplicate-code:
 	  echo "  → Corporative VPN detected — using Artifactory npm registry"; \
 	  export npm_config_registry="$(CORPORATIVE_NPM_REGISTRY)"; \
 	fi; \
-	npx --yes jscpd --mode strict --min-lines 10 --min-tokens 70 --threshold $(DUPLICATE_THRESHOLD) --reporters console --ignore "**/.venv/**,**/build/**,**/dist/**" $(DUPLICATE_PATH)
+	npx --yes jscpd --mode strict --min-lines 10 --min-tokens 70 --threshold $(DUPLICATE_THRESHOLD) --reporters console --ignore "**/.venv/**,**/build/**,**/dist/**,**/.github/**" $(DUPLICATE_PATH)
 
 # Runs Ruff autofixes/formatting and then validates lint cleanliness.
 lint:

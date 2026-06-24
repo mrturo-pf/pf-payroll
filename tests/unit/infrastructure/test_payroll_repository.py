@@ -2484,10 +2484,10 @@ async def test_sqlalchemy_payroll_repository_lists_period_ranges() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_payroll_repository_attaches_lookback_for_full_previous_window() -> (
+async def test_sqlalchemy_payroll_repository_attaches_lookback_for_full_previous_window() -> (  # noqa: E501
     None
 ):
-    """When 13 previous periods exist, the 13th becomes a lookback ghost at result[0]."""
+    """The 13th of 13 previous periods becomes a lookback ghost at result[0]."""
     current_period = PayrollPeriodModel(
         id=100,
         employer_id=1,
@@ -2510,7 +2510,8 @@ async def test_sqlalchemy_payroll_repository_attaches_lookback_for_full_previous
         payment_effective_on_processing_next_day=True,
         payment_fixed_day_roll=EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY,
     )
-    # 13 previous periods — most-recent-first (DESC), so index 0 = Feb 2026, index 12 = Mar 2025
+    # 13 previous periods — most-recent-first (DESC).
+    # Index 0 = Feb 2026, index 12 = Mar 2025.
     previous_periods = [
         PayrollPeriodModel(
             id=i,
@@ -2536,7 +2537,8 @@ async def test_sqlalchemy_payroll_repository_attaches_lookback_for_full_previous
 
     result = await repository.list_period_ranges(today=date(2026, 3, 31))
 
-    # With 13 previous periods the 13th (oldest) becomes a lookback ghost prepended at index 0.
+    # With 13 previous periods, the 13th (oldest) becomes a lookback ghost
+    # prepended at index 0.
     assert len(result) == 26  # 1 lookback + 12 previous + 1 current + 12 future
     assert result[0].is_lookback is True
     assert result[0].is_current is False

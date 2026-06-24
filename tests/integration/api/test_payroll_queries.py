@@ -19,7 +19,6 @@ from payroll.interfaces.api.main import app
 from payroll.interfaces.api.routes.payroll import (
     _compute_increase,
     get_payroll_period,
-    to_payroll_period_range_reads,
 )
 from payroll.domain.contributions import EmploymentContractKind
 
@@ -376,7 +375,9 @@ def test_compute_increase_accounts_for_worked_days_normalization() -> None:
     assert _compute_increase(current, predecessor) is True
 
 
-def test_period_range_endpoint_computes_increase_for_previous_with_salary_data() -> None:
+def test_period_range_endpoint_computes_increase_for_previous_with_salary_data() -> (
+    None
+):
     """Endpoint sets increase=true/false for previous periods that have salary data."""
 
     class SalaryFakeQueries:

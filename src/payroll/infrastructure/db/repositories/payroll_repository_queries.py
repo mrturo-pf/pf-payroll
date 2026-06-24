@@ -226,8 +226,10 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             .limit(13)
         )
         all_previous_fetched = list(previous_result.scalars().all())
-        # all_previous_fetched is ordered most-recent-first (DESC); the last item is oldest.
-        # If 13 were returned, the oldest is the lookback and is excluded from the window.
+        # all_previous_fetched is ordered most-recent-first (DESC);
+        # the last item is oldest.
+        # If 13 were returned, the oldest is the lookback and is excluded
+        # from the window.
         if len(all_previous_fetched) > 12:
             lookback_period_model: PayrollPeriodModel | None = all_previous_fetched[-1]
             previous_periods = all_previous_fetched[:-1]
@@ -235,7 +237,8 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             lookback_period_model = None
             previous_periods = all_previous_fetched
 
-        # Fetch salary_base (sum of SALARY_BASE items) for previous, lookback and current
+        # Fetch salary_base (sum of SALARY_BASE items) for previous,
+        # lookback and current
         salary_base_map: dict[int, Decimal] = {}
         period_ids = [period.id for period in previous_periods]
         if lookback_period_model is not None:

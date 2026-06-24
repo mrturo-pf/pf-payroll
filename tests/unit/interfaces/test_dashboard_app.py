@@ -78,17 +78,8 @@ def test_dashboard_format_helpers() -> None:
     assert _format_clp(Decimal("1234567")) == "$1.234.567"
     assert _format_period(2026, 4) == "04/2026"
     assert _net_pay_check(sample_summary()) == ("Matches declared net pay", "matched")
-    pending_summary = PayrollSummaryDTO(
-        period_id=7,
-        employer_id=1,
-        employer_name="ACME",
-        period_year=2026,
-        period_month=4,
-        payment_date=date(2026, 4, 30),
-        taxable_income_clp=Decimal("1000000"),
-        gross_income_clp=Decimal("1250000"),
-        total_discounts_clp=Decimal("180000"),
-        net_pay_clp=Decimal("1070000"),
+    pending_summary = _replace(
+        sample_acme_april_2026_summary_dto(),
         declared_net_pay_clp=Decimal("1070000"),
     )
     assert _net_pay_check(pending_summary) == (

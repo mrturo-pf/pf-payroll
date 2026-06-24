@@ -51,6 +51,64 @@ def sample_detail() -> PayrollPeriodDetailDTO:
     )
 
 
+class _FakeSessionContext:
+    """Test double for session context manager, shared across CLI tests."""
+
+    async def __aenter__(self) -> object:
+        """Enter the async context manager."""
+        return "session"
+
+    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+        """Exit the async context manager."""
+        return None
+
+
+class _FakeDualRepoUseCase:
+    """Test double for use cases that accept payroll + market-data repositories."""
+
+    def __init__(
+        self, payroll_repository: object, market_data_repository: object
+    ) -> None:
+        """Initialize the instance."""
+        assert payroll_repository == "payroll-repo"
+        assert market_data_repository == "market-repo"
+
+    async def execute(self, command: object) -> object:
+        """Handle execute."""
+        return command
+
+
+class _FakeImportPayrollBase:
+    """Base for Import Payroll doubles: validates constructor args and CSV input."""
+
+    def __init__(self, repository: object, importer: object) -> None:
+        """Initialize the instance."""
+        assert repository == "payroll-repo"
+        assert importer == "importer"
+
+    @staticmethod
+    def _assert_sample_csv(filename: str, content: bytes) -> None:
+        """Assert the filename and content match the shared sample CSV fixture."""
+        assert filename == "sample.csv"
+        assert content == b"period_month,period_year,employer\n"
+
+
+class _FakeProcessImportedPayrollPeriods:
+    """Test double for imported-payroll post-processing, shared across CLI tests."""
+
+    def __init__(
+        self,
+        repository: object,
+        market_data_repository: object,
+        complementary_insurance_repository: object,
+    ) -> None:
+        """Initialize the instance."""
+
+    async def execute(self, result: ImportPayrollResultDTO) -> ImportPayrollResultDTO:
+        """Handle execute."""
+        return result
+
+
 def test_json_default_serializes_supported_values() -> None:
     """Test json default serializes supported values."""
     assert cli_main._json_default(
@@ -137,29 +195,12 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     sample_file = tmp_path / "sample.csv"
     sample_file.write_text("period_month,period_year,employer\n")
 
-    class FakeSessionContext:
-        """Test double for Session Context."""
-
-        async def __aenter__(self) -> object:
-            """Enter the async context manager."""
-            return "session"
-
-        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-            """Exit the async context manager."""
-            return None
-
-    class FakeImportPayroll:
+    class FakeImportPayroll(_FakeImportPayrollBase):
         """Test double for Import Payroll."""
-
-        def __init__(self, repository: object, importer: object) -> None:
-            """Initialize the instance."""
-            assert repository == "payroll-repo"
-            assert importer == "importer"
 
         async def from_bytes(self, filename: str, content: bytes) -> object:
             """Create from bytes."""
-            assert filename == "sample.csv"
-            assert content == b"period_month,period_year,employer\n"
+            self._assert_sample_csv(filename, content)
             return {"imported": True}
 
     class FakePayrollQueries:
@@ -204,34 +245,6 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
             """Handle execute."""
             return command
 
-    class FakeComputeContributions:
-        """Test double for Compute Contributions."""
-
-        def __init__(
-            self, payroll_repository: object, market_data_repository: object
-        ) -> None:
-            """Initialize the instance."""
-            assert payroll_repository == "payroll-repo"
-            assert market_data_repository == "market-repo"
-
-        async def execute(self, command: object) -> object:
-            """Handle execute."""
-            return command
-
-    class FakeComputeIncomeTax:
-        """Test double for Compute Income Tax."""
-
-        def __init__(
-            self, payroll_repository: object, market_data_repository: object
-        ) -> None:
-            """Initialize the instance."""
-            assert payroll_repository == "payroll-repo"
-            assert market_data_repository == "market-repo"
-
-        async def execute(self, command: object) -> object:
-            """Handle execute."""
-            return command
-
     class FakeReviewPayrollPeriod:
         """Test double for Review Payroll Period."""
 
@@ -258,7 +271,7 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
                 period_id=7, filename="payroll-period-7.pdf", content=b"%PDF"
             )
 
-    monkeypatch.setattr(cli_main, "SessionLocal", lambda: FakeSessionContext())
+    monkeypatch.setattr(cli_main, "SessionLocal", lambda: _FakeSessionContext())
     monkeypatch.setattr(
         cli_main, "SqlAlchemyPayrollRepository", lambda session: "payroll-repo"
     )
@@ -274,8 +287,8 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     monkeypatch.setattr(cli_main, "PayrollQueries", FakePayrollQueries)
     monkeypatch.setattr(cli_main, "ReferenceDataQueries", FakeReferenceDataQueries)
     monkeypatch.setattr(cli_main, "AssignPlans", FakeAssignPlans)
-    monkeypatch.setattr(cli_main, "ComputeContributions", FakeComputeContributions)
-    monkeypatch.setattr(cli_main, "ComputeIncomeTax", FakeComputeIncomeTax)
+    monkeypatch.setattr(cli_main, "ComputeContributions", _FakeDualRepoUseCase)
+    monkeypatch.setattr(cli_main, "ComputeIncomeTax", _FakeDualRepoUseCase)
     monkeypatch.setattr(cli_main, "ReviewPayrollPeriod", FakeReviewPayrollPeriod)
     monkeypatch.setattr(cli_main, "GeneratePayrollReport", FakeGeneratePayrollReport)
 
@@ -308,31 +321,14 @@ def test_import_payroll_async_syncs_requested_market_data(
     sample_file = tmp_path / "sample.csv"
     sample_file.write_text("period_month,period_year,employer\n")
 
-    class FakeSessionContext:
-        """Test double for Session Context."""
-
-        async def __aenter__(self) -> object:
-            """Enter the async context manager."""
-            return "session"
-
-        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-            """Exit the async context manager."""
-            return None
-
-    class FakeImportPayroll:
+    class FakeImportPayroll(_FakeImportPayrollBase):
         """Test double for Import Payroll."""
-
-        def __init__(self, repository: object, importer: object) -> None:
-            """Initialize the instance."""
-            assert repository == "payroll-repo"
-            assert importer == "importer"
 
         async def from_bytes(
             self, filename: str, content: bytes
         ) -> ImportPayrollResultDTO:
             """Create from bytes."""
-            assert filename == "sample.csv"
-            assert content == b"period_month,period_year,employer\n"
+            self._assert_sample_csv(filename, content)
             return ImportPayrollResultDTO(
                 imported_periods=1,
                 imported_items=1,
@@ -374,24 +370,7 @@ def test_import_payroll_async_syncs_requested_market_data(
                 None,
             )
 
-    class FakeProcessImportedPayrollPeriods:
-        """Test double for imported-payroll post-processing."""
-
-        def __init__(
-            self,
-            repository: object,
-            market_data_repository: object,
-            complementary_insurance_repository: object,
-        ) -> None:
-            """Initialize the instance."""
-
-        async def execute(
-            self, result: ImportPayrollResultDTO
-        ) -> ImportPayrollResultDTO:
-            """Handle execute."""
-            return result
-
-    monkeypatch.setattr(cli_main, "SessionLocal", lambda: FakeSessionContext())
+    monkeypatch.setattr(cli_main, "SessionLocal", lambda: _FakeSessionContext())
     monkeypatch.setattr(
         cli_main, "SqlAlchemyPayrollRepository", lambda session: "payroll-repo"
     )
@@ -405,7 +384,7 @@ def test_import_payroll_async_syncs_requested_market_data(
     monkeypatch.setattr(
         cli_main,
         "ProcessImportedPayrollPeriods",
-        FakeProcessImportedPayrollPeriods,
+        _FakeProcessImportedPayrollPeriods,
     )
 
     result = asyncio.run(cli_main._import_payroll_async(sample_file))
@@ -443,17 +422,6 @@ def test_import_payroll_async_processes_periods_without_market_sync(
     sample_file = tmp_path / "sample.csv"
     sample_file.write_text("period_month,period_year,employer\n")
 
-    class FakeSessionContext:
-        """Test double for Session Context."""
-
-        async def __aenter__(self) -> object:
-            """Enter the async context manager."""
-            return "session"
-
-        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-            """Exit the async context manager."""
-            return None
-
     import_result = ImportPayrollResultDTO(
         imported_periods=1,
         imported_items=1,
@@ -483,24 +451,7 @@ def test_import_payroll_async_processes_periods_without_market_sync(
             """Create from bytes."""
             return import_result
 
-    class FakeProcessImportedPayrollPeriods:
-        """Test double for imported-payroll post-processing."""
-
-        def __init__(
-            self,
-            repository: object,
-            market_data_repository: object,
-            complementary_insurance_repository: object,
-        ) -> None:
-            """Initialize the instance."""
-
-        async def execute(
-            self, result: ImportPayrollResultDTO
-        ) -> ImportPayrollResultDTO:
-            """Handle execute."""
-            return result
-
-    monkeypatch.setattr(cli_main, "SessionLocal", lambda: FakeSessionContext())
+    monkeypatch.setattr(cli_main, "SessionLocal", lambda: _FakeSessionContext())
     monkeypatch.setattr(
         cli_main, "SqlAlchemyPayrollRepository", lambda session: "payroll-repo"
     )
@@ -512,7 +463,7 @@ def test_import_payroll_async_processes_periods_without_market_sync(
     monkeypatch.setattr(
         cli_main,
         "ProcessImportedPayrollPeriods",
-        FakeProcessImportedPayrollPeriods,
+        _FakeProcessImportedPayrollPeriods,
     )
 
     result = asyncio.run(cli_main._import_payroll_async(sample_file))

@@ -11,6 +11,7 @@ from payroll.application.dto import (
     HealthInstitutionDTO,
     HealthPlanDTO,
     IncomeTaxBracketDTO,
+    IncomeTaxBracketWriteDTO,
     PayrollConceptDTO,
     PayrollItemDetailDTO,
     PayrollPeriodDetailDTO,
@@ -165,6 +166,32 @@ def sample_payroll_summary_dto(period_id: int = 1) -> PayrollSummaryDTO:
         total_discounts_clp=Decimal("170000"),
         net_pay_clp=Decimal("830000"),
     )
+
+
+def sample_jan_2026_income_tax_brackets() -> list[IncomeTaxBracketWriteDTO]:
+    """Return two January-2026 brackets shared across rate-provider tests.
+
+    The exempt bracket (0–13.5 UTM) and tranche 1 (13.5–30 UTM) are
+    shared between test_refresh_income_tax_brackets and test_rate_providers.
+    """
+    return [
+        IncomeTaxBracketWriteDTO(
+            valid_from=date(2026, 1, 1),
+            valid_to=date(2026, 1, 31),
+            lower_bound_utm=Decimal("0.0000"),
+            upper_bound_utm=Decimal("13.5000"),
+            marginal_rate=Decimal("0"),
+            rebate_utm=Decimal("0.0000"),
+        ),
+        IncomeTaxBracketWriteDTO(
+            valid_from=date(2026, 1, 1),
+            valid_to=date(2026, 1, 31),
+            lower_bound_utm=Decimal("13.5000"),
+            upper_bound_utm=Decimal("30.0000"),
+            marginal_rate=Decimal("0.04"),
+            rebate_utm=Decimal("0.5400"),
+        ),
+    ]
 
 
 class ReferenceDataStubMixin:

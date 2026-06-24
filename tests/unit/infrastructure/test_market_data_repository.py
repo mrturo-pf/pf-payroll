@@ -1,12 +1,12 @@
 """Tests for test market data repository."""
 
-from collections.abc import AsyncIterator
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
 
+from helpers.db_fakes import FakeScalarResult, assert_get_session_lifecycle
 from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.process_imported_payroll_periods import (
@@ -23,18 +23,6 @@ from payroll.infrastructure.db.repositories.market_data_repository import (
     normalize_exchange_rate_lookup_date,
 )
 from payroll.interfaces.api import dependencies
-
-
-class FakeScalarResult:
-    """Test double for Scalar Result."""
-
-    def __init__(self, rows: list[object]) -> None:
-        """Initialize the instance."""
-        self._rows = rows
-
-    def all(self) -> list[object]:
-        """Handle all."""
-        return self._rows
 
 
 class FakeResult:
@@ -228,28 +216,7 @@ async def test_api_dependencies_build_market_data_queries_use_case_and_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test API dependencies build the market-data query use case."""
-    fake_session = object()
-    exited = False
-
-    class FakeSessionManager:
-        """Test double for Session Manager."""
-
-        async def __aenter__(self) -> object:
-            """Enter the async context manager."""
-            return fake_session
-
-        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-            """Exit the async context manager."""
-            nonlocal exited
-            exited = True
-
-    monkeypatch.setattr(dependencies, "SessionLocal", lambda: FakeSessionManager())
-
-    iterator: AsyncIterator[object] = dependencies.get_session()
-    assert await anext(iterator) is fake_session
-    with pytest.raises(StopAsyncIteration):
-        await anext(iterator)
-    assert exited is True
+    fake_session = await assert_get_session_lifecycle(monkeypatch, dependencies)
 
     repository = dependencies.get_market_data_repository(fake_session)  # type: ignore[arg-type]
     queries = dependencies.get_market_data_queries(repository)

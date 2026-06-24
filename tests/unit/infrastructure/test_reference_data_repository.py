@@ -1,12 +1,12 @@
 """Tests for test reference data repository."""
 
-from collections.abc import AsyncIterator
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
 
+from helpers.db_fakes import FakeScalarResult, assert_get_session_lifecycle
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.application.use_cases.refresh_income_tax_brackets import (
     RefreshIncomeTaxBrackets,
@@ -30,18 +30,6 @@ from payroll.infrastructure.db.repositories.reference_data_repository import (
     SqlAlchemyReferenceDataRepository,
 )
 from payroll.interfaces.api import dependencies
-
-
-class FakeScalarResult:
-    """Test double for Scalar Result."""
-
-    def __init__(self, rows: list[object]) -> None:
-        """Initialize the instance."""
-        self._rows = rows
-
-    def all(self) -> list[object]:
-        """Handle all."""
-        return self._rows
 
 
 class FakeResult:
@@ -254,29 +242,7 @@ async def test_api_dependencies_build_repository_queries_and_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test api dependencies build repository queries and session."""
-    fake_session = object()
-    exit_called = False
-
-    class FakeSessionManager:
-        """Test double for Session Manager."""
-
-        async def __aenter__(self) -> object:
-            """Enter the async context manager."""
-            return fake_session
-
-        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-            """Exit the async context manager."""
-            nonlocal exit_called
-            exit_called = True
-
-    monkeypatch.setattr(dependencies, "SessionLocal", lambda: FakeSessionManager())
-
-    iterator: AsyncIterator[object] = dependencies.get_session()
-    yielded = await anext(iterator)
-    assert yielded is fake_session
-    with pytest.raises(StopAsyncIteration):
-        await anext(iterator)
-    assert exit_called is True
+    fake_session = await assert_get_session_lifecycle(monkeypatch, dependencies)
 
     repository = dependencies.get_reference_data_repository(fake_session)  # type: ignore[arg-type]
     queries = dependencies.get_reference_data_queries(repository)

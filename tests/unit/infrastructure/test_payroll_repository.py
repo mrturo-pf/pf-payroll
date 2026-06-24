@@ -1,12 +1,12 @@
 """Tests for test payroll repository."""
 
-from collections.abc import AsyncIterator
 from datetime import date, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
 
+from helpers.db_fakes import FakeScalarResult, assert_get_session_lifecycle
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
@@ -53,18 +53,6 @@ from payroll.infrastructure.db.repositories.payroll_repository_shared import (
 )
 from payroll.interfaces.api import dependencies
 from payroll.shared.dates import add_months, resolve_payment_date
-
-
-class FakeScalarResult:
-    """Test double for Scalar Result."""
-
-    def __init__(self, rows: list[object]) -> None:
-        """Initialize the instance."""
-        self._rows = rows
-
-    def all(self) -> list[object]:
-        """Handle all."""
-        return self._rows
 
 
 class FakeResult:
@@ -441,6 +429,97 @@ _SIX_CONCEPT_ROWS = [
 
 _SIX_CONCEPTS_RESULT = FakeResult(scalar_rows=_SIX_CONCEPT_ROWS)
 
+# AFP_MODEL pension/health plan pair — shared by assigns_plan_ids and embedded plan
+_AFP_MODEL_PENSION_PLAN, _AFP_MODEL_PENSION_INSTITUTION = build_pension_pair(
+    plan_id=1,
+    institution_id=5,
+    code="AFP_MODEL",
+    name="AFP Model",
+    additional_rate=Decimal("0.0116"),
+)
+_AFP_MODEL_HEALTH_PLAN, _AFP_MODEL_HEALTH_INSTITUTION = build_health_pair(
+    plan_id=2,
+    institution_id=6,
+    contracted_uf=Decimal("5.42"),
+)
+
+# AFP_TEST pension/health plan pair — shared by the three employer import tests
+_AFP_TEST_PENSION_PLAN, _AFP_TEST_PENSION_INSTITUTION = build_pension_pair(
+    plan_id=1,
+    institution_id=5,
+    code="AFP_TEST",
+    name="AFP Test",
+    additional_rate=Decimal("0"),
+    valid_from=date(2024, 11, 1),
+)
+_AFP_TEST_HEALTH_PLAN, _AFP_TEST_HEALTH_INSTITUTION = build_health_pair(
+    plan_id=1,
+    institution_id=6,
+    valid_from=date(2024, 11, 1),
+)
+
+
+def _afp_test_import_session(extra_results: list[FakeResult]) -> FakeSession:
+    """Build the five-query FakeSession prefix shared by the employer-import tests."""
+    return FakeSession(
+        [
+            FakeResult(scalar_rows=[SimpleNamespace(id=1, code="SALARY_BASE")]),
+            # Pension plan deduction
+            FakeResult(
+                joined_rows=[(_AFP_TEST_PENSION_PLAN, _AFP_TEST_PENSION_INSTITUTION)]
+            ),
+            # Health plan deduction
+            FakeResult(
+                joined_rows=[(_AFP_TEST_HEALTH_PLAN, _AFP_TEST_HEALTH_INSTITUTION)]
+            ),
+            # Pension plan validation
+            FakeResult(
+                first_row=(_AFP_TEST_PENSION_PLAN, _AFP_TEST_PENSION_INSTITUTION)
+            ),
+            # Health plan validation
+            FakeResult(first_row=(_AFP_TEST_HEALTH_PLAN, _AFP_TEST_HEALTH_INSTITUTION)),
+            *extra_results,
+        ]
+    )
+
+
+def _two_concept_session() -> FakeSession:
+    """Build a FakeSession returning SALARY_BASE + PENSION_BASE concept codes."""
+    return FakeSession(
+        [
+            FakeResult(
+                scalar_rows=[
+                    SimpleNamespace(id=1, code="SALARY_BASE"),
+                    SimpleNamespace(id=2, code="PENSION_BASE"),
+                ]
+            ),
+        ]
+    )
+
+
+def _multi_health_session(
+    second_pair: tuple[object, object],
+) -> tuple[object, FakeSession]:
+    """Build the FakeSession for multi-health-plan contribution context tests.
+
+    Returns (period, session) so callers can pass period to the repository call.
+    """
+    period = build_period()
+    session = FakeSession(
+        build_contribution_context_results(
+            period=period,
+            pension_pair=build_pension_pair(),
+            health_pair=build_health_pair(contracted_uf=Decimal("5.42")),
+            health_plan_ids=[22, 23],
+            period_health_pairs=[
+                build_health_pair(plan_id=22, contracted_uf=Decimal("5.42")),
+                second_pair,
+            ],
+        )
+    )
+    return period, session
+
+
 _HEALTH_UF_ITEMS = [
     (Decimal("100000"), "SALARY_BASE"),
     (Decimal("10000"), "HEALTH_ADDITIONAL_UF"),
@@ -558,18 +637,6 @@ async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
 async def test_sa_payroll_repository_assigns_plan_ids_from_import_rows() -> None:
     """Test import rows assign period plan ids when provided in the payload."""
     employer = EmployerModel(id=10, name="ACME", started_at=date(2026, 1, 31))
-    pension_plan, pension_institution = build_pension_pair(
-        plan_id=1,
-        institution_id=5,
-        code="AFP_MODEL",
-        name="AFP Model",
-        additional_rate=Decimal("0.0116"),
-    )
-    health_plan, health_institution = build_health_pair(
-        plan_id=2,
-        institution_id=6,
-        contracted_uf=Decimal("5.42"),
-    )
     session = FakeSession(
         [
             FakeResult(
@@ -578,8 +645,12 @@ async def test_sa_payroll_repository_assigns_plan_ids_from_import_rows() -> None
                     SimpleNamespace(id=2, code="PENSION_BASE"),
                 ]
             ),
-            FakeResult(first_row=(pension_plan, pension_institution)),
-            FakeResult(first_row=(health_plan, health_institution)),
+            FakeResult(
+                first_row=(_AFP_MODEL_PENSION_PLAN, _AFP_MODEL_PENSION_INSTITUTION)
+            ),
+            FakeResult(
+                first_row=(_AFP_MODEL_HEALTH_PLAN, _AFP_MODEL_HEALTH_INSTITUTION)
+            ),
             FakeResult(scalar_one=employer),
             FakeResult(scalar_one=None),
             FakeResult(),
@@ -590,28 +661,14 @@ async def test_sa_payroll_repository_assigns_plan_ids_from_import_rows() -> None
 
     await repository.import_rows(
         [
-            SimpleNamespace(
-                employer="ACME",
-                period_year=2026,
-                period_month=1,
-                payment_date=date(2026, 1, 31),
-                status="actual",
-                employment_contract_kind=EmploymentContractKind.INDEFINITE,
-                concept_code="SALARY_BASE",
-                amount_clp=Decimal("1000000"),
+            build_import_row(
                 pension_plan_id=1,
                 health_plan_id=2,
                 declared_net_pay_clp=Decimal("950000"),
                 expected_net_pay_clp=Decimal("900000"),
                 net_pay_difference_clp=Decimal("50000"),
             ),
-            SimpleNamespace(
-                employer="ACME",
-                period_year=2026,
-                period_month=1,
-                payment_date=date(2026, 1, 31),
-                status="actual",
-                employment_contract_kind=EmploymentContractKind.INDEFINITE,
+            build_import_row(
                 concept_code="PENSION_BASE",
                 amount_clp=Decimal("100000"),
                 pension_plan_id=1,
@@ -638,16 +695,7 @@ async def test_sa_payroll_repository_assigns_plan_ids_from_import_rows() -> None
 @pytest.mark.asyncio
 async def test_sa_payroll_repository_rejects_inconsistent_period_plan_ids() -> None:
     """Test import rows reject inconsistent plan ids within one period."""
-    session = FakeSession(
-        [
-            FakeResult(
-                scalar_rows=[
-                    SimpleNamespace(id=1, code="SALARY_BASE"),
-                    SimpleNamespace(id=2, code="PENSION_BASE"),
-                ]
-            ),
-        ]
-    )
+    session = _two_concept_session()
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="Inconsistent pension_plan_id"):
@@ -669,16 +717,7 @@ async def test_sa_payroll_repository_rejects_inconsistent_period_health_plan_ids
     None
 ):
     """Test import rows reject inconsistent health plans within one period."""
-    session = FakeSession(
-        [
-            FakeResult(
-                scalar_rows=[
-                    SimpleNamespace(id=1, code="SALARY_BASE"),
-                    SimpleNamespace(id=2, code="PENSION_BASE"),
-                ]
-            ),
-        ]
-    )
+    session = _two_concept_session()
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="Inconsistent health_plan_id"):
@@ -778,23 +817,15 @@ async def test_sa_payroll_repository_rejects_missing_health_plans_deduction() ->
         payment_date=date(2026, 1, 31),
         status=PayrollStatus.PROJECTED,
     )
-    pension_plan, pension_institution = build_pension_pair(
-        plan_id=1,
-        institution_id=5,
-        code="AFP_MODEL",
-        name="AFP Model",
-        additional_rate=Decimal("0.0116"),
-    )
-    health_plan, health_institution = build_health_pair(
-        plan_id=2,
-        institution_id=6,
-        contracted_uf=Decimal("5.42"),
-    )
     session = FakeSession(
         [
             FakeResult(scalar_rows=[SimpleNamespace(id=1, code="SALARY_BASE")]),
-            FakeResult(first_row=(pension_plan, pension_institution)),
-            FakeResult(first_row=(health_plan, health_institution)),
+            FakeResult(
+                first_row=(_AFP_MODEL_PENSION_PLAN, _AFP_MODEL_PENSION_INSTITUTION)
+            ),
+            FakeResult(
+                first_row=(_AFP_MODEL_HEALTH_PLAN, _AFP_MODEL_HEALTH_INSTITUTION)
+            ),
             FakeResult(scalar_one=employer),
             FakeResult(scalar_one=existing_period),
             FakeResult(),
@@ -805,25 +836,8 @@ async def test_sa_payroll_repository_rejects_missing_health_plans_deduction() ->
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
     await repository.import_rows(
-        [
-            SimpleNamespace(
-                employer="ACME",
-                period_year=2026,
-                period_month=1,
-                payment_date=date(2026, 1, 31),
-                status="actual",
-                employment_contract_kind=EmploymentContractKind.INDEFINITE,
-                concept_code="SALARY_BASE",
-                amount_clp=Decimal("1000000"),
-                pension_plan_id=1,
-                health_plan_id=2,
-                declared_net_pay_clp=None,
-                expected_net_pay_clp=None,
-                net_pay_difference_clp=None,
-            ),
-        ]
+        [build_import_row(pension_plan_id=1, health_plan_id=2)]
     )
-    assert existing_period.pension_plan_id == 1
     assert existing_period.pension_plan_id == 1
     assert any(
         isinstance(item, PayrollPeriodHealthPlanModel)
@@ -854,30 +868,8 @@ async def test_sa_payroll_repository_closes_previous_open_ended_employer() -> No
         name="PreviousCo",
         started_at=date(2025, 1, 1),
     )
-    pension_plan, pension_institution = build_pension_pair(
-        plan_id=1,
-        institution_id=5,
-        code="AFP_TEST",
-        name="AFP Test",
-        additional_rate=Decimal("0"),
-        valid_from=date(2024, 11, 1),
-    )
-    health_plan, health_institution = build_health_pair(
-        plan_id=1,
-        institution_id=6,
-        valid_from=date(2024, 11, 1),
-    )
-    session = FakeSession(
+    session = _afp_test_import_session(
         [
-            FakeResult(scalar_rows=[SimpleNamespace(id=1, code="SALARY_BASE")]),
-            # Pension plan deduction
-            FakeResult(joined_rows=[(pension_plan, pension_institution)]),
-            # Health plan deduction
-            FakeResult(joined_rows=[(health_plan, health_institution)]),
-            # Pension plan validation
-            FakeResult(first_row=(pension_plan, pension_institution)),
-            # Health plan validation
-            FakeResult(first_row=(health_plan, health_institution)),
             # Employer lookup - NewCo doesn't exist yet
             FakeResult(scalar_one=None),
             # Close overlapping open-ended employers
@@ -933,30 +925,8 @@ async def test_sa_payroll_repository_updates_existing_employer_started_at() -> N
         name="PreviousCo",
         started_at=date(2025, 1, 1),
     )
-    pension_plan, pension_institution = build_pension_pair(
-        plan_id=1,
-        institution_id=5,
-        code="AFP_TEST",
-        name="AFP Test",
-        additional_rate=Decimal("0"),
-        valid_from=date(2024, 11, 1),
-    )
-    health_plan, health_institution = build_health_pair(
-        plan_id=1,
-        institution_id=6,
-        valid_from=date(2024, 11, 1),
-    )
-    session = FakeSession(
+    session = _afp_test_import_session(
         [
-            FakeResult(scalar_rows=[SimpleNamespace(id=1, code="SALARY_BASE")]),
-            # Pension plan deduction
-            FakeResult(joined_rows=[(pension_plan, pension_institution)]),
-            # Health plan deduction
-            FakeResult(joined_rows=[(health_plan, health_institution)]),
-            # Pension plan validation
-            FakeResult(first_row=(pension_plan, pension_institution)),
-            # Health plan validation
-            FakeResult(first_row=(health_plan, health_institution)),
             # Employer lookup - return existing employer
             FakeResult(scalar_one=employer),
             # Close overlapping open-ended employers
@@ -990,30 +960,8 @@ async def test_sa_payroll_repository_creates_employer_and_replaces_period_items(
         payment_date=date(2026, 1, 15),
         status=PayrollStatus.PROJECTED,
     )
-    pension_plan, pension_institution = build_pension_pair(
-        plan_id=1,
-        institution_id=5,
-        code="AFP_TEST",
-        name="AFP Test",
-        additional_rate=Decimal("0"),
-        valid_from=date(2024, 11, 1),
-    )
-    health_plan, health_institution = build_health_pair(
-        plan_id=1,
-        institution_id=6,
-        valid_from=date(2024, 11, 1),
-    )
-    session = FakeSession(
+    session = _afp_test_import_session(
         [
-            FakeResult(scalar_rows=[SimpleNamespace(id=1, code="SALARY_BASE")]),
-            # Pension plan deduction
-            FakeResult(joined_rows=[(pension_plan, pension_institution)]),
-            # Health plan deduction
-            FakeResult(joined_rows=[(health_plan, health_institution)]),
-            # Pension plan validation
-            FakeResult(first_row=(pension_plan, pension_institution)),
-            # Health plan validation
-            FakeResult(first_row=(health_plan, health_institution)),
             # Employer lookup - NewCo doesn't exist yet
             FakeResult(scalar_one=None),
             # Close overlapping open-ended employers
@@ -1383,22 +1331,8 @@ async def test_repository_rejects_context_without_health_snapshots() -> None:
 @pytest.mark.asyncio
 async def test_repository_sums_contracted_uf_for_multiple_period_health_plans() -> None:
     """Test contribution context sums contracted UF across period health plans."""
-    period = build_period()
-    session = FakeSession(
-        build_contribution_context_results(
-            period=period,
-            pension_pair=build_pension_pair(),
-            health_pair=build_health_pair(contracted_uf=Decimal("5.42")),
-            health_plan_ids=[22, 23],
-            period_health_pairs=[
-                build_health_pair(plan_id=22, contracted_uf=Decimal("5.42")),
-                build_health_pair(
-                    plan_id=23,
-                    contracted_uf=Decimal("0.91"),
-                    plan_name="GES",
-                ),
-            ],
-        )
+    period, session = _multi_health_session(
+        build_health_pair(plan_id=23, contracted_uf=Decimal("0.91"), plan_name="GES")
     )
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
@@ -1438,25 +1372,15 @@ async def test_repository_rejects_contribution_context_mixed_health_institutions
     None
 ):
     """Test contribution context rejects mixed institutions in period health plans."""
-    period = build_period()
-    session = FakeSession(
-        build_contribution_context_results(
-            period=period,
-            pension_pair=build_pension_pair(),
-            health_pair=build_health_pair(contracted_uf=Decimal("5.42")),
-            health_plan_ids=[22, 23],
-            period_health_pairs=[
-                build_health_pair(plan_id=22, contracted_uf=Decimal("5.42")),
-                build_health_pair(
-                    plan_id=23,
-                    institution_id=3,
-                    code="ISAPRE_X",
-                    name="Isapre X",
-                    kind=HealthInstitutionKind.ISAPRE,
-                    contracted_uf=Decimal("0.91"),
-                    plan_name="Other",
-                ),
-            ],
+    _, session = _multi_health_session(
+        build_health_pair(
+            plan_id=23,
+            institution_id=3,
+            code="ISAPRE_X",
+            name="Isapre X",
+            kind=HealthInstitutionKind.ISAPRE,
+            contracted_uf=Decimal("0.91"),
+            plan_name="Other",
         )
     )
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
@@ -2611,28 +2535,7 @@ async def test_api_dependencies_build_payroll_repository_and_use_case(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test api dependencies build payroll repository and use case."""
-    fake_session = object()
-    exited = False
-
-    class FakeSessionManager:
-        """Test double for Session Manager."""
-
-        async def __aenter__(self) -> object:
-            """Enter the async context manager."""
-            return fake_session
-
-        async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-            """Exit the async context manager."""
-            nonlocal exited
-            exited = True
-
-    monkeypatch.setattr(dependencies, "SessionLocal", lambda: FakeSessionManager())
-
-    iterator: AsyncIterator[object] = dependencies.get_session()
-    assert await anext(iterator) is fake_session
-    with pytest.raises(StopAsyncIteration):
-        await anext(iterator)
-    assert exited is True
+    fake_session = await assert_get_session_lifecycle(monkeypatch, dependencies)
 
     repository = dependencies.get_payroll_repository(fake_session)  # type: ignore[arg-type]
     use_case = dependencies.get_import_payroll_use_case(repository)

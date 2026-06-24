@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import pytest
 
+from helpers.reference_data import sample_jan_2026_income_tax_brackets
 from payroll.application.dto import (
     IncomeTaxBracketWriteDTO,
     RefreshIncomeTaxBracketsCommandDTO,
@@ -50,22 +51,7 @@ class StubIncomeTaxBracketProvider:
 async def test_refresh_income_tax_brackets_fetches_and_persists_rows() -> None:
     """Test fetching and persisting official income tax brackets."""
     brackets = [
-        IncomeTaxBracketWriteDTO(
-            valid_from=date(2026, 1, 1),
-            valid_to=date(2026, 1, 31),
-            lower_bound_utm=Decimal("0.0000"),
-            upper_bound_utm=Decimal("13.5000"),
-            marginal_rate=Decimal("0"),
-            rebate_utm=Decimal("0.0000"),
-        ),
-        IncomeTaxBracketWriteDTO(
-            valid_from=date(2026, 1, 1),
-            valid_to=date(2026, 1, 31),
-            lower_bound_utm=Decimal("13.5000"),
-            upper_bound_utm=Decimal("30.0000"),
-            marginal_rate=Decimal("0.04"),
-            rebate_utm=Decimal("0.5400"),
-        ),
+        *sample_jan_2026_income_tax_brackets(),
         IncomeTaxBracketWriteDTO(
             valid_from=date(2026, 2, 1),
             valid_to=date(2026, 2, 28),

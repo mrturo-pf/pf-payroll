@@ -17,6 +17,20 @@ from payroll.infrastructure.db.repositories.complementary_insurance_repository i
 )
 
 
+def _build_plan_a_model() -> ComplementaryInsurancePlanModel:
+    """Build the standard Plan A model used across repository tests."""
+    return ComplementaryInsurancePlanModel(
+        id=1,
+        provider_id=1,
+        name="Plan A",
+        cost_type=ComplementaryInsuranceCostType.FIXED_CLP,
+        cost_value=Decimal("50000"),
+        cost_currency="CLP",
+        valid_from=date(2025, 1, 1),
+        valid_to=None,
+    )
+
+
 def test_map_plan_model_to_domain() -> None:
     """Test mapping a plan model to domain entity."""
     model = ComplementaryInsurancePlanModel(
@@ -47,16 +61,7 @@ def test_map_plan_model_to_domain() -> None:
 async def test_get_vigent_plans_returns_mapped_plans() -> None:
     """Test that get_vigent_plans returns properly mapped plans."""
     mock_session = AsyncMock()
-    model = ComplementaryInsurancePlanModel(
-        id=1,
-        provider_id=1,
-        name="Plan A",
-        cost_type=ComplementaryInsuranceCostType.FIXED_CLP,
-        cost_value=Decimal("50000"),
-        cost_currency="CLP",
-        valid_from=date(2025, 1, 1),
-        valid_to=None,
-    )
+    model = _build_plan_a_model()
     mock_result = MagicMock()
     mock_result.scalars().all.return_value = [model]
     mock_session.execute.return_value = mock_result
@@ -140,16 +145,7 @@ async def test_assign_plans_to_period_adds_new_plans() -> None:
 async def test_get_period_plans() -> None:
     """Test getting plans assigned to a period."""
     mock_session = AsyncMock()
-    model = ComplementaryInsurancePlanModel(
-        id=1,
-        provider_id=1,
-        name="Plan A",
-        cost_type=ComplementaryInsuranceCostType.FIXED_CLP,
-        cost_value=Decimal("50000"),
-        cost_currency="CLP",
-        valid_from=date(2025, 1, 1),
-        valid_to=None,
-    )
+    model = _build_plan_a_model()
     mock_result = MagicMock()
     mock_result.scalars().all.return_value = [model]
     mock_session.execute.return_value = mock_result

@@ -86,6 +86,38 @@ def _sample_detail(
     )
 
 
+async def _execute_default_and_assert_contributions_saved(
+    use_case: object,
+    repository: object,
+) -> ImportPayrollResultDTO:
+    """Execute the use case with the standard declared net pay and check IDs."""
+    result = await use_case.execute(  # type: ignore[union-attr]
+        _default_import_result(declared_net_pay_clp=Decimal("1050000"))
+    )
+    assert repository.saved_unemployment == [7]  # type: ignore[union-attr]
+    assert repository.saved_tax == [7]  # type: ignore[union-attr]
+    return result
+
+
+async def _execute_and_assert_period_preserved(
+    stub_repository: object,
+    original_period: ImportedPayrollPeriodDTO,
+) -> None:
+    """Execute with a minimal ImportPayrollResultDTO and assert period is unchanged."""
+    result = await ProcessImportedPayrollPeriods(
+        stub_repository,  # type: ignore[arg-type]
+        StubMarketDataRepository(),  # type: ignore[arg-type]
+        StubComplementaryInsuranceRepository(),  # type: ignore[arg-type]
+    ).execute(
+        ImportPayrollResultDTO(
+            imported_periods=1,
+            imported_items=5,
+            periods=[original_period],
+        )
+    )
+    assert result.periods[0] == original_period
+
+
 def _default_imported_period(
     *, declared_net_pay_clp: Decimal | None = None
 ) -> ImportedPayrollPeriodDTO:
@@ -393,12 +425,8 @@ async def test_process_imported_payroll_periods_compute_and_refresh() -> None:
         StubComplementaryInsuranceRepository(),  # type: ignore[arg-type]
     )
 
-    result = await use_case.execute(
-        _default_import_result(declared_net_pay_clp=Decimal("1050000"))
-    )
+    result = await _execute_default_and_assert_contributions_saved(use_case, repository)
 
-    assert repository.saved_unemployment == [7]
-    assert repository.saved_tax == [7]
     assert result.periods[0].item_count == 7
     assert result.periods[0].expected_net_pay_clp == Decimal("1100000")
 
@@ -441,12 +469,8 @@ async def test_process_imported_payroll_periods_validates_imported_contributions
         StubComplementaryInsuranceRepository(),  # type: ignore[arg-type]
     )
 
-    result = await use_case.execute(
-        _default_import_result(declared_net_pay_clp=Decimal("1050000"))
-    )
+    result = await _execute_default_and_assert_contributions_saved(use_case, repository)
 
-    assert repository.saved_unemployment == [7]
-    assert repository.saved_tax == [7]
     assert result.periods[0].contribution_validation is not None
     assert result.periods[0].contribution_validation.expected_pension_base_clp == (
         Decimal("100000")
@@ -517,19 +541,9 @@ async def test_process_imported_payroll_periods_keeps_original_on_missing_refres
             return None
 
     original_period = _default_imported_period()
-    result = await ProcessImportedPayrollPeriods(
-        MissingRefreshRepository(),
-        StubMarketDataRepository(),  # type: ignore[arg-type]
-        StubComplementaryInsuranceRepository(),  # type: ignore[arg-type]
-    ).execute(
-        ImportPayrollResultDTO(
-            imported_periods=1,
-            imported_items=5,
-            periods=[original_period],
-        )
+    await _execute_and_assert_period_preserved(
+        MissingRefreshRepository(), original_period
     )
-
-    assert result.periods[0] == original_period
 
 
 @pytest.mark.asyncio
@@ -557,19 +571,9 @@ async def test_process_imported_payroll_periods_keeps_original_without_summary()
             return replace(detail, summary=None)
 
     original_period = _default_imported_period()
-    result = await ProcessImportedPayrollPeriods(
-        MissingSummaryRepository(),
-        StubMarketDataRepository(),  # type: ignore[arg-type]
-        StubComplementaryInsuranceRepository(),  # type: ignore[arg-type]
-    ).execute(
-        ImportPayrollResultDTO(
-            imported_periods=1,
-            imported_items=5,
-            periods=[original_period],
-        )
+    await _execute_and_assert_period_preserved(
+        MissingSummaryRepository(), original_period
     )
-
-    assert result.periods[0] == original_period
 
 
 @pytest.mark.asyncio

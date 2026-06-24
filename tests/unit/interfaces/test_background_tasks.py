@@ -24,6 +24,22 @@ class _FakeSessionManager:
         """Exit the async context manager."""
 
 
+def _patch_sync_task(
+    monkeypatch: pytest.MonkeyPatch,
+    use_case: object,
+    info_logger: object,
+) -> None:
+    """Patch the background task infrastructure for sync tests."""
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setattr(background_tasks, "SessionLocal", lambda: _FakeSessionManager())
+    monkeypatch.setattr(
+        background_tasks,
+        "build_market_data_sync_use_case",
+        lambda session: use_case,
+    )
+    monkeypatch.setattr(background_tasks.logger, "info", info_logger)
+
+
 def test_market_data_sync_request_helpers_detect_work() -> None:
     """Test helper functions count pending sync work."""
     empty_request = MarketDataSyncRequestDTO()
@@ -63,16 +79,9 @@ async def test_run_payroll_market_data_sync_logs_completion(
                 upserted_economic_indices=1,
             )
 
-    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
-    monkeypatch.setattr(background_tasks, "SessionLocal", lambda: _FakeSessionManager())
-    monkeypatch.setattr(
-        background_tasks,
-        "build_market_data_sync_use_case",
-        lambda session: FakeUseCase(),
-    )
-    monkeypatch.setattr(
-        background_tasks.logger,
-        "info",
+    _patch_sync_task(
+        monkeypatch,
+        FakeUseCase(),
         lambda event, **kwargs: info_calls.append((event, kwargs)),
     )
 
@@ -112,14 +121,7 @@ async def test_run_payroll_market_data_sync_logs_failures(
             """Handle execute request."""
             raise RuntimeError("sync exploded")
 
-    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
-    monkeypatch.setattr(background_tasks, "SessionLocal", lambda: _FakeSessionManager())
-    monkeypatch.setattr(
-        background_tasks,
-        "build_market_data_sync_use_case",
-        lambda session: FakeUseCase(),
-    )
-    monkeypatch.setattr(background_tasks.logger, "info", lambda event, **kwargs: None)
+    _patch_sync_task(monkeypatch, FakeUseCase(), lambda event, **kwargs: None)
     monkeypatch.setattr(
         background_tasks.logger,
         "exception",
@@ -150,16 +152,9 @@ async def test_run_payroll_market_data_sync_logs_cancellation(
             """Handle execute request."""
             raise asyncio.CancelledError()
 
-    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
-    monkeypatch.setattr(background_tasks, "SessionLocal", lambda: _FakeSessionManager())
-    monkeypatch.setattr(
-        background_tasks,
-        "build_market_data_sync_use_case",
-        lambda session: FakeUseCase(),
-    )
-    monkeypatch.setattr(
-        background_tasks.logger,
-        "info",
+    _patch_sync_task(
+        monkeypatch,
+        FakeUseCase(),
         lambda event, **kwargs: info_calls.append((event, kwargs)),
     )
 

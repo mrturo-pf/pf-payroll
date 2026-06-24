@@ -167,6 +167,15 @@ class StubEconomicIndexProvider:
         )
 
 
+_APRIL_2026_MARKET_DATA_REQUEST = MarketDataSyncRequestDTO(
+    exchange_rate_dates={
+        "UF": [date(2026, 4, 29)],
+        "UTM": [date(2026, 4, 1)],
+    },
+    economic_index_periods={"IPC_CL": [(2026, 4)]},
+)
+
+
 @pytest.mark.asyncio
 async def test_sync_recent_market_data_fetches_only_missing_entries() -> None:
     """Test syncing only fetches and inserts missing entries."""
@@ -347,13 +356,7 @@ async def test_sync_recent_market_data_clears_remaining_request_after_success() 
     )
 
     result, remaining_request = await use_case.execute_request_and_collect_remaining(
-        request=MarketDataSyncRequestDTO(
-            exchange_rate_dates={
-                "UF": [date(2026, 4, 29)],
-                "UTM": [date(2026, 4, 1)],
-            },
-            economic_index_periods={"IPC_CL": [(2026, 4)]},
-        )
+        request=_APRIL_2026_MARKET_DATA_REQUEST
     )
 
     assert result == SyncRecentMarketDataResultDTO(
@@ -379,13 +382,7 @@ async def test_sync_recent_market_data_keeps_remaining_request_on_provider_miss(
     )
 
     result, remaining_request = await use_case.execute_request_and_collect_remaining(
-        request=MarketDataSyncRequestDTO(
-            exchange_rate_dates={
-                "UF": [date(2026, 4, 29)],
-                "UTM": [date(2026, 4, 1)],
-            },
-            economic_index_periods={"IPC_CL": [(2026, 4)]},
-        )
+        request=_APRIL_2026_MARKET_DATA_REQUEST
     )
 
     assert result == SyncRecentMarketDataResultDTO(

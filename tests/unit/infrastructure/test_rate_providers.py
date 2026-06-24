@@ -8,6 +8,7 @@ from urllib.error import URLError
 
 import pytest
 
+from helpers.reference_data import sample_jan_2026_income_tax_brackets
 from payroll.application.dto import (
     EconomicIndexWriteDTO,
     ExchangeRateWriteDTO,
@@ -30,6 +31,37 @@ from payroll.infrastructure.rate_providers.official_providers import (
     _parse_chilean_amount,
     _parse_chilean_decimal,
 )
+
+
+def _stub_exchange_rate_entries(
+    currency_code: str, requested_dates: list[date], source: str
+) -> list[ExchangeRateWriteDTO]:
+    """Build a fixed-value ExchangeRateWriteDTO list used in chained provider tests."""
+    return [
+        ExchangeRateWriteDTO(
+            currency_code=currency_code,
+            rate_date=d,
+            value_clp=Decimal("950.12"),
+            source=source,
+        )
+        for d in requested_dates
+    ]
+
+
+def _stub_economic_index_entries(
+    code: str, requested_periods: list[tuple[int, int]], source: str
+) -> list[EconomicIndexWriteDTO]:
+    """Build a fixed-value EconomicIndexWriteDTO list used in chained provider tests."""
+    return [
+        EconomicIndexWriteDTO(
+            code=code,
+            period_year=period_year,
+            period_month=period_month,
+            index_value=Decimal("109.71"),
+            source=source,
+        )
+        for period_year, period_month in requested_periods
+    ]
 
 
 @pytest.mark.asyncio
@@ -295,22 +327,7 @@ async def test_sii_income_tax_bracket_provider_parses_monthly_sections() -> None
     result = await provider.fetch_income_tax_brackets(2026)
 
     assert result == [
-        IncomeTaxBracketWriteDTO(
-            valid_from=date(2026, 1, 1),
-            valid_to=date(2026, 1, 31),
-            lower_bound_utm=Decimal("0.0000"),
-            upper_bound_utm=Decimal("13.5000"),
-            marginal_rate=Decimal("0"),
-            rebate_utm=Decimal("0.0000"),
-        ),
-        IncomeTaxBracketWriteDTO(
-            valid_from=date(2026, 1, 1),
-            valid_to=date(2026, 1, 31),
-            lower_bound_utm=Decimal("13.5000"),
-            upper_bound_utm=Decimal("30.0000"),
-            marginal_rate=Decimal("0.04"),
-            rebate_utm=Decimal("0.5400"),
-        ),
+        *sample_jan_2026_income_tax_brackets(),
         IncomeTaxBracketWriteDTO(
             valid_from=date(2026, 1, 1),
             valid_to=date(2026, 1, 31),
@@ -469,15 +486,9 @@ async def test_chained_rate_and_index_providers_use_first_success() -> None:
             self, currency_code: str, requested_dates: list[date]
         ) -> list[ExchangeRateWriteDTO]:
             """Handle fetch rate entries."""
-            return [
-                ExchangeRateWriteDTO(
-                    currency_code=currency_code,
-                    rate_date=requested_date,
-                    value_clp=Decimal("950.12"),
-                    source="mindicador",
-                )
-                for requested_date in requested_dates
-            ]
+            return _stub_exchange_rate_entries(
+                currency_code, requested_dates, "mindicador"
+            )
 
     class FailingIndex:
         """Represent Failing Index."""
@@ -517,16 +528,7 @@ async def test_chained_rate_and_index_providers_use_first_success() -> None:
             self, code: str, requested_periods: list[tuple[int, int]]
         ) -> list[EconomicIndexWriteDTO]:
             """Handle fetch indices."""
-            return [
-                EconomicIndexWriteDTO(
-                    code=code,
-                    period_year=period_year,
-                    period_month=period_month,
-                    index_value=Decimal("109.71"),
-                    source="sii",
-                )
-                for period_year, period_month in requested_periods
-            ]
+            return _stub_economic_index_entries(code, requested_periods, "sii")
 
     fx_chain = ChainedFxProvider([FailingFx(), WorkingFx()])
     index_chain = ChainedEconomicIndexProvider([FailingIndex(), WorkingIndex()])
@@ -582,15 +584,7 @@ async def test_chained_bulk_providers_stop_after_full_match() -> None:
             self, currency_code: str, requested_dates: list[date]
         ) -> list[ExchangeRateWriteDTO]:
             """Handle fetch rate entries."""
-            return [
-                ExchangeRateWriteDTO(
-                    currency_code=currency_code,
-                    rate_date=requested_date,
-                    value_clp=Decimal("950.12"),
-                    source="first",
-                )
-                for requested_date in requested_dates
-            ]
+            return _stub_exchange_rate_entries(currency_code, requested_dates, "first")
 
     class SecondFx:
         """Fail if called after requests were already satisfied."""
@@ -626,16 +620,7 @@ async def test_chained_bulk_providers_stop_after_full_match() -> None:
             self, code: str, requested_periods: list[tuple[int, int]]
         ) -> list[EconomicIndexWriteDTO]:
             """Handle fetch indices."""
-            return [
-                EconomicIndexWriteDTO(
-                    code=code,
-                    period_year=period_year,
-                    period_month=period_month,
-                    index_value=Decimal("109.71"),
-                    source="first",
-                )
-                for period_year, period_month in requested_periods
-            ]
+            return _stub_economic_index_entries(code, requested_periods, "first")
 
     class SecondIndex:
         """Fail if called after requests were already satisfied."""

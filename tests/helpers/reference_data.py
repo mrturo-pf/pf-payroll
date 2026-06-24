@@ -6,14 +6,98 @@ from decimal import Decimal
 from payroll.application.dto import (
     ContributionCapDTO,
     CurrencyDTO,
+    EconomicIndexDTO,
+    ExchangeRateDTO,
     HealthInstitutionDTO,
     HealthPlanDTO,
     IncomeTaxBracketDTO,
     PayrollConceptDTO,
+    PayrollItemDetailDTO,
+    PayrollPeriodDetailDTO,
+    PayrollSummaryDTO,
     PensionInstitutionDTO,
     PensionPlanDTO,
 )
-from payroll.domain.contributions import HealthInstitutionKind
+from payroll.domain.contributions import EmploymentContractKind, HealthInstitutionKind
+
+
+def sample_exchange_rate_dto() -> ExchangeRateDTO:
+    """Return a standard UF exchange rate DTO for testing."""
+    return ExchangeRateDTO(
+        currency_code="UF",
+        rate_date=date(2026, 1, 31),
+        value_clp=Decimal("38000"),
+        source="manual",
+    )
+
+
+def sample_economic_index_dto() -> EconomicIndexDTO:
+    """Return a standard IPC_CL economic index DTO for testing."""
+    return EconomicIndexDTO(
+        code="IPC_CL",
+        period_year=2026,
+        period_month=1,
+        index_value=Decimal("112.340000"),
+        monthly_change=Decimal("0.7000"),
+        yearly_change=Decimal("4.1000"),
+        base_period="DIC-2018",
+        source="manual",
+    )
+
+
+def sample_payroll_period_detail_dto(
+    period_id: int = 1,
+    *,
+    items: list[PayrollItemDetailDTO] | None = None,
+    employer_tax_id: str | None = None,
+    employer_ended_at: date | None = None,
+    health_institution_is_active: bool | None = None,
+) -> PayrollPeriodDetailDTO:
+    """Return an ACME January-2026 PayrollPeriodDetailDTO for testing.
+
+    Structural fields are fixed; callers supply only the fields that vary
+    per test (period_id, items, employer_tax_id, employer_ended_at).
+    """
+    return PayrollPeriodDetailDTO(
+        id=period_id,
+        employer_id=1,
+        employer_name="ACME",
+        employer_tax_id=employer_tax_id,
+        employer_country_code="CL",
+        employer_started_at=date(2020, 1, 1),
+        employer_ended_at=employer_ended_at,
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        worked_days=30,
+        status="actual",
+        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+        pension_plan_id=1,
+        health_plan_id=2,
+        items=items if items is not None else [],
+        summary=sample_payroll_summary_dto(period_id),
+        health_institution_is_active=health_institution_is_active,
+    )
+
+
+def sample_payroll_summary_dto(period_id: int = 1) -> PayrollSummaryDTO:
+    """Return a standard ACME payroll summary DTO for testing.
+
+    All financial values correspond to a January-2026 ACME payroll period
+    with a 1 000 000 CLP taxable income and 830 000 CLP net pay.
+    """
+    return PayrollSummaryDTO(
+        period_id=period_id,
+        employer_id=1,
+        employer_name="ACME",
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        taxable_income_clp=Decimal("1000000"),
+        gross_income_clp=Decimal("1000000"),
+        total_discounts_clp=Decimal("170000"),
+        net_pay_clp=Decimal("830000"),
+    )
 
 
 class ReferenceDataStubMixin:

@@ -254,6 +254,13 @@ class FakeDeflateAmounts:
         )
 
 
+def _post_compute_contributions(client: TestClient) -> object:
+    return client.post(
+        "/payroll/5/compute-contributions",
+        json={"pension_plan_id": 1, "health_plan_id": 2, "uf_value_clp": "35000"},
+    )
+
+
 async def _async_return(
     result: object,
     observed_requests: list[MarketDataSyncRequestDTO | None],
@@ -418,10 +425,7 @@ def test_compute_contributions_endpoint() -> None:
     client = TestClient(app)
 
     try:
-        response = client.post(
-            "/payroll/5/compute-contributions",
-            json={"pension_plan_id": 1, "health_plan_id": 2, "uf_value_clp": "35000"},
-        )
+        response = _post_compute_contributions(client)
     finally:
         app.dependency_overrides.clear()
 
@@ -620,10 +624,7 @@ def test_compute_contributions_endpoint_surfaces_domain_errors() -> None:
     client = TestClient(app)
 
     try:
-        response = client.post(
-            "/payroll/5/compute-contributions",
-            json={"pension_plan_id": 1, "health_plan_id": 2, "uf_value_clp": "35000"},
-        )
+        response = _post_compute_contributions(client)
     finally:
         app.dependency_overrides.clear()
 

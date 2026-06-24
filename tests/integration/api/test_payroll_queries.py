@@ -20,7 +20,35 @@ from payroll.interfaces.api.routes.payroll import (
     _compute_increase,
     get_payroll_period,
 )
-from payroll.domain.contributions import EmploymentContractKind
+from tests.helpers.reference_data import (
+    sample_payroll_period_detail_dto,
+    sample_payroll_summary_dto,
+)
+
+
+def _make_period_range(
+    period_year: int,
+    period_month: int,
+    start_date: date,
+    end_date: date,
+    net_pay_clp: Decimal | None,
+    *,
+    is_current: bool = False,
+    inferred: bool = False,
+    salary_base: Decimal | None = None,
+    worked_days: int | None = None,
+) -> PayrollPeriodRangeDTO:
+    return PayrollPeriodRangeDTO(
+        period_year=period_year,
+        period_month=period_month,
+        start_date=start_date,
+        end_date=end_date,
+        net_pay_clp=net_pay_clp,
+        is_current=is_current,
+        inferred=inferred,
+        salary_base=salary_base,
+        worked_days=worked_days,
+    )
 
 
 class FakePayrollQueries:
@@ -29,22 +57,11 @@ class FakePayrollQueries:
     async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO:
         """Get period detail."""
         assert period_id == 7
-        return PayrollPeriodDetailDTO(
-            id=7,
-            employer_id=1,
-            employer_name="ACME",
+        return sample_payroll_period_detail_dto(
+            7,
             employer_tax_id="76.123.456-7",
-            employer_country_code="CL",
-            employer_started_at=date(2020, 1, 1),
             employer_ended_at=date(2025, 12, 31),
-            period_year=2026,
-            period_month=1,
-            payment_date=date(2026, 1, 31),
-            worked_days=30,
-            status="actual",
-            employment_contract_kind=EmploymentContractKind.INDEFINITE,
-            pension_plan_id=1,
-            health_plan_id=2,
+            health_institution_is_active=False,
             items=[
                 PayrollItemDetailDTO(
                     concept_code="SALARY_BASE",
@@ -63,37 +80,11 @@ class FakePayrollQueries:
                     notes="computed",
                 ),
             ],
-            summary=PayrollSummaryDTO(
-                period_id=7,
-                employer_id=1,
-                employer_name="ACME",
-                period_year=2026,
-                period_month=1,
-                payment_date=date(2026, 1, 31),
-                taxable_income_clp=Decimal("1000000"),
-                gross_income_clp=Decimal("1000000"),
-                total_discounts_clp=Decimal("170000"),
-                net_pay_clp=Decimal("830000"),
-            ),
-            health_institution_is_active=False,
         )
 
     async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
         """List period summaries."""
-        return [
-            PayrollSummaryDTO(
-                period_id=7,
-                employer_id=1,
-                employer_name="ACME",
-                period_year=2026,
-                period_month=1,
-                payment_date=date(2026, 1, 31),
-                taxable_income_clp=Decimal("1000000"),
-                gross_income_clp=Decimal("1000000"),
-                total_discounts_clp=Decimal("170000"),
-                net_pay_clp=Decimal("830000"),
-            )
-        ]
+        return [sample_payroll_summary_dto(7)]
 
     async def list_period_ranges(self) -> list[PayrollPeriodRangeDTO]:
         """List period ranges."""
@@ -268,25 +259,21 @@ def test_payroll_detail_endpoint_surfaces_not_found() -> None:
 
 def test_compute_increase_returns_true_when_normalized_salary_rose() -> None:
     """Increase is true when (salary_base/worked_days)*30 grew vs predecessor."""
-    current = PayrollPeriodRangeDTO(
-        period_year=2026,
-        period_month=1,
-        start_date=date(2026, 1, 31),
-        end_date=date(2026, 2, 27),
-        net_pay_clp=Decimal("830000"),
-        is_current=False,
-        inferred=False,
+    current = _make_period_range(
+        2026,
+        1,
+        date(2026, 1, 31),
+        date(2026, 2, 27),
+        Decimal("830000"),
         salary_base=Decimal("1200000"),
         worked_days=30,
     )
-    predecessor = PayrollPeriodRangeDTO(
-        period_year=2025,
-        period_month=12,
-        start_date=date(2025, 12, 31),
-        end_date=date(2026, 1, 30),
-        net_pay_clp=Decimal("780000"),
-        is_current=False,
-        inferred=False,
+    predecessor = _make_period_range(
+        2025,
+        12,
+        date(2025, 12, 31),
+        date(2026, 1, 30),
+        Decimal("780000"),
         salary_base=Decimal("1000000"),
         worked_days=30,
     )
@@ -295,25 +282,21 @@ def test_compute_increase_returns_true_when_normalized_salary_rose() -> None:
 
 def test_compute_increase_returns_false_when_normalized_salary_fell() -> None:
     """Increase is false when (salary_base/worked_days)*30 dropped vs predecessor."""
-    current = PayrollPeriodRangeDTO(
-        period_year=2026,
-        period_month=1,
-        start_date=date(2026, 1, 31),
-        end_date=date(2026, 2, 27),
-        net_pay_clp=Decimal("780000"),
-        is_current=False,
-        inferred=False,
+    current = _make_period_range(
+        2026,
+        1,
+        date(2026, 1, 31),
+        date(2026, 2, 27),
+        Decimal("780000"),
         salary_base=Decimal("1000000"),
         worked_days=30,
     )
-    predecessor = PayrollPeriodRangeDTO(
-        period_year=2025,
-        period_month=12,
-        start_date=date(2025, 12, 31),
-        end_date=date(2026, 1, 30),
-        net_pay_clp=Decimal("830000"),
-        is_current=False,
-        inferred=False,
+    predecessor = _make_period_range(
+        2025,
+        12,
+        date(2025, 12, 31),
+        date(2026, 1, 30),
+        Decimal("830000"),
         salary_base=Decimal("1200000"),
         worked_days=30,
     )
@@ -322,26 +305,22 @@ def test_compute_increase_returns_false_when_normalized_salary_fell() -> None:
 
 def test_compute_increase_returns_none_when_predecessor_has_no_salary() -> None:
     """Increase is null when predecessor lacks salary_base data."""
-    current = PayrollPeriodRangeDTO(
-        period_year=2026,
-        period_month=1,
-        start_date=date(2026, 1, 31),
-        end_date=date(2026, 2, 27),
-        net_pay_clp=None,
-        is_current=False,
-        inferred=False,
+    current = _make_period_range(
+        2026,
+        1,
+        date(2026, 1, 31),
+        date(2026, 2, 27),
+        None,
         salary_base=Decimal("1000000"),
         worked_days=30,
     )
-    predecessor = PayrollPeriodRangeDTO(
-        period_year=2025,
-        period_month=12,
-        start_date=date(2025, 12, 31),
-        end_date=date(2026, 1, 30),
-        net_pay_clp=None,
-        is_current=False,
+    predecessor = _make_period_range(
+        2025,
+        12,
+        date(2025, 12, 31),
+        date(2026, 1, 30),
+        None,
         inferred=True,
-        # salary_base and worked_days default to None
     )
     assert _compute_increase(current, predecessor) is None
     assert _compute_increase(current, None) is None
@@ -350,25 +329,21 @@ def test_compute_increase_returns_none_when_predecessor_has_no_salary() -> None:
 def test_compute_increase_accounts_for_worked_days_normalization() -> None:
     """Normalized salary comparison uses worked_days, not raw salary_base."""
     # Period with fewer worked_days but same salary_base should appear higher normalized
-    current = PayrollPeriodRangeDTO(
-        period_year=2026,
-        period_month=1,
-        start_date=date(2026, 1, 31),
-        end_date=date(2026, 2, 27),
-        net_pay_clp=None,
-        is_current=False,
-        inferred=False,
+    current = _make_period_range(
+        2026,
+        1,
+        date(2026, 1, 31),
+        date(2026, 2, 27),
+        None,
         salary_base=Decimal("1000000"),
         worked_days=25,  # (1000000/25)*30 = 1200000
     )
-    predecessor = PayrollPeriodRangeDTO(
-        period_year=2025,
-        period_month=12,
-        start_date=date(2025, 12, 31),
-        end_date=date(2026, 1, 30),
-        net_pay_clp=None,
-        is_current=False,
-        inferred=False,
+    predecessor = _make_period_range(
+        2025,
+        12,
+        date(2025, 12, 31),
+        date(2026, 1, 30),
+        None,
         salary_base=Decimal("1000000"),
         worked_days=30,  # (1000000/30)*30 = 1000000
     )

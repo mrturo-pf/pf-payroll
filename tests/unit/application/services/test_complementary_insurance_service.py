@@ -11,42 +11,10 @@ from payroll.application.dto import PayrollPeriodDetailDTO, PayrollSummaryDTO
 from payroll.application.services.complementary_insurance_service import (
     ComplementaryInsuranceService,
 )
-from payroll.domain.contributions import (
-    ComplementaryInsuranceCostType,
-    ComplementaryInsurancePlan,
+from payroll.domain.contributions import ComplementaryInsuranceCostType
+from tests.helpers.complementary_insurance_helpers import (
+    build_complementary_insurance_plan,
 )
-
-
-def build_plan(
-    *,
-    plan_id: int,
-    name: str,
-    cost_type: ComplementaryInsuranceCostType,
-    cost_value: Decimal,
-) -> ComplementaryInsurancePlan:
-    """Build a complementary insurance plan for tests."""
-    return ComplementaryInsurancePlan(
-        id=plan_id,
-        provider_id=1,
-        name=name,
-        cost_type=cost_type,
-        cost_value=cost_value,
-        cost_currency="CLP",
-        valid_from=date(2024, 1, 1),
-        valid_to=None,
-    )
-
-
-@pytest.fixture
-def mock_payroll_repository() -> AsyncMock:
-    """Create mock payroll repository."""
-    return AsyncMock()
-
-
-@pytest.fixture
-def mock_complementary_insurance_repository() -> AsyncMock:
-    """Create mock complementary insurance repository."""
-    return AsyncMock()
 
 
 @pytest.fixture
@@ -86,13 +54,13 @@ async def test_assign_plans_for_period_with_vigent_plans(
         summary=summary,
     )
 
-    plan1 = build_plan(
+    plan1 = build_complementary_insurance_plan(
         plan_id=10,
         name="Plan A",
         cost_type=ComplementaryInsuranceCostType.FIXED_CLP,
         cost_value=Decimal("50000"),
     )
-    plan2 = build_plan(
+    plan2 = build_complementary_insurance_plan(
         plan_id=20,
         name="Plan B",
         cost_type=ComplementaryInsuranceCostType.VARIABLE_PERCENTAGE,

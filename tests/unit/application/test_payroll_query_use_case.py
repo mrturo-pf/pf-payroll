@@ -12,7 +12,10 @@ from payroll.application.dto import (
     PayrollSummaryDTO,
 )
 from payroll.application.use_cases.payroll_queries import PayrollQueries
-from payroll.domain.contributions import EmploymentContractKind
+from tests.helpers.reference_data import (
+    sample_payroll_period_detail_dto,
+    sample_payroll_summary_dto,
+)
 
 
 class StubPayrollRepository:
@@ -22,22 +25,8 @@ class StubPayrollRepository:
         """Get period detail."""
         if period_id == 404:
             return None
-        return PayrollPeriodDetailDTO(
-            id=period_id,
-            employer_id=1,
-            employer_name="ACME",
-            employer_tax_id=None,
-            employer_country_code="CL",
-            employer_started_at=date(2020, 1, 1),
-            employer_ended_at=None,
-            period_year=2026,
-            period_month=1,
-            payment_date=date(2026, 1, 31),
-            worked_days=30,
-            status="actual",
-            employment_contract_kind=EmploymentContractKind.INDEFINITE,
-            pension_plan_id=1,
-            health_plan_id=2,
+        return sample_payroll_period_detail_dto(
+            period_id,
             items=[
                 PayrollItemDetailDTO(
                     concept_code="SALARY_BASE",
@@ -48,36 +37,11 @@ class StubPayrollRepository:
                     notes=None,
                 )
             ],
-            summary=PayrollSummaryDTO(
-                period_id=period_id,
-                employer_id=1,
-                employer_name="ACME",
-                period_year=2026,
-                period_month=1,
-                payment_date=date(2026, 1, 31),
-                taxable_income_clp=Decimal("1000000"),
-                gross_income_clp=Decimal("1000000"),
-                total_discounts_clp=Decimal("170000"),
-                net_pay_clp=Decimal("830000"),
-            ),
         )
 
     async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
         """List period summaries."""
-        return [
-            PayrollSummaryDTO(
-                period_id=1,
-                employer_id=1,
-                employer_name="ACME",
-                period_year=2026,
-                period_month=1,
-                payment_date=date(2026, 1, 31),
-                taxable_income_clp=Decimal("1000000"),
-                gross_income_clp=Decimal("1000000"),
-                total_discounts_clp=Decimal("170000"),
-                net_pay_clp=Decimal("830000"),
-            )
-        ]
+        return [sample_payroll_summary_dto(1)]
 
     async def list_period_ranges(
         self, *, today: date | None = None

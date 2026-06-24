@@ -12,49 +12,43 @@ from payroll.application.errors import EconomicIndexNotFoundError
 from payroll.application.services.complementary_insurance_cost_computation import (
     ComplementaryInsuranceCostComputationService,
 )
-from payroll.domain.contributions import (
-    ComplementaryInsuranceCostType,
-    ComplementaryInsurancePlan,
+from payroll.domain.contributions import ComplementaryInsuranceCostType
+from tests.helpers.complementary_insurance_helpers import (
+    build_complementary_insurance_plan,
 )
 
 
-def build_plan(
-    *,
-    plan_id: int,
-    name: str,
-    cost_type: ComplementaryInsuranceCostType,
-    cost_value: Decimal,
-    cost_currency: str = "CLP",
-) -> ComplementaryInsurancePlan:
-    """Build a complementary insurance plan for tests."""
-    return ComplementaryInsurancePlan(
-        id=plan_id,
-        provider_id=1,
-        name=name,
-        cost_type=cost_type,
-        cost_value=cost_value,
-        cost_currency=cost_currency,
-        valid_from=date(2024, 1, 1),
-        valid_to=None,
+def _make_uf_plan_detail_and_plan(
+    period_id: int,
+    payroll_summary_dto: PayrollSummaryDTO,
+    payroll_period_detail_dto: PayrollPeriodDetailDTO,
+) -> tuple[PayrollPeriodDetailDTO, object]:
+    payment_date = date(2025, 3, 31)
+    summary = replace(
+        payroll_summary_dto,
+        period_id=period_id,
+        period_month=3,
+        payment_date=payment_date,
+        taxable_income_clp=Decimal("3000000"),
+        gross_income_clp=Decimal("3500000"),
+        total_discounts_clp=Decimal("400000"),
+        net_pay_clp=Decimal("3100000"),
     )
-
-
-@pytest.fixture
-def mock_payroll_repository() -> AsyncMock:
-    """Create mock payroll repository."""
-    return AsyncMock()
-
-
-@pytest.fixture
-def mock_complementary_insurance_repository() -> AsyncMock:
-    """Create mock complementary insurance repository."""
-    return AsyncMock()
-
-
-@pytest.fixture
-def mock_market_data_repository() -> AsyncMock:
-    """Create mock market data repository."""
-    return AsyncMock()
+    detail = replace(
+        payroll_period_detail_dto,
+        id=period_id,
+        period_month=3,
+        payment_date=payment_date,
+        summary=summary,
+    )
+    plan = build_complementary_insurance_plan(
+        plan_id=30,
+        name="Plan UF",
+        cost_type=ComplementaryInsuranceCostType.FIXED_UF,
+        cost_value=Decimal("2"),
+        cost_currency="UF",
+    )
+    return detail, plan
 
 
 @pytest.fixture
@@ -93,13 +87,13 @@ async def test_compute_with_fixed_and_variable_plans(
         summary=summary,
     )
 
-    plan1 = build_plan(
+    plan1 = build_complementary_insurance_plan(
         plan_id=10,
         name="Plan A (Fixed)",
         cost_type=ComplementaryInsuranceCostType.FIXED_CLP,
         cost_value=Decimal("50000"),
     )
-    plan2 = build_plan(
+    plan2 = build_complementary_insurance_plan(
         plan_id=20,
         name="Plan B (2%)",
         cost_type=ComplementaryInsuranceCostType.VARIABLE_PERCENTAGE,
@@ -206,31 +200,9 @@ async def test_compute_with_fixed_uf_plan(
 ) -> None:
     """Test computing costs with a FIXED_UF plan fetches and converts UF rate."""
     period_id = 10
-    payment_date = date(2025, 3, 31)
     reference_date = date(2025, 4, 1)  # First day of following month
-    summary = replace(
-        payroll_summary_dto,
-        period_id=period_id,
-        period_month=3,
-        payment_date=payment_date,
-        taxable_income_clp=Decimal("3000000"),
-        gross_income_clp=Decimal("3500000"),
-        total_discounts_clp=Decimal("400000"),
-        net_pay_clp=Decimal("3100000"),
-    )
-    detail = replace(
-        payroll_period_detail_dto,
-        id=period_id,
-        period_month=3,
-        payment_date=payment_date,
-        summary=summary,
-    )
-    plan = build_plan(
-        plan_id=30,
-        name="Plan UF",
-        cost_type=ComplementaryInsuranceCostType.FIXED_UF,
-        cost_value=Decimal("2"),
-        cost_currency="UF",
+    detail, plan = _make_uf_plan_detail_and_plan(
+        period_id, payroll_summary_dto, payroll_period_detail_dto
     )
 
     mock_payroll_repository.get_period_detail.return_value = detail
@@ -267,29 +239,8 @@ async def test_compute_with_fixed_uf_plan_missing_rate_raises(
     must surface an EconomicIndexNotFoundError.
     """
     period_id = 11
-    summary = replace(
-        payroll_summary_dto,
-        period_id=period_id,
-        period_month=3,
-        payment_date=date(2025, 3, 31),
-        taxable_income_clp=Decimal("3000000"),
-        gross_income_clp=Decimal("3500000"),
-        total_discounts_clp=Decimal("400000"),
-        net_pay_clp=Decimal("3100000"),
-    )
-    detail = replace(
-        payroll_period_detail_dto,
-        id=period_id,
-        period_month=3,
-        payment_date=date(2025, 3, 31),
-        summary=summary,
-    )
-    plan = build_plan(
-        plan_id=30,
-        name="Plan UF",
-        cost_type=ComplementaryInsuranceCostType.FIXED_UF,
-        cost_value=Decimal("2"),
-        cost_currency="UF",
+    detail, plan = _make_uf_plan_detail_and_plan(
+        period_id, payroll_summary_dto, payroll_period_detail_dto
     )
 
     mock_payroll_repository.get_period_detail.return_value = detail

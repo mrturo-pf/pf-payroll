@@ -8,10 +8,10 @@ import pytest
 from payroll.application.dto import (
     DeflateAmountsCommandDTO,
     PayrollPeriodDetailDTO,
-    PayrollSummaryDTO,
 )
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.domain.contributions import EmploymentContractKind
+from tests.helpers.reference_data import sample_payroll_summary_dto
 
 
 class StubPayrollRepository:
@@ -38,18 +38,7 @@ class StubPayrollRepository:
             pension_plan_id=1,
             health_plan_id=2,
             items=[],
-            summary=PayrollSummaryDTO(
-                period_id=period_id,
-                employer_id=1,
-                employer_name="ACME",
-                period_year=2026,
-                period_month=1,
-                payment_date=date(2026, 1, 31),
-                taxable_income_clp=Decimal("1000000"),
-                gross_income_clp=Decimal("1000000"),
-                total_discounts_clp=Decimal("170000"),
-                net_pay_clp=Decimal("830000"),
-            ),
+            summary=sample_payroll_summary_dto(period_id),
         )
 
 

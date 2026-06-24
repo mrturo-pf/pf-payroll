@@ -18,24 +18,6 @@ from payroll.domain.contributions import (
 
 
 @pytest.fixture
-def mock_payroll_repository() -> AsyncMock:
-    """Create mock payroll repository."""
-    return AsyncMock()
-
-
-@pytest.fixture
-def mock_complementary_insurance_repository() -> AsyncMock:
-    """Create mock complementary insurance repository."""
-    return AsyncMock()
-
-
-@pytest.fixture
-def mock_market_data_repository() -> AsyncMock:
-    """Create mock market data repository."""
-    return AsyncMock()
-
-
-@pytest.fixture
 def use_case(
     mock_payroll_repository: AsyncMock,
     mock_complementary_insurance_repository: AsyncMock,

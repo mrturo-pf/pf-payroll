@@ -164,9 +164,11 @@ def build_period(
     employment_contract_kind: EmploymentContractKind = (
         EmploymentContractKind.INDEFINITE
     ),
+    worked_days: int | None = None,
+    declared_net_pay_clp: object = None,
 ) -> PayrollPeriodModel:
     """Build a payroll period model for repository tests."""
-    return PayrollPeriodModel(
+    model = PayrollPeriodModel(
         id=period_id,
         employer_id=employer_id,
         period_year=payment_date.year,
@@ -175,6 +177,11 @@ def build_period(
         status=status,
         employment_contract_kind=employment_contract_kind,
     )
+    if worked_days is not None:
+        model.worked_days = worked_days
+    if declared_net_pay_clp is not None:
+        model.declared_net_pay_clp = declared_net_pay_clp
+    return model
 
 
 def build_pension_pair(
@@ -185,6 +192,8 @@ def build_pension_pair(
     name: str = "AFP Uno",
     additional_rate: Decimal = Decimal("0.0127"),
     active: bool = True,
+    valid_from: date = date(2026, 1, 1),
+    valid_to: date | None = None,
 ) -> tuple[PensionPlanModel, PensionInstitutionModel]:
     """Build a pension plan and institution pair."""
     institution = PensionInstitutionModel(
@@ -197,8 +206,8 @@ def build_pension_pair(
     plan = PensionPlanModel(
         id=plan_id,
         institution_id=institution_id,
-        valid_from=date(2026, 1, 1),
-        valid_to=None,
+        valid_from=valid_from,
+        valid_to=valid_to,
         additional_rate=additional_rate,
     )
     return plan, institution
@@ -214,6 +223,8 @@ def build_health_pair(
     active: bool = True,
     contracted_uf: Decimal = Decimal("0"),
     plan_name: str = "Base",
+    valid_from: date = date(2026, 1, 1),
+    valid_to: date | None = None,
 ) -> tuple[HealthPlanModel, HealthInstitutionModel]:
     """Build a health plan and institution pair."""
     institution = HealthInstitutionModel(
@@ -227,8 +238,8 @@ def build_health_pair(
     plan = HealthPlanModel(
         id=plan_id,
         institution_id=institution_id,
-        valid_from=date(2026, 1, 1),
-        valid_to=None,
+        valid_from=valid_from,
+        valid_to=valid_to,
         plan_name=plan_name,
         contracted_uf=contracted_uf,
     )
@@ -313,6 +324,94 @@ def build_import_row(**overrides: object) -> SimpleNamespace:
     }
     payload.update(overrides)
     return SimpleNamespace(**payload)
+
+
+def build_june_2026_period(*, worked_days: int | None = None) -> PayrollPeriodModel:
+    """Build the recurring June-2026 current period used in prediction tests."""
+    return build_period(
+        period_id=1,
+        employer_id=1,
+        payment_date=date(2026, 6, 26),
+        status=PayrollStatus.ACTUAL,
+        worked_days=worked_days,
+    )
+
+
+def build_walmart_chile_employer() -> EmployerModel:
+    """Build the WALMART-CHILE employer model used in period-range tests."""
+    return EmployerModel(
+        id=1,
+        name="WALMART-CHILE",
+        country_code="CL",
+        started_at=date(2024, 11, 18),
+        payment_date_rule=EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH,
+        payment_month_offset=0,
+        payment_day_of_month=None,
+        payment_business_day_offset=1,
+        payment_calendar_day_offset=0,
+        payment_effective_on_processing_next_day=True,
+        payment_fixed_day_roll=EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY,
+    )
+
+
+def build_standard_contributions_command(
+    period_id: int = 5,
+) -> object:
+    """Build a save_computed_contributions command with standard test values."""
+    return SimpleNamespace(
+        period_id=period_id,
+        pension_plan_id=11,
+        health_plan_id=22,
+        pension=PensionContribution(
+            institution_code="AFP_UNO",
+            taxable_clp=Decimal("1000000"),
+            cap_clp=Decimal("3000000"),
+            capped_base_clp=Decimal("1000000"),
+            base_amount_clp=Decimal("100000"),
+            additional_amount_clp=Decimal("12700"),
+        ),
+        health=HealthContribution(
+            institution_code="FONASA",
+            institution_kind=HealthInstitutionKind.FONASA,
+            taxable_clp=Decimal("1000000"),
+            cap_clp=Decimal("3000000"),
+            capped_base_clp=Decimal("1000000"),
+            base_amount_clp=Decimal("70000"),
+            contracted_uf=Decimal("0"),
+            contracted_clp=Decimal("0"),
+            additional_amount_clp=Decimal("0"),
+        ),
+        unemployment=UnemploymentContribution(
+            contract_kind=EmploymentContractKind.INDEFINITE,
+            taxable_clp=Decimal("1000000"),
+            cap_clp=Decimal("3000000"),
+            capped_base_clp=Decimal("1000000"),
+            employee_rate=Decimal("0.006"),
+            employee_amount_clp=Decimal("6000"),
+            employer_rate=Decimal("0.024"),
+            employer_amount_clp=Decimal("24000"),
+        ),
+    )
+
+
+_FIVE_CONCEPT_CODES = FakeResult(
+    scalar_rows=[
+        SimpleNamespace(id=1, code="PENSION_BASE"),
+        SimpleNamespace(id=2, code="PENSION_ADDITIONAL"),
+        SimpleNamespace(id=3, code="HEALTH_BASE"),
+        SimpleNamespace(id=4, code="HEALTH_ADDITIONAL_UF"),
+        SimpleNamespace(id=5, code="UNEMPLOYMENT_INSURANCE"),
+    ]
+)
+
+_SIX_CONCEPT_ROWS = [
+    "PENSION_BASE",
+    "PENSION_ADDITIONAL",
+    "HEALTH_BASE",
+    "HEALTH_ADDITIONAL_UF",
+    "UNEMPLOYMENT_INSURANCE",
+    "INCOME_TAX",
+]
 
 
 def test_build_net_pay_warning_reports_final_mismatch() -> None:
@@ -806,24 +905,18 @@ async def test_sa_payroll_repository_closes_previous_open_ended_employer() -> No
         name="PreviousCo",
         started_at=date(2025, 1, 1),
     )
-    pension_plan = PensionPlanModel(
-        id=1,
+    pension_plan, pension_institution = build_pension_pair(
+        plan_id=1,
         institution_id=5,
-        valid_from=date(2024, 11, 1),
-        valid_to=None,
+        code="AFP_TEST",
+        name="AFP Test",
         additional_rate=Decimal("0"),
+        valid_from=date(2024, 11, 1),
     )
-    pension_institution = PensionInstitutionModel(
-        id=5, code="AFP_TEST", name="AFP Test"
-    )
-    health_plan = HealthPlanModel(
-        id=1,
+    health_plan, health_institution = build_health_pair(
+        plan_id=1,
         institution_id=6,
         valid_from=date(2024, 11, 1),
-        valid_to=None,
-    )
-    health_institution = HealthInstitutionModel(
-        id=6, code="FONASA", name="Fonasa", is_active=True
     )
     session = FakeSession(
         [
@@ -900,24 +993,18 @@ async def test_sa_payroll_repository_updates_existing_employer_started_at() -> N
         name="PreviousCo",
         started_at=date(2025, 1, 1),
     )
-    pension_plan = PensionPlanModel(
-        id=1,
+    pension_plan, pension_institution = build_pension_pair(
+        plan_id=1,
         institution_id=5,
-        valid_from=date(2024, 11, 1),
-        valid_to=None,
+        code="AFP_TEST",
+        name="AFP Test",
         additional_rate=Decimal("0"),
+        valid_from=date(2024, 11, 1),
     )
-    pension_institution = PensionInstitutionModel(
-        id=5, code="AFP_TEST", name="AFP Test"
-    )
-    health_plan = HealthPlanModel(
-        id=1,
+    health_plan, health_institution = build_health_pair(
+        plan_id=1,
         institution_id=6,
         valid_from=date(2024, 11, 1),
-        valid_to=None,
-    )
-    health_institution = HealthInstitutionModel(
-        id=6, code="FONASA", name="Fonasa", is_active=True
     )
     session = FakeSession(
         [
@@ -977,24 +1064,18 @@ async def test_sa_payroll_repository_creates_employer_and_replaces_period_items(
         payment_date=date(2026, 1, 15),
         status=PayrollStatus.PROJECTED,
     )
-    pension_plan = PensionPlanModel(
-        id=1,
+    pension_plan, pension_institution = build_pension_pair(
+        plan_id=1,
         institution_id=5,
-        valid_from=date(2024, 11, 1),
-        valid_to=None,
+        code="AFP_TEST",
+        name="AFP Test",
         additional_rate=Decimal("0"),
+        valid_from=date(2024, 11, 1),
     )
-    pension_institution = PensionInstitutionModel(
-        id=5, code="AFP_TEST", name="AFP Test"
-    )
-    health_plan = HealthPlanModel(
-        id=1,
+    health_plan, health_institution = build_health_pair(
+        plan_id=1,
         institution_id=6,
         valid_from=date(2024, 11, 1),
-        valid_to=None,
-    )
-    health_institution = HealthInstitutionModel(
-        id=6, code="FONASA", name="Fonasa", is_active=True
     )
     session = FakeSession(
         [
@@ -1087,14 +1168,7 @@ async def test_sa_payroll_repository_skips_sync_when_market_data_is_complete() -
         ]
     )
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.PROJECTED,
-    )
+    period = build_period()
 
     assert await repository._build_market_data_sync_request([period]) is None
 
@@ -1163,14 +1237,7 @@ async def test_sa_payroll_repository_omits_latest_ipc_only_gap() -> None:
         ]
     )
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.PROJECTED,
-    )
+    period = build_period()
 
     assert await repository._build_market_data_sync_request([period]) is None
 
@@ -1559,48 +1626,17 @@ async def test_sa_payroll_repository_rejects_missing_period_for_contribution_ctx
     [
         (
             [
-                FakeResult(
-                    scalar_one=PayrollPeriodModel(
-                        id=1,
-                        employer_id=1,
-                        period_year=2026,
-                        period_month=1,
-                        payment_date=date(2026, 1, 31),
-                        status=PayrollStatus.PROJECTED,
-                    )
-                ),
+                FakeResult(scalar_one=build_period(period_id=1, employer_id=1)),
                 FakeResult(first_row=None),
             ],
             "Pension plan 1 was not found.",
         ),
         (
             [
+                FakeResult(scalar_one=build_period(period_id=1, employer_id=1)),
                 FakeResult(
-                    scalar_one=PayrollPeriodModel(
-                        id=1,
-                        employer_id=1,
-                        period_year=2026,
-                        period_month=1,
-                        payment_date=date(2026, 1, 31),
-                        status=PayrollStatus.PROJECTED,
-                    )
-                ),
-                FakeResult(
-                    first_row=(
-                        PensionPlanModel(
-                            id=1,
-                            institution_id=1,
-                            valid_from=date(2026, 1, 1),
-                            valid_to=None,
-                            additional_rate=Decimal("0"),
-                        ),
-                        PensionInstitutionModel(
-                            id=1,
-                            code="AFP_UNO",
-                            name="AFP Uno",
-                            mandatory_rate=Decimal("0.10"),
-                            is_active=True,
-                        ),
+                    first_row=build_pension_pair(
+                        plan_id=1, additional_rate=Decimal("0")
                     )
                 ),
                 FakeResult(first_row=None),
@@ -1609,114 +1645,30 @@ async def test_sa_payroll_repository_rejects_missing_period_for_contribution_ctx
         ),
         (
             [
+                FakeResult(scalar_one=build_period(period_id=1, employer_id=1)),
                 FakeResult(
-                    scalar_one=PayrollPeriodModel(
-                        id=1,
-                        employer_id=1,
-                        period_year=2026,
-                        period_month=1,
-                        payment_date=date(2026, 1, 31),
-                        status=PayrollStatus.PROJECTED,
+                    first_row=build_pension_pair(
+                        plan_id=1, additional_rate=Decimal("0")
                     )
                 ),
-                FakeResult(
-                    first_row=(
-                        PensionPlanModel(
-                            id=1,
-                            institution_id=1,
-                            valid_from=date(2026, 1, 1),
-                            valid_to=None,
-                            additional_rate=Decimal("0"),
-                        ),
-                        PensionInstitutionModel(
-                            id=1,
-                            code="AFP_UNO",
-                            name="AFP Uno",
-                            mandatory_rate=Decimal("0.10"),
-                            is_active=True,
-                        ),
-                    )
-                ),
-                FakeResult(
-                    first_row=(
-                        HealthPlanModel(
-                            id=2,
-                            institution_id=2,
-                            valid_from=date(2026, 1, 1),
-                            valid_to=None,
-                            plan_name="Base",
-                            contracted_uf=Decimal("0"),
-                        ),
-                        HealthInstitutionModel(
-                            id=2,
-                            code="FONASA",
-                            name="Fonasa",
-                            kind=HealthInstitutionKind.FONASA,
-                            mandatory_rate=Decimal("0.07"),
-                            is_active=True,
-                        ),
-                    )
-                ),
+                FakeResult(first_row=build_health_pair(plan_id=2)),
                 FakeResult(scalar_one=None),
             ],
             "No contribution cap was found for 2026-01-31.",
         ),
         (
             [
+                FakeResult(scalar_one=build_period(period_id=1, employer_id=1)),
                 FakeResult(
-                    scalar_one=PayrollPeriodModel(
-                        id=1,
-                        employer_id=1,
-                        period_year=2026,
-                        period_month=1,
-                        payment_date=date(2026, 1, 31),
-                        status=PayrollStatus.PROJECTED,
+                    first_row=build_pension_pair(
+                        plan_id=1, additional_rate=Decimal("0")
                     )
                 ),
+                FakeResult(first_row=build_health_pair(plan_id=2)),
                 FakeResult(
-                    first_row=(
-                        PensionPlanModel(
-                            id=1,
-                            institution_id=1,
-                            valid_from=date(2026, 1, 1),
-                            valid_to=None,
-                            additional_rate=Decimal("0"),
-                        ),
-                        PensionInstitutionModel(
-                            id=1,
-                            code="AFP_UNO",
-                            name="AFP Uno",
-                            mandatory_rate=Decimal("0.10"),
-                            is_active=True,
-                        ),
-                    )
-                ),
-                FakeResult(
-                    first_row=(
-                        HealthPlanModel(
-                            id=2,
-                            institution_id=2,
-                            valid_from=date(2026, 1, 1),
-                            valid_to=None,
-                            plan_name="Base",
-                            contracted_uf=Decimal("0"),
-                        ),
-                        HealthInstitutionModel(
-                            id=2,
-                            code="FONASA",
-                            name="Fonasa",
-                            kind=HealthInstitutionKind.FONASA,
-                            mandatory_rate=Decimal("0.07"),
-                            is_active=True,
-                        ),
-                    )
-                ),
-                FakeResult(
-                    scalar_one=ContributionCapModel(
-                        id=33,
+                    scalar_one=build_contribution_cap(
+                        cap_id=33,
                         cap_type=ContributionCapType.PENSION_HEALTH,
-                        valid_from=date(2026, 1, 1),
-                        valid_to=None,
                         value_uf=Decimal("90.0000"),
                     )
                 ),
@@ -1726,32 +1678,12 @@ async def test_sa_payroll_repository_rejects_missing_period_for_contribution_ctx
         ),
         (
             [
+                FakeResult(scalar_one=build_period(period_id=1, employer_id=1)),
                 FakeResult(
-                    scalar_one=PayrollPeriodModel(
-                        id=1,
-                        employer_id=1,
-                        period_year=2026,
-                        period_month=1,
-                        payment_date=date(2026, 1, 31),
-                        status=PayrollStatus.PROJECTED,
-                    )
-                ),
-                FakeResult(
-                    first_row=(
-                        PensionPlanModel(
-                            id=1,
-                            institution_id=1,
-                            valid_from=date(2026, 2, 1),
-                            valid_to=None,
-                            additional_rate=Decimal("0"),
-                        ),
-                        PensionInstitutionModel(
-                            id=1,
-                            code="AFP_UNO",
-                            name="AFP Uno",
-                            mandatory_rate=Decimal("0.10"),
-                            is_active=True,
-                        ),
+                    first_row=build_pension_pair(
+                        plan_id=1,
+                        additional_rate=Decimal("0"),
+                        valid_from=date(2026, 2, 1),  # not valid for 2026-01-31
                     )
                 ),
             ],
@@ -1759,52 +1691,17 @@ async def test_sa_payroll_repository_rejects_missing_period_for_contribution_ctx
         ),
         (
             [
+                FakeResult(scalar_one=build_period(period_id=1, employer_id=1)),
                 FakeResult(
-                    scalar_one=PayrollPeriodModel(
-                        id=1,
-                        employer_id=1,
-                        period_year=2026,
-                        period_month=1,
-                        payment_date=date(2026, 1, 31),
-                        status=PayrollStatus.PROJECTED,
+                    first_row=build_pension_pair(
+                        plan_id=1, additional_rate=Decimal("0")
                     )
                 ),
                 FakeResult(
-                    first_row=(
-                        PensionPlanModel(
-                            id=1,
-                            institution_id=1,
-                            valid_from=date(2026, 1, 1),
-                            valid_to=None,
-                            additional_rate=Decimal("0"),
-                        ),
-                        PensionInstitutionModel(
-                            id=1,
-                            code="AFP_UNO",
-                            name="AFP Uno",
-                            mandatory_rate=Decimal("0.10"),
-                            is_active=True,
-                        ),
-                    )
-                ),
-                FakeResult(
-                    first_row=(
-                        HealthPlanModel(
-                            id=2,
-                            institution_id=2,
-                            valid_from=date(2025, 1, 1),
-                            valid_to=date(2025, 12, 31),
-                            plan_name="Base",
-                            contracted_uf=Decimal("0"),
-                        ),
-                        HealthInstitutionModel(
-                            id=2,
-                            code="FONASA",
-                            name="Fonasa",
-                            kind=HealthInstitutionKind.FONASA,
-                            mandatory_rate=Decimal("0.07"),
-                            is_active=True,
-                        ),
+                    first_row=build_health_pair(
+                        plan_id=2,
+                        valid_from=date(2025, 1, 1),
+                        valid_to=date(2025, 12, 31),  # expired before 2026-01-31
                     )
                 ),
             ],
@@ -1832,48 +1729,17 @@ async def test_sqlalchemy_payroll_repository_rejects_missing_contribution_inputs
         ([FakeResult(scalar_one=None)], "Payroll period 9 was not found."),
         (
             [
-                FakeResult(
-                    scalar_one=PayrollPeriodModel(
-                        id=9,
-                        employer_id=1,
-                        period_year=2026,
-                        period_month=1,
-                        payment_date=date(2026, 1, 31),
-                        status=PayrollStatus.PROJECTED,
-                    )
-                ),
+                FakeResult(scalar_one=build_period(period_id=9, employer_id=1)),
                 FakeResult(first_row=None),
             ],
             "Pension plan 1 was not found.",
         ),
         (
             [
+                FakeResult(scalar_one=build_period(period_id=9, employer_id=1)),
                 FakeResult(
-                    scalar_one=PayrollPeriodModel(
-                        id=9,
-                        employer_id=1,
-                        period_year=2026,
-                        period_month=1,
-                        payment_date=date(2026, 1, 31),
-                        status=PayrollStatus.PROJECTED,
-                    )
-                ),
-                FakeResult(
-                    first_row=(
-                        PensionPlanModel(
-                            id=1,
-                            institution_id=1,
-                            valid_from=date(2026, 1, 1),
-                            valid_to=None,
-                            additional_rate=Decimal("0"),
-                        ),
-                        PensionInstitutionModel(
-                            id=1,
-                            code="AFP_UNO",
-                            name="AFP Uno",
-                            mandatory_rate=Decimal("0.10"),
-                            is_active=True,
-                        ),
+                    first_row=build_pension_pair(
+                        plan_id=1, additional_rate=Decimal("0")
                     )
                 ),
                 FakeResult(first_row=None),
@@ -1990,67 +1856,14 @@ async def test_sqlalchemy_payroll_repository_rejects_invalid_review_period_input
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_saves_computed_contributions() -> None:
     """Test sqlalchemy payroll repository saves computed contributions."""
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.PROJECTED,
-    )
+    period = build_period()
     session = FakeSession(
-        [
-            FakeResult(scalar_one=period),
-            FakeResult(
-                scalar_rows=[
-                    SimpleNamespace(id=1, code="PENSION_BASE"),
-                    SimpleNamespace(id=2, code="PENSION_ADDITIONAL"),
-                    SimpleNamespace(id=3, code="HEALTH_BASE"),
-                    SimpleNamespace(id=4, code="HEALTH_ADDITIONAL_UF"),
-                    SimpleNamespace(id=5, code="UNEMPLOYMENT_INSURANCE"),
-                ]
-            ),
-            FakeResult(),
-            FakeResult(),
-        ]
+        [FakeResult(scalar_one=period), _FIVE_CONCEPT_CODES, FakeResult(), FakeResult()]
     )
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
     result = await repository.save_computed_contributions(
-        SimpleNamespace(
-            period_id=5,
-            pension_plan_id=11,
-            health_plan_id=22,
-            pension=PensionContribution(
-                institution_code="AFP_UNO",
-                taxable_clp=Decimal("1000000"),
-                cap_clp=Decimal("3000000"),
-                capped_base_clp=Decimal("1000000"),
-                base_amount_clp=Decimal("100000"),
-                additional_amount_clp=Decimal("12700"),
-            ),
-            health=HealthContribution(
-                institution_code="FONASA",
-                institution_kind=HealthInstitutionKind.FONASA,
-                taxable_clp=Decimal("1000000"),
-                cap_clp=Decimal("3000000"),
-                capped_base_clp=Decimal("1000000"),
-                base_amount_clp=Decimal("70000"),
-                contracted_uf=Decimal("0"),
-                contracted_clp=Decimal("0"),
-                additional_amount_clp=Decimal("0"),
-            ),
-            unemployment=UnemploymentContribution(
-                contract_kind=EmploymentContractKind.INDEFINITE,
-                taxable_clp=Decimal("1000000"),
-                cap_clp=Decimal("3000000"),
-                capped_base_clp=Decimal("1000000"),
-                employee_rate=Decimal("0.006"),
-                employee_amount_clp=Decimal("6000"),
-                employer_rate=Decimal("0.024"),
-                employer_amount_clp=Decimal("24000"),
-            ),
-        )
+        build_standard_contributions_command()
     )
 
     assert result.period_id == 5
@@ -2065,27 +1878,11 @@ async def test_sqlalchemy_payroll_repository_saves_computed_contributions() -> N
 @pytest.mark.asyncio
 async def test_sa_payroll_repository_keeps_net_pay_pending_until_tax_exists() -> None:
     """Test net pay reconciliation stays pending after contributions only."""
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.PROJECTED,
-        declared_net_pay_clp=Decimal("830000"),
-    )
+    period = build_period(declared_net_pay_clp=Decimal("830000"))
     session = FakeSession(
         [
             FakeResult(scalar_one=period),
-            FakeResult(
-                scalar_rows=[
-                    SimpleNamespace(id=1, code="PENSION_BASE"),
-                    SimpleNamespace(id=2, code="PENSION_ADDITIONAL"),
-                    SimpleNamespace(id=3, code="HEALTH_BASE"),
-                    SimpleNamespace(id=4, code="HEALTH_ADDITIONAL_UF"),
-                    SimpleNamespace(id=5, code="UNEMPLOYMENT_INSURANCE"),
-                ]
-            ),
+            _FIVE_CONCEPT_CODES,
             FakeResult(),
             FakeResult(),
             FakeResult(
@@ -2101,42 +1898,7 @@ async def test_sa_payroll_repository_keeps_net_pay_pending_until_tax_exists() ->
     )
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
-    await repository.save_computed_contributions(
-        SimpleNamespace(
-            period_id=5,
-            pension_plan_id=11,
-            health_plan_id=22,
-            pension=PensionContribution(
-                institution_code="AFP_UNO",
-                taxable_clp=Decimal("1000000"),
-                cap_clp=Decimal("3000000"),
-                capped_base_clp=Decimal("1000000"),
-                base_amount_clp=Decimal("100000"),
-                additional_amount_clp=Decimal("12700"),
-            ),
-            health=HealthContribution(
-                institution_code="FONASA",
-                institution_kind=HealthInstitutionKind.FONASA,
-                taxable_clp=Decimal("1000000"),
-                cap_clp=Decimal("3000000"),
-                capped_base_clp=Decimal("1000000"),
-                base_amount_clp=Decimal("70000"),
-                contracted_uf=Decimal("0"),
-                contracted_clp=Decimal("0"),
-                additional_amount_clp=Decimal("0"),
-            ),
-            unemployment=UnemploymentContribution(
-                contract_kind=EmploymentContractKind.INDEFINITE,
-                taxable_clp=Decimal("1000000"),
-                cap_clp=Decimal("3000000"),
-                capped_base_clp=Decimal("1000000"),
-                employee_rate=Decimal("0.006"),
-                employee_amount_clp=Decimal("6000"),
-                employer_rate=Decimal("0.024"),
-                employer_amount_clp=Decimal("24000"),
-            ),
-        )
-    )
+    await repository.save_computed_contributions(build_standard_contributions_command())
 
     assert period.expected_net_pay_clp is None
     assert period.net_pay_difference_clp is None
@@ -2166,14 +1928,7 @@ async def test_sa_payroll_repository_rejects_missing_period_when_saving_contribs
 @pytest.mark.asyncio
 async def test_sa_payroll_repository_rejects_missing_concepts_when_saving() -> None:
     """Test rejection when contribution concepts are missing."""
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.PROJECTED,
-    )
+    period = build_period()
     repository = SqlAlchemyPayrollRepository(
         FakeSession(
             [
@@ -2283,15 +2038,8 @@ async def test_sqlalchemy_payroll_repository_returns_period_detail_and_summary()
 @pytest.mark.asyncio
 async def test_repository_returns_period_detail_without_end_date() -> None:
     """Test period detail keeps employer end date open without a later employer."""
-    period = PayrollPeriodModel(
-        id=7,
-        employer_id=1,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        worked_days=30,
-        status=PayrollStatus.ACTUAL,
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+    period = build_period(
+        period_id=7, employer_id=1, status=PayrollStatus.ACTUAL, worked_days=30
     )
     employer = EmployerModel(
         id=1,
@@ -2320,15 +2068,8 @@ async def test_repository_returns_period_detail_without_end_date() -> None:
 @pytest.mark.asyncio
 async def test_repository_returns_explicit_period_detail_end_date() -> None:
     """Test period detail uses the explicit employer end date when present."""
-    period = PayrollPeriodModel(
-        id=7,
-        employer_id=1,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        worked_days=30,
-        status=PayrollStatus.ACTUAL,
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+    period = build_period(
+        period_id=7, employer_id=1, status=PayrollStatus.ACTUAL, worked_days=30
     )
     employer = EmployerModel(
         id=1,
@@ -2423,19 +2164,7 @@ async def test_sqlalchemy_payroll_repository_lists_period_ranges() -> None:
         status=PayrollStatus.ACTUAL,
         declared_net_pay_clp=Decimal("2978086"),
     )
-    current_employer = EmployerModel(
-        id=1,
-        name="WALMART-CHILE",
-        country_code="CL",
-        started_at=date(2024, 11, 18),
-        payment_date_rule=EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH,
-        payment_month_offset=0,
-        payment_day_of_month=None,
-        payment_business_day_offset=1,
-        payment_calendar_day_offset=0,
-        payment_effective_on_processing_next_day=True,
-        payment_fixed_day_roll=EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY,
-    )
+    current_employer = build_walmart_chile_employer()
     previous_period = PayrollPeriodModel(
         id=16,
         employer_id=1,
@@ -2497,19 +2226,7 @@ async def test_sqlalchemy_payroll_repository_attaches_lookback_for_full_previous
         status=PayrollStatus.ACTUAL,
         declared_net_pay_clp=Decimal("3000000"),
     )
-    current_employer = EmployerModel(
-        id=1,
-        name="WALMART-CHILE",
-        country_code="CL",
-        started_at=date(2024, 11, 18),
-        payment_date_rule=EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH,
-        payment_month_offset=0,
-        payment_day_of_month=None,
-        payment_business_day_offset=1,
-        payment_calendar_day_offset=0,
-        payment_effective_on_processing_next_day=True,
-        payment_fixed_day_roll=EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY,
-    )
+    current_employer = build_walmart_chile_employer()
     # 13 previous periods — most-recent-first (DESC).
     # Index 0 = Feb 2026, index 12 = Mar 2025.
     previous_periods = [
@@ -2610,19 +2327,7 @@ async def test_sqlalchemy_payroll_repository_infers_current_month_offset() -> No
         status=PayrollStatus.ACTUAL,
         declared_net_pay_clp=Decimal("3134978"),
     )
-    current_employer = EmployerModel(
-        id=1,
-        name="WALMART-CHILE",
-        country_code="CL",
-        started_at=date(2024, 11, 18),
-        payment_date_rule=EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH,
-        payment_month_offset=0,
-        payment_day_of_month=None,
-        payment_business_day_offset=1,
-        payment_calendar_day_offset=0,
-        payment_effective_on_processing_next_day=True,
-        payment_fixed_day_roll=EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY,
-    )
+    current_employer = build_walmart_chile_employer()
     session = FakeSession(
         [
             FakeResult(first_row=(current_period, current_employer)),
@@ -2882,14 +2587,7 @@ async def test_sa_payroll_repository_builds_unemployment_context() -> None:
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_saves_computed_income_tax() -> None:
     """Test sqlalchemy payroll repository saves computed income tax."""
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.PROJECTED,
-    )
+    period = build_period()
     session = FakeSession(
         [
             FakeResult(scalar_one=period),
@@ -2915,14 +2613,7 @@ async def test_sqlalchemy_payroll_repository_saves_computed_income_tax() -> None
 @pytest.mark.asyncio
 async def test_sa_payroll_repository_saves_computed_unemployment() -> None:
     """Test sqlalchemy payroll repository saves computed unemployment."""
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.PROJECTED,
-    )
+    period = build_period()
     session = FakeSession(
         [
             FakeResult(scalar_one=period),
@@ -2950,14 +2641,7 @@ async def test_sa_payroll_repository_saves_computed_unemployment() -> None:
 @pytest.mark.asyncio
 async def test_sa_payroll_repository_rejects_missing_unemployment_concept() -> None:
     """Test rejection when unemployment concept is missing."""
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.PROJECTED,
-    )
+    period = build_period()
     repository = SqlAlchemyPayrollRepository(
         FakeSession([FakeResult(scalar_one=period), FakeResult(scalar_one=None)])
     )  # type: ignore[arg-type]
@@ -2978,15 +2662,7 @@ async def test_sa_payroll_repository_rejects_missing_unemployment_concept() -> N
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_reconciles_net_pay_after_tax() -> None:
     """Test net pay reconciliation completes after tax is saved."""
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.PROJECTED,
-        declared_net_pay_clp=Decimal("830000"),
-    )
+    period = build_period(declared_net_pay_clp=Decimal("830000"))
     session = FakeSession(
         [
             FakeResult(scalar_one=period),
@@ -3025,15 +2701,7 @@ async def test_sa_payroll_repository_keeps_net_pay_pending_without_summary_row()
     None
 ):
     """Test reconciliation stays pending when the summary row is unavailable."""
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.PROJECTED,
-        declared_net_pay_clp=Decimal("830000"),
-    )
+    period = build_period(declared_net_pay_clp=Decimal("830000"))
     session = FakeSession(
         [
             FakeResult(scalar_one=period),
@@ -3083,14 +2751,7 @@ async def test_sqlalchemy_payroll_repository_rejects_missing_income_tax_concept(
     None
 ):
     """Test sqlalchemy payroll repository rejects missing income tax concept."""
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        status=PayrollStatus.PROJECTED,
-    )
+    period = build_period()
     repository = SqlAlchemyPayrollRepository(
         FakeSession([FakeResult(scalar_one=period), FakeResult(scalar_one=None)])
     )  # type: ignore[arg-type]
@@ -3201,14 +2862,7 @@ def test_build_fx_provider_uses_api_dependencies(
 @pytest.mark.asyncio
 async def test_predict_next_period_net_pay_returns_none_for_missing_uf() -> None:
     """Test predict_next_period_net_pay returns None when UF data is missing."""
-    current_period = PayrollPeriodModel(
-        id=1,
-        employer_id=1,
-        period_year=2026,
-        period_month=6,
-        payment_date=date(2026, 6, 26),
-        status=PayrollStatus.ACTUAL,
-    )
+    current_period = build_june_2026_period()
     session = FakeSession(
         [
             FakeResult(scalar_one=None),  # uf_current month-end missing
@@ -3227,14 +2881,7 @@ async def test_predict_next_period_net_pay_returns_none_for_missing_uf() -> None
 @pytest.mark.asyncio
 async def test_predict_next_period_net_pay_returns_none_for_missing_income() -> None:
     """Test predict_next_period_net_pay returns None when income is missing."""
-    current_period = PayrollPeriodModel(
-        id=1,
-        employer_id=1,
-        period_year=2026,
-        period_month=6,
-        payment_date=date(2026, 6, 26),
-        status=PayrollStatus.ACTUAL,
-    )
+    current_period = build_june_2026_period()
     session = FakeSession(
         [
             FakeResult(scalar_one=Decimal("40821.18")),  # uf_current
@@ -3253,14 +2900,7 @@ async def test_predict_next_period_net_pay_returns_none_for_missing_income() -> 
 @pytest.mark.asyncio
 async def test_predict_next_period_returns_none_missing_uf() -> None:
     """Test predict_next_period_net_pay returns None when selected UF is missing."""
-    current_period = PayrollPeriodModel(
-        id=1,
-        employer_id=1,
-        period_year=2026,
-        period_month=6,
-        payment_date=date(2026, 6, 26),
-        status=PayrollStatus.ACTUAL,
-    )
+    current_period = build_june_2026_period()
     session = FakeSession(
         [
             FakeResult(scalar_one=None),  # selected UF month-end missing
@@ -3279,14 +2919,7 @@ async def test_predict_next_period_returns_none_missing_uf() -> None:
 @pytest.mark.asyncio
 async def test_predict_next_period_net_pay_uf_fallback_cascade() -> None:
     """Test UF lookup cascade: provider target, provider today, then latest DB."""
-    current_period = PayrollPeriodModel(
-        id=1,
-        employer_id=1,
-        period_year=2026,
-        period_month=6,
-        payment_date=date(2026, 6, 26),
-        status=PayrollStatus.ACTUAL,
-    )
+    current_period = build_june_2026_period()
     items = [(Decimal("1000"), "SALARY_BASE")]
 
     target_provider_session = FakeSession(
@@ -3339,14 +2972,7 @@ async def test_predict_next_period_net_pay_uf_fallback_cascade() -> None:
 @pytest.mark.asyncio
 async def test_predict_next_period_net_pay_db_only_mode() -> None:
     """Test prediction can resolve UF from DB only without provider lookups."""
-    current_period = PayrollPeriodModel(
-        id=1,
-        employer_id=1,
-        period_year=2026,
-        period_month=6,
-        payment_date=date(2026, 6, 26),
-        status=PayrollStatus.ACTUAL,
-    )
+    current_period = build_june_2026_period()
     session = FakeSession(
         [
             FakeResult(scalar_one=None),  # selected UF month-end missing
@@ -3370,15 +2996,7 @@ async def test_predict_next_period_net_pay_db_only_mode() -> None:
 @pytest.mark.asyncio
 async def test_predict_next_period_net_pay_calculates_correctly() -> None:
     """Test prediction recalculates UF-based discounts with selected UF."""
-    current_period = PayrollPeriodModel(
-        id=1,
-        employer_id=1,
-        period_year=2026,
-        period_month=6,
-        payment_date=date(2026, 6, 26),
-        status=PayrollStatus.ACTUAL,
-        worked_days=30,
-    )
+    current_period = build_june_2026_period(worked_days=30)
     items = [
         (Decimal("3000000"), "SALARY_BASE"),
         (Decimal("200000"), "LEGAL_GRATUITY"),
@@ -3423,15 +3041,7 @@ async def test_predict_next_period_net_pay_calculates_correctly() -> None:
 @pytest.mark.asyncio
 async def test_predict_next_period_net_pay_uses_historical_uf_fallback() -> None:
     """Test UF discounts fallback to latest historical UF when exact date is missing."""
-    current_period = PayrollPeriodModel(
-        id=1,
-        employer_id=1,
-        period_year=2026,
-        period_month=6,
-        payment_date=date(2026, 6, 26),
-        status=PayrollStatus.ACTUAL,
-        worked_days=30,
-    )
+    current_period = build_june_2026_period(worked_days=30)
     items = [
         (Decimal("100000"), "SALARY_BASE"),
         (Decimal("10000"), "HEALTH_ADDITIONAL_UF"),
@@ -3459,15 +3069,7 @@ async def test_predict_next_period_net_pay_uses_historical_uf_fallback() -> None
 @pytest.mark.asyncio
 async def test_predict_next_period_net_pay_returns_none_without_historical_uf() -> None:
     """Test UF-dependent prediction returns None when no historical UF is available."""
-    current_period = PayrollPeriodModel(
-        id=1,
-        employer_id=1,
-        period_year=2026,
-        period_month=6,
-        payment_date=date(2026, 6, 26),
-        status=PayrollStatus.ACTUAL,
-        worked_days=30,
-    )
+    current_period = build_june_2026_period(worked_days=30)
     items = [
         (Decimal("100000"), "SALARY_BASE"),
         (Decimal("10000"), "HEALTH_ADDITIONAL_UF"),
@@ -3539,14 +3141,7 @@ async def test_predict_next_period_net_pay_adjusts_for_worked_days() -> None:
 @pytest.mark.asyncio
 async def test_predict_next_period_net_pay_returns_none_zero_net_pay() -> None:
     """Test predict_next_period_net_pay returns None when result would be <= 0."""
-    current_period = PayrollPeriodModel(
-        id=1,
-        employer_id=1,
-        period_year=2026,
-        period_month=6,
-        payment_date=date(2026, 6, 26),
-        status=PayrollStatus.ACTUAL,
-    )
+    current_period = build_june_2026_period()
     items = [
         (Decimal("100"), "SALARY_BASE"),
         (Decimal("100"), "PENSION_BASE"),

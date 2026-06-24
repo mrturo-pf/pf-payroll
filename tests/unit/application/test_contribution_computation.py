@@ -107,6 +107,18 @@ def _computed_contributions(
     )
 
 
+def _standard_validation(
+    detail: PayrollPeriodDetailDTO,
+) -> object:
+    computed = _computed_contributions(
+        pension_base=Decimal("100000"),
+        pension_additional=Decimal("20000"),
+        health_base=Decimal("30000"),
+        health_additional=Decimal("40000"),
+    )
+    return build_imported_contribution_validation(detail, computed)
+
+
 def test_build_imported_contribution_validation_returns_none() -> None:
     """Test validation returns none when imported contribution rows are absent."""
     detail = _period_detail(
@@ -188,14 +200,7 @@ def test_build_imported_contribution_validation_reports_mismatches() -> None:
             ),
         ]
     )
-    computed = _computed_contributions(
-        pension_base=Decimal("100000"),
-        pension_additional=Decimal("20000"),
-        health_base=Decimal("30000"),
-        health_additional=Decimal("40000"),
-    )
-
-    validation = build_imported_contribution_validation(detail, computed)
+    validation = _standard_validation(detail)
 
     assert validation is not None
     assert validation.pension_base_difference_clp == Decimal("10000")
@@ -249,14 +254,7 @@ def test_build_imported_contribution_validation_skips_multi_plan_additional_chec
         ],
         health_plan_ids=(1, 2, 3),
     )
-    computed = _computed_contributions(
-        pension_base=Decimal("100000"),
-        pension_additional=Decimal("20000"),
-        health_base=Decimal("30000"),
-        health_additional=Decimal("40000"),
-    )
-
-    validation = build_imported_contribution_validation(detail, computed)
+    validation = _standard_validation(detail)
 
     assert validation is not None
     assert validation.expected_health_plan_additional_clp is None

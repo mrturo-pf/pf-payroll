@@ -24,21 +24,16 @@ from payroll.domain.contributions import (
     EmploymentContractKind,
     HealthInstitutionKind,
 )
+from tests.helpers.reference_data import (
+    sample_acme_april_2026_period_detail_dto,
+    sample_acme_april_2026_summary_dto,
+)
 
 
 def _sample_summary() -> PayrollSummaryDTO:
-    """Build a sample summary."""
-    return PayrollSummaryDTO(
-        period_id=7,
-        employer_id=1,
-        employer_name="ACME",
-        period_year=2026,
-        period_month=4,
-        payment_date=date(2026, 4, 30),
-        taxable_income_clp=Decimal("1000000"),
-        gross_income_clp=Decimal("1250000"),
-        total_discounts_clp=Decimal("180000"),
-        net_pay_clp=Decimal("1070000"),
+    """Build a sample summary with declared net pay."""
+    return replace(
+        sample_acme_april_2026_summary_dto(),
         declared_net_pay_clp=Decimal("1050000"),
     )
 
@@ -82,25 +77,38 @@ def _sample_detail(
             )
         ),
     )
-    return PayrollPeriodDetailDTO(
+    return sample_acme_april_2026_period_detail_dto(
+        status="actual",
+        pension_plan_id=pension_plan_id,
+        health_plan_id=health_plan_id,
+        items=items,
+        summary=summary,
+    )
+
+
+def _default_imported_period(
+    *, declared_net_pay_clp: Decimal | None = None
+) -> ImportedPayrollPeriodDTO:
+    return ImportedPayrollPeriodDTO(
         id=7,
-        employer_id=1,
-        employer_name="ACME",
-        employer_tax_id="76000000-1",
-        employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
+        employer="ACME",
         period_year=2026,
         period_month=4,
         payment_date=date(2026, 4, 30),
-        worked_days=30,
         status="actual",
         employment_contract_kind=EmploymentContractKind.INDEFINITE,
-        pension_plan_id=pension_plan_id,
-        health_plan_id=health_plan_id,
-        health_institution_is_active=None,
-        items=items,
-        summary=summary,
+        item_count=5,
+        declared_net_pay_clp=declared_net_pay_clp,
+    )
+
+
+def _default_import_result(
+    *, declared_net_pay_clp: Decimal | None = None
+) -> ImportPayrollResultDTO:
+    return ImportPayrollResultDTO(
+        imported_periods=1,
+        imported_items=5,
+        periods=[_default_imported_period(declared_net_pay_clp=declared_net_pay_clp)],
     )
 
 
@@ -386,23 +394,7 @@ async def test_process_imported_payroll_periods_compute_and_refresh() -> None:
     )
 
     result = await use_case.execute(
-        ImportPayrollResultDTO(
-            imported_periods=1,
-            imported_items=5,
-            periods=[
-                ImportedPayrollPeriodDTO(
-                    id=7,
-                    employer="ACME",
-                    period_year=2026,
-                    period_month=4,
-                    payment_date=date(2026, 4, 30),
-                    status="actual",
-                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
-                    item_count=5,
-                    declared_net_pay_clp=Decimal("1050000"),
-                )
-            ],
-        )
+        _default_import_result(declared_net_pay_clp=Decimal("1050000"))
     )
 
     assert repository.saved_unemployment == [7]
@@ -450,23 +442,7 @@ async def test_process_imported_payroll_periods_validates_imported_contributions
     )
 
     result = await use_case.execute(
-        ImportPayrollResultDTO(
-            imported_periods=1,
-            imported_items=5,
-            periods=[
-                ImportedPayrollPeriodDTO(
-                    id=7,
-                    employer="ACME",
-                    period_year=2026,
-                    period_month=4,
-                    payment_date=date(2026, 4, 30),
-                    status="actual",
-                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
-                    item_count=5,
-                    declared_net_pay_clp=Decimal("1050000"),
-                )
-            ],
-        )
+        _default_import_result(declared_net_pay_clp=Decimal("1050000"))
     )
 
     assert repository.saved_unemployment == [7]
@@ -540,16 +516,7 @@ async def test_process_imported_payroll_periods_keeps_original_on_missing_refres
             """Get period detail."""
             return None
 
-    original_period = ImportedPayrollPeriodDTO(
-        id=7,
-        employer="ACME",
-        period_year=2026,
-        period_month=4,
-        payment_date=date(2026, 4, 30),
-        status="actual",
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
-        item_count=5,
-    )
+    original_period = _default_imported_period()
     result = await ProcessImportedPayrollPeriods(
         MissingRefreshRepository(),
         StubMarketDataRepository(),  # type: ignore[arg-type]
@@ -589,16 +556,7 @@ async def test_process_imported_payroll_periods_keeps_original_without_summary()
             )
             return replace(detail, summary=None)
 
-    original_period = ImportedPayrollPeriodDTO(
-        id=7,
-        employer="ACME",
-        period_year=2026,
-        period_month=4,
-        payment_date=date(2026, 4, 30),
-        status="actual",
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
-        item_count=5,
-    )
+    original_period = _default_imported_period()
     result = await ProcessImportedPayrollPeriods(
         MissingSummaryRepository(),
         StubMarketDataRepository(),  # type: ignore[arg-type]
@@ -622,25 +580,7 @@ async def test_process_imported_payroll_periods_keeps_import_when_uf_missing() -
         repository,
         StubMarketDataRepository(uf_value=None),  # type: ignore[arg-type]
         FixedUfComplementaryInsuranceRepository(),  # type: ignore[arg-type]
-    ).execute(
-        ImportPayrollResultDTO(
-            imported_periods=1,
-            imported_items=5,
-            periods=[
-                ImportedPayrollPeriodDTO(
-                    id=7,
-                    employer="ACME",
-                    period_year=2026,
-                    period_month=4,
-                    payment_date=date(2026, 4, 30),
-                    status="actual",
-                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
-                    item_count=5,
-                    declared_net_pay_clp=Decimal("1050000"),
-                )
-            ],
-        )
-    )
+    ).execute(_default_import_result(declared_net_pay_clp=Decimal("1050000")))
 
     assert repository.saved_unemployment == []
     assert repository.saved_tax == []
@@ -667,23 +607,7 @@ async def test_process_imported_payroll_periods_replaces_warning_on_missing_uf()
     )
     use_case._contributions = EconomicIndexFailingContributions()  # type: ignore[attr-defined]
     result = await use_case.execute(
-        ImportPayrollResultDTO(
-            imported_periods=1,
-            imported_items=5,
-            periods=[
-                ImportedPayrollPeriodDTO(
-                    id=7,
-                    employer="ACME",
-                    period_year=2026,
-                    period_month=4,
-                    payment_date=date(2026, 4, 30),
-                    status="actual",
-                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
-                    item_count=5,
-                    declared_net_pay_clp=Decimal("1050000"),
-                )
-            ],
-        )
+        _default_import_result(declared_net_pay_clp=Decimal("1050000"))
     )
 
     assert result.periods[0].contribution_validation is not None

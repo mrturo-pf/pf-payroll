@@ -48,20 +48,23 @@ def sample_economic_index_dto() -> EconomicIndexDTO:
 def sample_payroll_period_detail_dto(
     period_id: int = 1,
     *,
-    items: list[PayrollItemDetailDTO] | None = None,
+    employer_name: str = "ACME",
     employer_tax_id: str | None = None,
     employer_ended_at: date | None = None,
+    status: str = "actual",
+    items: list[PayrollItemDetailDTO] | None = None,
+    summary: PayrollSummaryDTO | None = None,
     health_institution_is_active: bool | None = None,
 ) -> PayrollPeriodDetailDTO:
     """Return an ACME January-2026 PayrollPeriodDetailDTO for testing.
 
     Structural fields are fixed; callers supply only the fields that vary
-    per test (period_id, items, employer_tax_id, employer_ended_at).
+    per test (period_id, status, items, employer_*, summary, etc.).
     """
     return PayrollPeriodDetailDTO(
         id=period_id,
         employer_id=1,
-        employer_name="ACME",
+        employer_name=employer_name,
         employer_tax_id=employer_tax_id,
         employer_country_code="CL",
         employer_started_at=date(2020, 1, 1),
@@ -70,13 +73,77 @@ def sample_payroll_period_detail_dto(
         period_month=1,
         payment_date=date(2026, 1, 31),
         worked_days=30,
-        status="actual",
+        status=status,
         employment_contract_kind=EmploymentContractKind.INDEFINITE,
         pension_plan_id=1,
         health_plan_id=2,
         items=items if items is not None else [],
-        summary=sample_payroll_summary_dto(period_id),
+        summary=summary
+        if summary is not None
+        else sample_payroll_summary_dto(period_id),
         health_institution_is_active=health_institution_is_active,
+    )
+
+
+def sample_acme_april_2026_period_detail_dto(
+    *,
+    status: str = "actual",
+    items: list[PayrollItemDetailDTO] | None = None,
+    pension_plan_id: int | None = None,
+    health_plan_id: int | None = None,
+    summary: PayrollSummaryDTO | None = None,
+    health_institution_is_active: bool | None = None,
+) -> PayrollPeriodDetailDTO:
+    """Return an ACME April-2026 period detail for process/cli/dashboard tests.
+
+    Structural fields (id=7, employer_tax_id, employer_country_code, dates,
+    worked_days, employment_contract_kind) are fixed; callers supply the
+    fields that vary (status, items, plan ids, summary, etc.).
+    """
+    return PayrollPeriodDetailDTO(
+        id=7,
+        employer_id=1,
+        employer_name="ACME",
+        employer_tax_id="76000000-1",
+        employer_country_code="CL",
+        employer_started_at=date(2020, 1, 1),
+        employer_ended_at=None,
+        period_year=2026,
+        period_month=4,
+        payment_date=date(2026, 4, 30),
+        worked_days=30,
+        status=status,
+        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+        pension_plan_id=pension_plan_id,
+        health_plan_id=health_plan_id,
+        items=items if items is not None else [],
+        summary=summary
+        if summary is not None
+        else sample_acme_april_2026_summary_dto(),
+        health_institution_is_active=health_institution_is_active,
+    )
+
+
+def sample_acme_april_2026_summary_dto() -> PayrollSummaryDTO:
+    """Return a base ACME April-2026 summary DTO for testing.
+
+    Provides the twelve structural fields shared across
+    test_process_imported_payroll_periods, test_cli_main, and
+    test_dashboard_app.  Call-site code adds divergent optional
+    fields (declared_net_pay_clp, expected_net_pay_clp, etc.) via
+    dataclasses.replace().
+    """
+    return PayrollSummaryDTO(
+        period_id=7,
+        employer_id=1,
+        employer_name="ACME",
+        period_year=2026,
+        period_month=4,
+        payment_date=date(2026, 4, 30),
+        taxable_income_clp=Decimal("1000000"),
+        gross_income_clp=Decimal("1250000"),
+        total_discounts_clp=Decimal("180000"),
+        net_pay_clp=Decimal("1070000"),
     )
 
 

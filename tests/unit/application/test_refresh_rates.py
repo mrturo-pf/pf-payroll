@@ -14,24 +14,15 @@ from payroll.application.dto import (
     RefreshRatesResultDTO,
 )
 from payroll.application.use_cases.refresh_rates import RefreshRates
+from tests.helpers.market_data_stubs import MarketDataNotUsedMixin
 
 
-class StubMarketDataRepository:
+class StubMarketDataRepository(MarketDataNotUsedMixin):
     """Test double for Market Data Repository."""
 
     def __init__(self) -> None:
         """Initialize the instance."""
         self.command: RefreshRatesCommandDTO | None = None
-
-    async def list_exchange_rates(
-        self, currency_code: str | None = None
-    ) -> list[object]:
-        """List exchange rates."""
-        raise AssertionError("not used")
-
-    async def list_economic_indices(self, code: str | None = None) -> list[object]:
-        """List economic indices."""
-        raise AssertionError("not used")
 
     async def list_economic_index_periods(
         self,

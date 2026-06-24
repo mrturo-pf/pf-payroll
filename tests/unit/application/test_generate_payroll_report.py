@@ -13,7 +13,7 @@ from payroll.application.dto import (
     PayrollSummaryDTO,
 )
 from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
-from payroll.domain.contributions import EmploymentContractKind
+from tests.helpers.reference_data import sample_payroll_period_detail_dto
 
 
 _DEFAULT_SUMMARY = object()
@@ -46,53 +46,41 @@ class StubRenderer:
         return self.content
 
 
+_REVIEWED_SUMMARY = PayrollSummaryDTO(
+    period_id=10,
+    employer_id=1,
+    employer_name="ACME",
+    period_year=2026,
+    period_month=1,
+    payment_date=date(2026, 1, 31),
+    taxable_income_clp=Decimal("1000000"),
+    gross_income_clp=Decimal("1000000"),
+    total_discounts_clp=Decimal("176000"),
+    net_pay_clp=Decimal("824000"),
+)
+
+_REVIEWED_ITEMS = [
+    PayrollItemDetailDTO(
+        concept_code="SALARY_BASE",
+        concept_name="Base Salary",
+        kind="income",
+        is_taxable=True,
+        amount_clp=Decimal("1000000"),
+        notes=None,
+    )
+]
+
+
 def reviewed_detail(
     summary: PayrollSummaryDTO | None | object = _DEFAULT_SUMMARY,
 ) -> PayrollPeriodDetailDTO:
     """Handle reviewed detail."""
-    return PayrollPeriodDetailDTO(
-        id=10,
-        employer_id=1,
-        employer_name="ACME",
-        employer_tax_id=None,
-        employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        worked_days=30,
-        status="reviewed",
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
-        pension_plan_id=1,
-        health_plan_id=2,
-        items=[
-            PayrollItemDetailDTO(
-                concept_code="SALARY_BASE",
-                concept_name="Base Salary",
-                kind="income",
-                is_taxable=True,
-                amount_clp=Decimal("1000000"),
-                notes=None,
-            )
-        ],
-        summary=(
-            PayrollSummaryDTO(
-                period_id=10,
-                employer_id=1,
-                employer_name="ACME",
-                period_year=2026,
-                period_month=1,
-                payment_date=date(2026, 1, 31),
-                taxable_income_clp=Decimal("1000000"),
-                gross_income_clp=Decimal("1000000"),
-                total_discounts_clp=Decimal("176000"),
-                net_pay_clp=Decimal("824000"),
-            )
-            if summary is _DEFAULT_SUMMARY
-            else summary
-        ),
+    base = sample_payroll_period_detail_dto(
+        10, status="reviewed", items=_REVIEWED_ITEMS, summary=_REVIEWED_SUMMARY
     )
+    if summary is _DEFAULT_SUMMARY:
+        return base
+    return replace(base, summary=summary)
 
 
 @pytest.mark.asyncio

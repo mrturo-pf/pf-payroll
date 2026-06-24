@@ -25,6 +25,10 @@ from payroll.application.dto import (
 )
 from payroll.domain.contributions import EmploymentContractKind
 from helpers.interface_stubs import sample_health_plan, sample_pension_plan
+from tests.helpers.reference_data import (
+    sample_acme_april_2026_period_detail_dto,
+    sample_acme_april_2026_summary_dto,
+)
 
 
 @dataclass(frozen=True)
@@ -37,40 +41,13 @@ class SamplePayload:
 
 def sample_summary() -> PayrollSummaryDTO:
     """Sample summary."""
-    return PayrollSummaryDTO(
-        period_id=7,
-        employer_id=1,
-        employer_name="ACME",
-        period_year=2026,
-        period_month=4,
-        payment_date=date(2026, 4, 30),
-        taxable_income_clp=Decimal("1000000"),
-        gross_income_clp=Decimal("1250000"),
-        total_discounts_clp=Decimal("180000"),
-        net_pay_clp=Decimal("1070000"),
-    )
+    return sample_acme_april_2026_summary_dto()
 
 
 def sample_detail() -> PayrollPeriodDetailDTO:
     """Sample detail."""
-    return PayrollPeriodDetailDTO(
-        id=7,
-        employer_id=1,
-        employer_name="ACME",
-        employer_tax_id="76000000-1",
-        employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
-        period_year=2026,
-        period_month=4,
-        payment_date=date(2026, 4, 30),
-        worked_days=30,
-        status="reviewed",
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
-        pension_plan_id=1,
-        health_plan_id=2,
-        items=[],
-        summary=sample_summary(),
+    return sample_acme_april_2026_period_detail_dto(
+        status="reviewed", pension_plan_id=1, health_plan_id=2
     )
 
 

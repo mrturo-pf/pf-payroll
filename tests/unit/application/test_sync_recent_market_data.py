@@ -14,9 +14,10 @@ from payroll.application.dto import (
     SyncRecentMarketDataResultDTO,
 )
 from payroll.application.use_cases.sync_recent_market_data import SyncRecentMarketData
+from tests.helpers.market_data_stubs import MarketDataNotUsedMixin
 
 
-class StubMarketDataRepository:
+class StubMarketDataRepository(MarketDataNotUsedMixin):
     """Test double for market-data repository."""
 
     def __init__(
@@ -28,16 +29,6 @@ class StubMarketDataRepository:
         self.existing_exchange_rate_dates = existing_exchange_rate_dates or {}
         self.existing_index_periods = existing_index_periods or {}
         self.refresh_calls: list[RefreshRatesCommandDTO] = []
-
-    async def list_exchange_rates(
-        self, currency_code: str | None = None
-    ) -> list[object]:
-        """List exchange rates."""
-        raise AssertionError("not used")
-
-    async def list_economic_indices(self, code: str | None = None) -> list[object]:
-        """List economic indices."""
-        raise AssertionError("not used")
 
     async def get_exchange_rate_value(
         self, currency_code: str, rate_date: date

@@ -14,6 +14,7 @@ from payroll.application.use_cases.compute_unemployment_insurance import (
     ComputeUnemploymentInsurance,
 )
 from payroll.domain.contributions import ContributionCap, EmploymentContractKind
+from tests.helpers.market_data_stubs import UfLookupStubMixin
 
 
 class StubPayrollRepository:
@@ -50,24 +51,8 @@ class StubPayrollRepository:
         return result
 
 
-class StubMarketDataRepository:
+class StubMarketDataRepository(UfLookupStubMixin):
     """Test double for Market Data Repository."""
-
-    def __init__(
-        self, uf_value: Decimal | dict[date, Decimal] | None = Decimal("35000")
-    ) -> None:
-        """Initialize the instance."""
-        self.uf_value = uf_value
-        self.lookups: list[tuple[str, date]] = []
-
-    async def get_exchange_rate_value(
-        self, currency_code: str, rate_date: date
-    ) -> Decimal | None:
-        """Get exchange rate value."""
-        self.lookups.append((currency_code, rate_date))
-        if isinstance(self.uf_value, dict):
-            return self.uf_value.get(rate_date)
-        return self.uf_value
 
 
 @pytest.mark.asyncio

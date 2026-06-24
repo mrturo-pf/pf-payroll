@@ -12,33 +12,22 @@ from payroll.application.dto import (
     PayrollPeriodDetailDTO,
     PayrollSummaryDTO,
 )
-from payroll.domain.contributions import EmploymentContractKind
 from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import (
     WeasyPrintPayrollReportRenderer,
     _build_pdf,
     _escape_pdf_text,
     _format_clp,
 )
+from tests.helpers.reference_data import sample_payroll_period_detail_dto
 
 
 def sample_detail() -> PayrollPeriodDetailDTO:
     """Sample detail."""
-    return PayrollPeriodDetailDTO(
-        id=10,
-        employer_id=1,
+    return sample_payroll_period_detail_dto(
+        10,
         employer_name="ACME & Co",
         employer_tax_id="76.123.456-7",
-        employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        worked_days=30,
         status="reviewed",
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
-        pension_plan_id=1,
-        health_plan_id=2,
         items=[
             PayrollItemDetailDTO(
                 concept_code="SALARY_BASE",

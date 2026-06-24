@@ -66,8 +66,8 @@ make check                 # lint → dead-code → typecheck → dup-check → 
 make lint                  # ruff auto-fix + validate
 make dead-code             # vulture (unused production code in src/)
 make typecheck             # mypy
-make duplicate-code-src    # jscpd (1% threshold)
-make duplicate-code-tests  # jscpd (10% threshold)
+make duplicate-code-src    # jscpd (0% threshold)
+make duplicate-code-tests  # jscpd (0% threshold)
 make test                  # pytest
 make test-cov              # pytest with 100% coverage enforcement
 ```
@@ -75,6 +75,15 @@ make test-cov              # pytest with 100% coverage enforcement
 Run with virtualenv active (`source .venv/bin/activate && make check`) or inline (`PATH=.venv/bin:$PATH make check`).
 
 For local validation against real data: `make db-reset-data-real` before running `make check`.
+
+## Git hooks
+
+Installed automatically by `make install` via `git config core.hooksPath .githooks`:
+
+| Hook | Runs | Bypass |
+|---|---|---|
+| `pre-commit` | lint · dead-code · typecheck | `git commit --no-verify` |
+| `pre-push` | duplicate-code-src · duplicate-code-tests | `git push --no-verify` |
 
 ## Testing conventions
 
@@ -124,7 +133,7 @@ class StubPayrollRepository:
 
 - Schema: `db/01_schema.sql` (idempotent DDL)
 - Base seed: `db/02_seed_base.sql`
-- Migrations via Alembic (`alembic/`)
+- Migrations via Alembic (`alembic/`); config: `alembic.ini` → `src/payroll/infrastructure/db/migrations`
 - Connection: `postgresql+asyncpg://payroll:payroll@localhost:5432/payroll` (default local)
 - Sessions: `infrastructure/db/session.py` — always use `async with SessionLocal() as session`
 - Repositories implement the port `Protocol`s and live in `infrastructure/db/repositories/`

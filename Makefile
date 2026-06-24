@@ -3,7 +3,7 @@
 -include .env
 
 # Auto-detected at install time; override with PYTHON=pythonX.Y to pin a specific interpreter.
-PYTHON ?= python3
+PYTHON ?= python3.12
 VENV ?= .venv
 # Auto-detect the correct nerdctl invocation.
 # Rancher Desktop routes nerdctl through Docker-managed containerd; the default

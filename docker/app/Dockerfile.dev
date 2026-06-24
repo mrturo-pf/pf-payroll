@@ -2,6 +2,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir --upgrade pip \
+    && useradd --no-create-home --shell /bin/false appuser
+
+USER appuser
 
 CMD ["bash"]

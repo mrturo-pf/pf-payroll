@@ -26,7 +26,7 @@ from payroll.interfaces.dashboard.app import (
 from dataclasses import replace as _replace
 
 from helpers.interface_stubs import sample_health_plan, sample_pension_plan
-from tests.helpers.reference_data import (
+from helpers.reference_data import (
     sample_acme_april_2026_period_detail_dto,
     sample_acme_april_2026_summary_dto,
 )

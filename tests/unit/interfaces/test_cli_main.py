@@ -9,8 +9,8 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-import click
 import pytest
+import typer
 from typer.testing import CliRunner
 
 import payroll.interfaces.cli.main as cli_main
@@ -25,7 +25,7 @@ from payroll.application.dto import (
 )
 from payroll.domain.contributions import EmploymentContractKind
 from helpers.interface_stubs import sample_health_plan, sample_pension_plan
-from tests.helpers.reference_data import (
+from helpers.reference_data import (
     sample_acme_april_2026_period_detail_dto,
     sample_acme_april_2026_summary_dto,
 )
@@ -154,7 +154,7 @@ def test_run_command_converts_value_error_into_exit(
         """Handle coro."""
         raise ValueError("boom")
 
-    with pytest.raises(click.exceptions.Exit):
+    with pytest.raises(typer.Exit):
         cli_main._run_command(coro())
 
     assert capsys.readouterr().err == "boom\n"
@@ -169,7 +169,7 @@ def test_run_command_converts_os_error_into_exit(
         """Handle coro."""
         raise OSError("disk error")
 
-    with pytest.raises(click.exceptions.Exit):
+    with pytest.raises(typer.Exit):
         cli_main._run_command(coro())
 
     assert capsys.readouterr().err == "disk error\n"
@@ -184,7 +184,7 @@ def test_parse_optional_decimal_supports_valid_none_and_invalid_values(
         "39000.5"
     )
 
-    with pytest.raises(click.exceptions.Exit):
+    with pytest.raises(typer.Exit):
         cli_main._parse_optional_decimal("uf_value_clp", "invalid")
 
     assert capsys.readouterr().err == "uf_value_clp must be a valid decimal value.\n"

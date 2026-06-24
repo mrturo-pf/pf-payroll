@@ -7,7 +7,7 @@ import pytest
 
 from payroll.application.dto import EconomicIndexDTO, ExchangeRateDTO
 from payroll.application.use_cases.market_data import MarketDataQueries
-from tests.helpers.reference_data import (
+from helpers.reference_data import (
     sample_economic_index_dto,
     sample_exchange_rate_dto,
 )

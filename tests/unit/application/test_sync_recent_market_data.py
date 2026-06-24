@@ -14,7 +14,7 @@ from payroll.application.dto import (
     SyncRecentMarketDataResultDTO,
 )
 from payroll.application.use_cases.sync_recent_market_data import SyncRecentMarketData
-from tests.helpers.market_data_stubs import MarketDataNotUsedMixin
+from helpers.market_data_stubs import MarketDataNotUsedMixin
 
 
 class StubMarketDataRepository(MarketDataNotUsedMixin):

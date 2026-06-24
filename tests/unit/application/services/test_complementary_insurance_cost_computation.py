@@ -13,7 +13,7 @@ from payroll.application.services.complementary_insurance_cost_computation impor
     ComplementaryInsuranceCostComputationService,
 )
 from payroll.domain.contributions import ComplementaryInsuranceCostType
-from tests.helpers.complementary_insurance_helpers import (
+from helpers.complementary_insurance_helpers import (
     build_complementary_insurance_plan,
 )
 

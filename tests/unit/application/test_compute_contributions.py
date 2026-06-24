@@ -20,7 +20,7 @@ from payroll.domain.contributions import (
     PensionInstitution,
     PensionPlan,
 )
-from tests.helpers.market_data_stubs import MarketDataNotUsedMixin, UfLookupStubMixin
+from helpers.market_data_stubs import MarketDataNotUsedMixin, UfLookupStubMixin
 
 
 class StubPayrollRepository:

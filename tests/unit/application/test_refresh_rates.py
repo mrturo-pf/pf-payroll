@@ -14,7 +14,7 @@ from payroll.application.dto import (
     RefreshRatesResultDTO,
 )
 from payroll.application.use_cases.refresh_rates import RefreshRates
-from tests.helpers.market_data_stubs import MarketDataNotUsedMixin
+from helpers.market_data_stubs import MarketDataNotUsedMixin
 
 
 class StubMarketDataRepository(MarketDataNotUsedMixin):

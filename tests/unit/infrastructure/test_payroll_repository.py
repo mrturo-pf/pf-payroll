@@ -326,13 +326,13 @@ def build_june_2026_period(*, worked_days: int | None = None) -> PayrollPeriodMo
     )
 
 
-def build_walmart_chile_employer(
+def build_specific_chile_employer(
     *,
     first_increase_period_year: int | None = None,
     first_increase_period_month: int | None = None,
     increase_frequency: int | None = None,
 ) -> EmployerModel:
-    """Build the WALMART-CHILE employer model used in period-range tests."""
+    """Build the specific employer model used in period-range tests."""
     model = EmployerModel(
         id=1,
         name="WALMART-CHILE",
@@ -1993,7 +1993,7 @@ async def test_sqlalchemy_payroll_repository_lists_period_ranges() -> None:
         status=PayrollStatus.ACTUAL,
         declared_net_pay_clp=Decimal("2978086"),
     )
-    current_employer = build_walmart_chile_employer()
+    current_employer = build_specific_chile_employer()
     previous_period = PayrollPeriodModel(
         id=16,
         employer_id=1,
@@ -2055,7 +2055,7 @@ async def test_sqlalchemy_payroll_repository_attaches_lookback_for_full_previous
         status=PayrollStatus.ACTUAL,
         declared_net_pay_clp=Decimal("3000000"),
     )
-    current_employer = build_walmart_chile_employer()
+    current_employer = build_specific_chile_employer()
     # 13 previous periods — most-recent-first (DESC).
     # Index 0 = Feb 2026, index 12 = Mar 2025.
     previous_periods = [
@@ -2156,7 +2156,7 @@ async def test_sqlalchemy_payroll_repository_infers_current_month_offset() -> No
         status=PayrollStatus.ACTUAL,
         declared_net_pay_clp=Decimal("3134978"),
     )
-    current_employer = build_walmart_chile_employer()
+    current_employer = build_specific_chile_employer()
     session = FakeSession(
         [
             FakeResult(first_row=(current_period, current_employer)),
@@ -2241,7 +2241,7 @@ async def test_sqlalchemy_payroll_repository_marks_scheduled_future_increases() 
         status=PayrollStatus.ACTUAL,
         declared_net_pay_clp=Decimal("2900000"),
     )
-    current_employer = build_walmart_chile_employer(
+    current_employer = build_specific_chile_employer(
         first_increase_period_year=2026,
         first_increase_period_month=8,
         increase_frequency=6,

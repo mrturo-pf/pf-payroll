@@ -24,7 +24,7 @@ from payroll.domain.contributions import (
     EmploymentContractKind,
     HealthInstitutionKind,
 )
-from tests.helpers.reference_data import (
+from helpers.reference_data import (
     sample_acme_april_2026_period_detail_dto,
     sample_acme_april_2026_summary_dto,
 )

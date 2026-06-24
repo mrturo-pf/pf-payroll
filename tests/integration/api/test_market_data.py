@@ -18,7 +18,7 @@ from payroll.interfaces.api.dependencies import (
 )
 from payroll.interfaces.api.main import app
 from payroll.interfaces.api.routes.market_data import refresh_rates
-from tests.helpers.reference_data import (
+from helpers.reference_data import (
     sample_economic_index_dto,
     sample_exchange_rate_dto,
 )

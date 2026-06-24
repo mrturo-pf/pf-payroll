@@ -11,7 +11,7 @@ from payroll.application.dto import (
 )
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.domain.contributions import EmploymentContractKind
-from tests.helpers.reference_data import sample_payroll_summary_dto
+from helpers.reference_data import sample_payroll_summary_dto
 
 
 class StubPayrollRepository:

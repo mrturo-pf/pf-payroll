@@ -12,7 +12,7 @@ from payroll.application.dto import (
     PayrollSummaryDTO,
 )
 from payroll.application.use_cases.payroll_queries import PayrollQueries
-from tests.helpers.reference_data import (
+from helpers.reference_data import (
     sample_payroll_period_detail_dto,
     sample_payroll_summary_dto,
 )

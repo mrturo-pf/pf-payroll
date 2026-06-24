@@ -13,7 +13,7 @@ from payroll.application.dto import (
     PayrollSummaryDTO,
 )
 from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
-from tests.helpers.reference_data import sample_payroll_period_detail_dto
+from helpers.reference_data import sample_payroll_period_detail_dto
 
 
 _DEFAULT_SUMMARY = object()

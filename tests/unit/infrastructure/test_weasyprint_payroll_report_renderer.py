@@ -18,7 +18,7 @@ from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import 
     _escape_pdf_text,
     _format_clp,
 )
-from tests.helpers.reference_data import sample_payroll_period_detail_dto
+from helpers.reference_data import sample_payroll_period_detail_dto
 
 
 def sample_detail() -> PayrollPeriodDetailDTO:

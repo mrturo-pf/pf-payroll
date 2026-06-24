@@ -20,7 +20,7 @@ from payroll.interfaces.api.routes.payroll import (
     _compute_increase,
     get_payroll_period,
 )
-from tests.helpers.reference_data import (
+from helpers.reference_data import (
     sample_payroll_period_detail_dto,
     sample_payroll_summary_dto,
 )

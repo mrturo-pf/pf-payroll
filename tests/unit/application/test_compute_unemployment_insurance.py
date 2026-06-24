@@ -14,7 +14,7 @@ from payroll.application.use_cases.compute_unemployment_insurance import (
     ComputeUnemploymentInsurance,
 )
 from payroll.domain.contributions import ContributionCap, EmploymentContractKind
-from tests.helpers.market_data_stubs import UfLookupStubMixin
+from helpers.market_data_stubs import UfLookupStubMixin
 
 
 class StubPayrollRepository:

@@ -28,7 +28,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "httpx>=0.28",
+  "httpx2>=2.5",
   "mypy>=1.18",
   "pytest>=8.4",
   "pytest-asyncio>=1.1",
@@ -41,6 +41,8 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["tests"]
+asyncio_mode = "strict"
+filterwarnings = ["error"]
 
 [tool.ruff.lint]
 extend-select = ["D", "E", "W", "UP"]

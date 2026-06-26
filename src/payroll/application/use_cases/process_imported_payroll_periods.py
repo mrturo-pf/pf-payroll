@@ -11,6 +11,7 @@ from payroll.application.dto import (
     ImportedPayrollPeriodDTO,
 )
 from payroll.application.errors import EconomicIndexNotFoundError
+from payroll.application.ports.income_tax_bracket import IncomeTaxBracketPort
 from payroll.application.ports.repositories import (
     ComplementaryInsuranceRepository,
     MarketDataRepository,
@@ -55,6 +56,7 @@ class ProcessImportedPayrollPeriods:
         repository: PayrollRepository,
         market_data_repository: MarketDataRepository,
         complementary_insurance_repository: ComplementaryInsuranceRepository,
+        income_tax_bracket_port: IncomeTaxBracketPort,
     ) -> None:
         """Initialize the instance."""
         self._repository = repository
@@ -64,7 +66,9 @@ class ProcessImportedPayrollPeriods:
         self._compute_unemployment = ComputeUnemploymentInsurance(
             repository, market_data_repository
         )
-        self._compute_income_tax = ComputeIncomeTax(repository, market_data_repository)
+        self._compute_income_tax = ComputeIncomeTax(
+            repository, market_data_repository, income_tax_bracket_port
+        )
         self._complementary_insurance = ComplementaryInsuranceService(
             repository, complementary_insurance_repository
         )
@@ -87,7 +91,6 @@ class ProcessImportedPayrollPeriods:
             imported_periods=result.imported_periods,
             imported_items=result.imported_items,
             periods=refreshed_periods,
-            market_data_sync_request=result.market_data_sync_request,
         )
 
     async def _process_period(self, period_id: int) -> None:

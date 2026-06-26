@@ -4,10 +4,8 @@ from dataclasses import dataclass
 
 from payroll.application.dto import (
     ContributionCapDTO,
-    CurrencyDTO,
     HealthInstitutionDTO,
     HealthPlanDTO,
-    IncomeTaxBracketDTO,
     PayrollConceptDTO,
     PensionInstitutionDTO,
     PensionPlanDTO,
@@ -20,10 +18,6 @@ class ReferenceDataQueries:
     """Provide reference data queries."""
 
     repository: ReferenceDataRepository
-
-    async def list_currencies(self) -> list[CurrencyDTO]:
-        """List currencies."""
-        return await self.repository.list_currencies()
 
     async def list_pension_institutions(self) -> list[PensionInstitutionDTO]:
         """List pension institutions."""
@@ -56,7 +50,3 @@ class ReferenceDataQueries:
     async def list_payroll_concepts(self) -> list[PayrollConceptDTO]:
         """List payroll concepts."""
         return await self.repository.list_payroll_concepts()
-
-    async def list_income_tax_brackets(self) -> list[IncomeTaxBracketDTO]:
-        """List income tax brackets."""
-        return await self.repository.list_income_tax_brackets()

@@ -4,30 +4,14 @@ from dataclasses import asdict
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field
 
-from payroll.application.errors import PayrollError
-from payroll.application.dto import RefreshIncomeTaxBracketsCommandDTO
-from payroll.application.use_cases.refresh_income_tax_brackets import (
-    RefreshIncomeTaxBrackets,
-)
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
-from payroll.interfaces.api.errors import to_http_exception
 from payroll.interfaces.api.dependencies import (
     get_reference_data_queries,
-    get_refresh_income_tax_brackets_use_case,
 )
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/reference-data", tags=["reference-data"])
-
-
-class CurrencyRead(BaseModel):
-    """Represent Currency Read."""
-
-    code: str
-    name: str
-    is_fiat: bool
-    unit_kind: str
 
 
 class PensionInstitutionRead(BaseModel):
@@ -89,39 +73,6 @@ class PayrollConceptRead(BaseModel):
     name: str
     kind: str
     is_taxable: bool
-
-
-class IncomeTaxBracketRead(BaseModel):
-    """Represent Income Tax Bracket Read."""
-
-    valid_from: date
-    valid_to: date | None
-    lower_bound_utm: str
-    upper_bound_utm: str | None
-    marginal_rate: str
-    rebate_utm: str
-
-
-class RefreshIncomeTaxBracketsRequest(BaseModel):
-    """Represent Refresh Income Tax Brackets Request."""
-
-    year: int = Field(ge=1990, le=2100)
-
-
-class RefreshIncomeTaxBracketsResponse(BaseModel):
-    """Represent Refresh Income Tax Brackets Response."""
-
-    year: int
-    refreshed_months: int
-    upserted_brackets: int
-
-
-@router.get("/currencies", response_model=list[CurrencyRead])
-async def list_currencies(
-    queries: ReferenceDataQueries = Depends(get_reference_data_queries),
-) -> list[CurrencyRead]:
-    """List currencies."""
-    return [CurrencyRead(**asdict(item)) for item in await queries.list_currencies()]
 
 
 @router.get("/pension-institutions", response_model=list[PensionInstitutionRead])
@@ -224,47 +175,3 @@ async def list_payroll_concepts(
         PayrollConceptRead(**asdict(item))
         for item in await queries.list_payroll_concepts()
     ]
-
-
-@router.get("/income-tax-brackets", response_model=list[IncomeTaxBracketRead])
-async def list_income_tax_brackets(
-    queries: ReferenceDataQueries = Depends(get_reference_data_queries),
-) -> list[IncomeTaxBracketRead]:
-    """List income tax brackets."""
-    return [
-        IncomeTaxBracketRead(
-            valid_from=item.valid_from,
-            valid_to=item.valid_to,
-            lower_bound_utm=str(item.lower_bound_utm),
-            upper_bound_utm=str(item.upper_bound_utm)
-            if item.upper_bound_utm is not None
-            else None,
-            marginal_rate=str(item.marginal_rate),
-            rebate_utm=str(item.rebate_utm),
-        )
-        for item in await queries.list_income_tax_brackets()
-    ]
-
-
-@router.post(
-    "/income-tax-brackets/refresh", response_model=RefreshIncomeTaxBracketsResponse
-)
-async def refresh_income_tax_brackets(
-    payload: RefreshIncomeTaxBracketsRequest,
-    use_case: RefreshIncomeTaxBrackets = Depends(
-        get_refresh_income_tax_brackets_use_case
-    ),
-) -> RefreshIncomeTaxBracketsResponse:
-    """Refresh income tax brackets."""
-    try:
-        result = await use_case.execute(
-            RefreshIncomeTaxBracketsCommandDTO(year=payload.year)
-        )
-    except PayrollError as exc:
-        raise to_http_exception(exc, default_status=400) from exc
-
-    return RefreshIncomeTaxBracketsResponse(
-        year=result.year,
-        refreshed_months=result.refreshed_months,
-        upserted_brackets=result.upserted_brackets,
-    )

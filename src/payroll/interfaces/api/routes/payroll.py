@@ -1,11 +1,10 @@
 """Payroll routes."""
 
-from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, Path, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile
 from fastapi.responses import Response
 from dataclasses import dataclass
 from pydantic import BaseModel
@@ -26,10 +25,6 @@ from payroll.application.dto import (
     PayrollSummaryDTO,
 )
 from payroll.interfaces.api.errors import to_http_exception
-from payroll.interfaces.api.background_tasks import (
-    schedule_payroll_market_data_sync,
-    sync_payroll_market_data_now,
-)
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
@@ -347,7 +342,6 @@ def to_pdf_response(report: GeneratedPayrollReportDTO) -> Response:
 
 @router.post("/import", response_model=ImportPayrollResponse)
 async def import_payroll(
-    request: Request,
     file: UploadFile = File(...),
     use_case: ImportPayroll = Depends(get_import_payroll_use_case),
     process_use_case: ProcessImportedPayrollPeriods = Depends(
@@ -362,12 +356,7 @@ async def import_payroll(
         result = await use_case.from_bytes(file.filename, await file.read())
     except PayrollError as exc:
         raise to_http_exception(exc, default_status=400) from exc
-    _, remaining_sync_request = await sync_payroll_market_data_now(
-        result.market_data_sync_request
-    )
-    result = replace(result, market_data_sync_request=remaining_sync_request)
     result = await process_use_case.execute(result)
-    schedule_payroll_market_data_sync(request.app, remaining_sync_request)
 
     return ImportPayrollResponse(
         imported_periods=result.imported_periods,

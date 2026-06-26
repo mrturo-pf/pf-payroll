@@ -1,10 +1,9 @@
 """Command-oriented payroll repository operations."""
 
-from datetime import date
 from decimal import Decimal
 from collections.abc import Set as AbstractSet
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, select
 
 from payroll.application.dto import (
     AssignPlansCommandDTO,
@@ -29,10 +28,8 @@ from payroll.domain.contributions import (
     PensionInstitution,
     PensionPlan,
 )
-from payroll.domain.taxes import IncomeTaxBracket
 from payroll.infrastructure.db.models import (
     PayrollConceptModel,
-    IncomeTaxBracketModel,
 )
 from payroll.infrastructure.db.models.payroll import PayrollItemModel, PayrollStatus
 from payroll.infrastructure.db.models.payroll import PayrollPeriodHealthPlanModel
@@ -442,44 +439,6 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
             payment_date=period.payment_date,
             taxable_income_clp=await self._get_taxable_income_clp(period.id),
             deductible_amount_clp=await self._get_deductible_amount_clp(period.id),
-        )
-
-    async def get_income_tax_bracket(
-        self, payment_date: date, taxable_base_utm: Decimal
-    ) -> IncomeTaxBracket | None:
-        """Get income tax bracket."""
-        result = await self._session.execute(
-            select(IncomeTaxBracketModel)
-            .where(IncomeTaxBracketModel.valid_from <= payment_date)
-            .where(
-                or_(
-                    IncomeTaxBracketModel.valid_to.is_(None),
-                    IncomeTaxBracketModel.valid_to >= payment_date,
-                )
-            )
-            .where(IncomeTaxBracketModel.lower_bound_utm <= taxable_base_utm)
-            .where(
-                or_(
-                    IncomeTaxBracketModel.upper_bound_utm.is_(None),
-                    IncomeTaxBracketModel.upper_bound_utm > taxable_base_utm,
-                )
-            )
-            .order_by(
-                IncomeTaxBracketModel.valid_from.desc(),
-                IncomeTaxBracketModel.lower_bound_utm.desc(),
-            )
-        )
-        row = result.scalar_one_or_none()
-        if row is None:
-            return None
-
-        return IncomeTaxBracket(
-            valid_from=row.valid_from,
-            valid_to=row.valid_to,
-            lower_bound_utm=row.lower_bound_utm,
-            upper_bound_utm=row.upper_bound_utm,
-            marginal_rate=row.marginal_rate,
-            rebate_utm=row.rebate_utm,
         )
 
     async def save_computed_income_tax(

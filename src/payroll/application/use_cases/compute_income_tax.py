@@ -7,6 +7,7 @@ from payroll.application.dto import (
     ComputeIncomeTaxCommandDTO,
     ComputeIncomeTaxResultDTO,
 )
+from payroll.application.ports.income_tax_bracket import IncomeTaxBracketPort
 from payroll.application.ports.repositories import (
     MarketDataRepository,
     PayrollRepository,
@@ -22,11 +23,13 @@ class ComputeIncomeTax:
         self,
         repository: PayrollRepository,
         market_data_repository: MarketDataRepository,
+        income_tax_bracket_port: IncomeTaxBracketPort,
         calculator: ChileanTaxCalculator | None = None,
     ) -> None:
         """Initialize the instance."""
         self._repository = repository
         self._market_data_repository = market_data_repository
+        self._income_tax_bracket_port = income_tax_bracket_port
         self._calculator = calculator or ChileanTaxCalculator()
 
     async def execute(
@@ -49,7 +52,7 @@ class ComputeIncomeTax:
             if utm_value_clp > 0
             else Decimal("0")
         )
-        bracket = await self._repository.get_income_tax_bracket(
+        bracket = await self._income_tax_bracket_port.get_income_tax_bracket(
             context.payment_date, taxable_base_utm
         )
         if bracket is None:

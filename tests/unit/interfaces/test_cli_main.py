@@ -18,10 +18,8 @@ from payroll.application.dto import (
     GeneratedPayrollReportDTO,
     ImportPayrollResultDTO,
     ImportedPayrollPeriodDTO,
-    MarketDataSyncRequestDTO,
     PayrollPeriodDetailDTO,
     PayrollSummaryDTO,
-    SyncRecentMarketDataResultDTO,
 )
 from payroll.domain.contributions import EmploymentContractKind
 from helpers.interface_stubs import sample_health_plan, sample_pension_plan
@@ -66,12 +64,9 @@ class _FakeSessionContext:
 class _FakeDualRepoUseCase:
     """Test double for use cases that accept payroll + market-data repositories."""
 
-    def __init__(
-        self, payroll_repository: object, market_data_repository: object
-    ) -> None:
+    def __init__(self, payroll_repository: object, *args: object) -> None:
         """Initialize the instance."""
         assert payroll_repository == "payroll-repo"
-        assert market_data_repository == "market-repo"
 
     async def execute(self, command: object) -> object:
         """Handle execute."""
@@ -96,12 +91,7 @@ class _FakeImportPayrollBase:
 class _FakeProcessImportedPayrollPeriods:
     """Test double for imported-payroll post-processing, shared across CLI tests."""
 
-    def __init__(
-        self,
-        repository: object,
-        market_data_repository: object,
-        complementary_insurance_repository: object,
-    ) -> None:
+    def __init__(self, *args: object) -> None:
         """Initialize the instance."""
 
     async def execute(self, result: ImportPayrollResultDTO) -> ImportPayrollResultDTO:
@@ -278,12 +268,14 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     monkeypatch.setattr(
         cli_main, "SqlAlchemyReferenceDataRepository", lambda session: "reference-repo"
     )
-    monkeypatch.setattr(
-        cli_main, "SqlAlchemyMarketDataRepository", lambda session: "market-repo"
-    )
     monkeypatch.setattr(cli_main, "WeasyPrintPayrollReportRenderer", lambda: "renderer")
     monkeypatch.setattr(cli_main, "XlsxPayrollImporter", lambda: "importer")
     monkeypatch.setattr(cli_main, "ImportPayroll", FakeImportPayroll)
+    monkeypatch.setattr(
+        cli_main,
+        "ProcessImportedPayrollPeriods",
+        _FakeProcessImportedPayrollPeriods,
+    )
     monkeypatch.setattr(cli_main, "PayrollQueries", FakePayrollQueries)
     monkeypatch.setattr(cli_main, "ReferenceDataQueries", FakeReferenceDataQueries)
     monkeypatch.setattr(cli_main, "AssignPlans", FakeAssignPlans)
@@ -312,107 +304,6 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
         asyncio.run(cli_main._generate_payroll_report_async(7)).filename
         == "payroll-period-7.pdf"
     )
-
-
-def test_import_payroll_async_syncs_requested_market_data(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Test import payroll eagerly syncs the requested market data."""
-    sample_file = tmp_path / "sample.csv"
-    sample_file.write_text("period_month,period_year,employer\n")
-
-    class FakeImportPayroll(_FakeImportPayrollBase):
-        """Test double for Import Payroll."""
-
-        async def from_bytes(
-            self, filename: str, content: bytes
-        ) -> ImportPayrollResultDTO:
-            """Create from bytes."""
-            self._assert_sample_csv(filename, content)
-            return ImportPayrollResultDTO(
-                imported_periods=1,
-                imported_items=1,
-                periods=[
-                    ImportedPayrollPeriodDTO(
-                        id=1,
-                        employer="ACME",
-                        period_year=2026,
-                        period_month=4,
-                        payment_date=date(2026, 4, 29),
-                        worked_days=30,
-                        status="actual",
-                        employment_contract_kind=EmploymentContractKind.INDEFINITE,
-                        item_count=1,
-                    )
-                ],
-                market_data_sync_request=MarketDataSyncRequestDTO(
-                    exchange_rate_dates={"UF": [date(2026, 4, 29)]}
-                ),
-            )
-
-    class FakeMarketDataSyncUseCase:
-        """Test double for market-data sync."""
-
-        async def execute_request_and_collect_remaining(
-            self, request: MarketDataSyncRequestDTO
-        ) -> tuple[SyncRecentMarketDataResultDTO, MarketDataSyncRequestDTO | None]:
-            """Handle execute request and collect remaining."""
-            assert request == MarketDataSyncRequestDTO(
-                exchange_rate_dates={"UF": [date(2026, 4, 29)]}
-            )
-            return (
-                SyncRecentMarketDataResultDTO(
-                    requested_exchange_rates=1,
-                    requested_economic_indices=0,
-                    upserted_exchange_rates=1,
-                    upserted_economic_indices=0,
-                ),
-                None,
-            )
-
-    monkeypatch.setattr(cli_main, "SessionLocal", lambda: _FakeSessionContext())
-    monkeypatch.setattr(
-        cli_main, "SqlAlchemyPayrollRepository", lambda session: "payroll-repo"
-    )
-    monkeypatch.setattr(cli_main, "XlsxPayrollImporter", lambda: "importer")
-    monkeypatch.setattr(cli_main, "ImportPayroll", FakeImportPayroll)
-    monkeypatch.setattr(
-        cli_main,
-        "build_market_data_sync_use_case",
-        lambda session: FakeMarketDataSyncUseCase(),
-    )
-    monkeypatch.setattr(
-        cli_main,
-        "ProcessImportedPayrollPeriods",
-        _FakeProcessImportedPayrollPeriods,
-    )
-
-    result = asyncio.run(cli_main._import_payroll_async(sample_file))
-
-    assert result == {
-        "imported_periods": 1,
-        "imported_items": 1,
-        "periods": [
-            ImportedPayrollPeriodDTO(
-                id=1,
-                employer="ACME",
-                period_year=2026,
-                period_month=4,
-                payment_date=date(2026, 4, 29),
-                worked_days=30,
-                status="actual",
-                employment_contract_kind=EmploymentContractKind.INDEFINITE,
-                item_count=1,
-            )
-        ],
-        "market_data_sync_result": SyncRecentMarketDataResultDTO(
-            requested_exchange_rates=1,
-            requested_economic_indices=0,
-            upserted_exchange_rates=1,
-            upserted_economic_indices=0,
-        ),
-        "market_data_sync_request": None,
-    }
 
 
 def test_import_payroll_async_processes_periods_without_market_sync(
@@ -454,9 +345,6 @@ def test_import_payroll_async_processes_periods_without_market_sync(
     monkeypatch.setattr(cli_main, "SessionLocal", lambda: _FakeSessionContext())
     monkeypatch.setattr(
         cli_main, "SqlAlchemyPayrollRepository", lambda session: "payroll-repo"
-    )
-    monkeypatch.setattr(
-        cli_main, "SqlAlchemyMarketDataRepository", lambda session: "market-repo"
     )
     monkeypatch.setattr(cli_main, "XlsxPayrollImporter", lambda: "importer")
     monkeypatch.setattr(cli_main, "ImportPayroll", FakeImportPayroll)

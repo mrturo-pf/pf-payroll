@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import asdict, is_dataclass, replace
+from dataclasses import asdict, is_dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from enum import Enum
@@ -19,7 +19,6 @@ from payroll.application.dto import (
     ComputeContributionsCommandDTO,
     ComputeIncomeTaxCommandDTO,
     GeneratedPayrollReportDTO,
-    ImportPayrollResultDTO,
     ReviewPayrollPeriodCommandDTO,
 )
 from payroll.application.use_cases.assign_plans import AssignPlans
@@ -33,17 +32,22 @@ from payroll.application.use_cases.process_imported_payroll_periods import (
 )
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
-from payroll.interfaces.repositories import (
-    SqlAlchemyComplementaryInsuranceRepository,
-    SqlAlchemyMarketDataRepository,
-    SqlAlchemyPayrollRepository,
-    SqlAlchemyReferenceDataRepository,
-)
+from payroll.config import settings
+from payroll.infrastructure.http.financial_data_client import FinancialDataClient
+from payroll.infrastructure.http.income_tax_bracket_client import IncomeTaxBracketClient
 from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
 from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import (
     WeasyPrintPayrollReportRenderer,
 )
-from payroll.interfaces.api.dependencies import build_market_data_sync_use_case
+from payroll.infrastructure.db.repositories.complementary_insurance_repository import (
+    SqlAlchemyComplementaryInsuranceRepository,
+)
+from payroll.infrastructure.db.repositories.payroll_repository import (
+    SqlAlchemyPayrollRepository,
+)
+from payroll.infrastructure.db.repositories.reference_data_repository import (
+    SqlAlchemyReferenceDataRepository,
+)
 from payroll.interfaces.session import SessionLocal, open_session
 
 app = typer.Typer(help="Payroll CLI")
@@ -52,6 +56,24 @@ app = typer.Typer(help="Payroll CLI")
 def _open_session():
     """Open a session using the local factory."""
     return open_session(SessionLocal)
+
+
+def _build_financial_data_client() -> FinancialDataClient:
+    """Build the shared FinancialDataClient from settings."""
+    return FinancialDataClient(
+        base_url=settings.financial_data_base_url,
+        api_key=settings.financial_data_api_key,
+        cache_ttl_seconds=settings.financial_data_cache_ttl_seconds,
+    )
+
+
+def _build_income_tax_bracket_client() -> IncomeTaxBracketClient:
+    """Build the shared IncomeTaxBracketClient from settings."""
+    return IncomeTaxBracketClient(
+        base_url=settings.financial_data_base_url,
+        api_key=settings.financial_data_api_key,
+        cache_ttl_seconds=settings.financial_data_cache_ttl_seconds,
+    )
 
 
 def _json_default(value: object) -> Any:
@@ -93,37 +115,15 @@ def _parse_optional_decimal(name: str, value: str | None) -> Decimal | None:
 async def _import_payroll_async(file_path: Path) -> object:
     """Handle import payroll async."""
     async with _open_session() as session:
-        use_case = ImportPayroll(
+        result = await ImportPayroll(
             SqlAlchemyPayrollRepository(session), XlsxPayrollImporter()
-        )
-        result = await use_case.from_bytes(file_path.name, file_path.read_bytes())
-        market_data_sync_request = getattr(result, "market_data_sync_request", None)
-        if market_data_sync_request is None:
-            if isinstance(result, ImportPayrollResultDTO):
-                return await ProcessImportedPayrollPeriods(
-                    SqlAlchemyPayrollRepository(session),
-                    SqlAlchemyMarketDataRepository(session),
-                    SqlAlchemyComplementaryInsuranceRepository(session),
-                ).execute(result)
-            return result
-
-        sync_result, remaining_request = await build_market_data_sync_use_case(
-            session
-        ).execute_request_and_collect_remaining(market_data_sync_request)
-        synced_result = replace(result, market_data_sync_request=remaining_request)
-        if isinstance(synced_result, ImportPayrollResultDTO):
-            synced_result = await ProcessImportedPayrollPeriods(
-                SqlAlchemyPayrollRepository(session),
-                SqlAlchemyMarketDataRepository(session),
-                SqlAlchemyComplementaryInsuranceRepository(session),
-            ).execute(synced_result)
-        return {
-            "imported_periods": synced_result.imported_periods,
-            "imported_items": synced_result.imported_items,
-            "periods": synced_result.periods,
-            "market_data_sync_result": sync_result,
-            "market_data_sync_request": synced_result.market_data_sync_request,
-        }
+        ).from_bytes(file_path.name, file_path.read_bytes())
+        return await ProcessImportedPayrollPeriods(
+            SqlAlchemyPayrollRepository(session),
+            _build_financial_data_client(),
+            SqlAlchemyComplementaryInsuranceRepository(session),
+            _build_income_tax_bracket_client(),
+        ).execute(result)
 
 
 async def _list_period_summaries_async() -> object:
@@ -174,8 +174,9 @@ async def _compute_contributions_async(
     """Handle compute contributions async."""
     async with _open_session() as session:
         payroll_repository = SqlAlchemyPayrollRepository(session)
-        market_data_repository = SqlAlchemyMarketDataRepository(session)
-        use_case = ComputeContributions(payroll_repository, market_data_repository)
+        use_case = ComputeContributions(
+            payroll_repository, _build_financial_data_client()
+        )
         return await use_case.execute(
             ComputeContributionsCommandDTO(
                 period_id=period_id,
@@ -192,8 +193,11 @@ async def _compute_income_tax_async(
     """Handle compute income tax async."""
     async with _open_session() as session:
         payroll_repository = SqlAlchemyPayrollRepository(session)
-        market_data_repository = SqlAlchemyMarketDataRepository(session)
-        use_case = ComputeIncomeTax(payroll_repository, market_data_repository)
+        use_case = ComputeIncomeTax(
+            payroll_repository,
+            _build_financial_data_client(),
+            _build_income_tax_bracket_client(),
+        )
         return await use_case.execute(
             ComputeIncomeTaxCommandDTO(
                 period_id=period_id,

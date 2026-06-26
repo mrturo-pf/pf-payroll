@@ -10,17 +10,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://payroll:payroll@localhost:5432/payroll"
     api_base_url: str = "http://127.0.0.1:8000"
     log_level: str = "INFO"
-    rate_provider_timeout_seconds: int = 10
-    mindicador_base_url: str = "https://mindicador.cl/api"
-    sii_base_url: str = "https://www.sii.cl"
-    bcch_api_base_url: str = "https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx"
-    bcch_api_user: str | None = None
-    bcch_api_password: str | None = None
-    bcch_series_uf: str | None = None
-    bcch_series_usd: str | None = None
-    bcch_series_eur: str | None = None
-    bcch_series_utm: str | None = None
-    bcch_series_ipc_cl: str | None = None
+    financial_data_base_url: str = ""
+    financial_data_api_key: str = ""
+    financial_data_cache_ttl_seconds: int = 300
 
     model_config = SettingsConfigDict(
         env_file=".env",

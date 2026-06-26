@@ -20,7 +20,7 @@ from payroll.domain.contributions import (
     PensionInstitution,
     PensionPlan,
 )
-from helpers.market_data_stubs import MarketDataNotUsedMixin, UfLookupStubMixin
+from helpers.market_data_stubs import UfLookupStubMixin
 
 
 class StubPayrollRepository:
@@ -90,7 +90,7 @@ class StubPayrollRepository:
         return result
 
 
-class StubMarketDataRepository(MarketDataNotUsedMixin, UfLookupStubMixin):
+class StubMarketDataRepository(UfLookupStubMixin):
     """Test double for Market Data Repository."""
 
     def __init__(
@@ -99,8 +99,10 @@ class StubMarketDataRepository(MarketDataNotUsedMixin, UfLookupStubMixin):
         """Initialize the instance."""
         UfLookupStubMixin.__init__(self, uf_value)
 
-    async def refresh_rates(self, command: object) -> object:
-        """Refresh rates."""
+    async def get_economic_index_value(
+        self, code: str, period_year: int, period_month: int
+    ) -> Decimal | None:
+        """Get economic index value — not used in contribution tests."""
         raise AssertionError("not used")
 
 

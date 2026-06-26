@@ -1,30 +1,12 @@
 """Shared market-data stub mixins for unit tests.
 
-These mixins implement the repetitive "not used" and UF-lookup patterns
-that appear across multiple StubMarketDataRepository classes.  Inherit
-from the relevant mixin(s) in per-file stubs to eliminate the boilerplate.
+These mixins implement the repetitive UF-lookup pattern that appears across
+multiple StubMarketDataRepository classes.  Inherit from the relevant mixin(s)
+in per-file stubs to eliminate the boilerplate.
 """
 
 from datetime import date
 from decimal import Decimal
-
-
-class MarketDataNotUsedMixin:
-    """Stub mixin: list_exchange_rates and list_economic_indices raise AssertionError.
-
-    Use when the test double only needs to satisfy the interface contract
-    but neither list method will be called during the test.
-    """
-
-    async def list_exchange_rates(
-        self, currency_code: str | None = None
-    ) -> list[object]:
-        """List exchange rates — not used in these tests."""
-        raise AssertionError("not used")
-
-    async def list_economic_indices(self, code: str | None = None) -> list[object]:
-        """List economic indices — not used in these tests."""
-        raise AssertionError("not used")
 
 
 class UfLookupStubMixin:

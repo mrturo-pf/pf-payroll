@@ -3,28 +3,22 @@
 from collections.abc import Sequence
 from datetime import date
 
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy import and_, or_, select
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from payroll.application.dto import (
     ContributionCapDTO,
-    CurrencyDTO,
     HealthInstitutionDTO,
     HealthPlanDTO,
-    IncomeTaxBracketDTO,
-    IncomeTaxBracketWriteDTO,
     PayrollConceptDTO,
     PensionInstitutionDTO,
     PensionPlanDTO,
 )
 from payroll.infrastructure.db.models.reference_data import (
     ContributionCapModel,
-    CurrencyModel,
     HealthInstitutionModel,
     HealthPlanModel,
-    IncomeTaxBracketModel,
     PayrollConceptModel,
     PensionInstitutionModel,
     PensionPlanModel,
@@ -56,21 +50,6 @@ class SqlAlchemyReferenceDataRepository:
     def __init__(self, session: AsyncSession) -> None:
         """Initialize the instance."""
         self._session = session
-
-    async def list_currencies(self) -> list[CurrencyDTO]:
-        """List currencies."""
-        result = await self._session.execute(
-            select(CurrencyModel).order_by(CurrencyModel.code)
-        )
-        return [
-            CurrencyDTO(
-                code=row.code.strip(),
-                name=row.name,
-                is_fiat=row.is_fiat,
-                unit_kind=row.unit_kind,
-            )
-            for row in result.scalars().all()
-        ]
 
     async def list_pension_institutions(self) -> list[PensionInstitutionDTO]:
         """List pension institutions."""
@@ -176,63 +155,6 @@ class SqlAlchemyReferenceDataRepository:
             )
             for row in result.scalars().all()
         ]
-
-    async def list_income_tax_brackets(self) -> list[IncomeTaxBracketDTO]:
-        """List income tax brackets."""
-        result = await self._session.execute(
-            select(IncomeTaxBracketModel).order_by(
-                IncomeTaxBracketModel.valid_from.desc(),
-                IncomeTaxBracketModel.lower_bound_utm,
-            )
-        )
-        return [
-            IncomeTaxBracketDTO(
-                valid_from=row.valid_from,
-                valid_to=row.valid_to,
-                lower_bound_utm=row.lower_bound_utm,
-                upper_bound_utm=row.upper_bound_utm,
-                marginal_rate=row.marginal_rate,
-                rebate_utm=row.rebate_utm,
-            )
-            for row in result.scalars().all()
-        ]
-
-    async def upsert_income_tax_brackets(
-        self, brackets: list[IncomeTaxBracketWriteDTO]
-    ) -> int:
-        """Handle upsert income tax brackets."""
-        if not brackets:
-            return 0
-
-        statement = insert(IncomeTaxBracketModel).values(
-            [
-                {
-                    "valid_from": item.valid_from,
-                    "valid_to": item.valid_to,
-                    "lower_bound_utm": item.lower_bound_utm,
-                    "upper_bound_utm": item.upper_bound_utm,
-                    "marginal_rate": item.marginal_rate,
-                    "rebate_utm": item.rebate_utm,
-                }
-                for item in brackets
-            ]
-        )
-        await self._session.execute(
-            statement.on_conflict_do_update(
-                index_elements=[
-                    IncomeTaxBracketModel.valid_from,
-                    IncomeTaxBracketModel.lower_bound_utm,
-                ],
-                set_={
-                    "valid_to": statement.excluded.valid_to,
-                    "upper_bound_utm": statement.excluded.upper_bound_utm,
-                    "marginal_rate": statement.excluded.marginal_rate,
-                    "rebate_utm": statement.excluded.rebate_utm,
-                },
-            )
-        )
-        await self._session.commit()
-        return len(brackets)
 
     async def get_valid_pension_plan_for_date(
         self, reference_date: date

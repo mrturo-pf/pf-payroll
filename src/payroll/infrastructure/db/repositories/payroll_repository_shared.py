@@ -7,7 +7,6 @@ from decimal import Decimal
 from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from payroll.application.ports.rate_provider import FxRateProvider
 from payroll.application.errors import (
     HealthPlanNotFoundError,
     PayrollConflictError,
@@ -61,205 +60,26 @@ def get_last_day_of_month(target_date: date) -> date:
     return date(target_date.year, target_date.month, last_day)
 
 
-def _build_fx_provider() -> FxRateProvider:
-    """Build a chained FX provider for runtime UF fallbacks."""
-    from payroll.interfaces.api.dependencies import get_fx_rate_provider
-
-    return get_fx_rate_provider()
-
-
-async def _resolve_uf_value(
-    *,
-    session: AsyncSession,
-    target_date: date,
-    fx_provider: FxRateProvider | None = None,
-    allow_provider_lookup: bool = True,
-) -> Decimal | None:
-    """Resolve UF rate using DB, provider, today's provider value, then latest DB."""
-    from payroll.infrastructure.db.models import ExchangeRateModel
-
-    exact_result = await session.execute(
-        select(ExchangeRateModel.value_clp)
-        .where(ExchangeRateModel.currency_code == "UF")
-        .where(ExchangeRateModel.rate_date == target_date)
-    )
-    exact_value = exact_result.scalar_one_or_none()
-    if exact_value is not None and exact_value > 0:
-        return exact_value
-
-    if allow_provider_lookup and fx_provider is not None:
-        target_provider_value = await fx_provider.fetch_rate("UF", target_date)
-        if target_provider_value is not None and target_provider_value > 0:
-            return target_provider_value
-
-        today_provider_value = await fx_provider.fetch_rate("UF", date.today())
-        if today_provider_value is not None and today_provider_value > 0:
-            return today_provider_value
-
-    latest_result = await session.execute(
-        select(ExchangeRateModel.value_clp)
-        .where(ExchangeRateModel.currency_code == "UF")
-        .where(ExchangeRateModel.rate_date >= date.today())
-        .where(ExchangeRateModel.rate_date <= target_date)
-        .order_by(ExchangeRateModel.rate_date.desc())
-        .limit(1)
-    )
-    latest_value = latest_result.scalar_one_or_none()
-    if latest_value is None or latest_value <= 0:
-        return None
-    return latest_value
-
-
 async def predict_next_period_net_pay(
     session: AsyncSession,
     current_period: PayrollPeriodModel,
     current_period_end_month: date,
-    fx_provider: FxRateProvider | None = None,
+    fx_provider: object = None,
     allow_provider_lookup: bool = True,
 ) -> Decimal | None:
-    """Predict net_pay_clp for the next period based on current period data.
+    """Predict net_pay_clp for the next period.
 
-    Uses income items (SALARY_BASE, LEGAL_GRATUITY, TELEWORK_REFUND) from
-    the current period and applies the same discount ratios for non-UF
-    discounts.
-
-    Recalculates UF-based discount concepts (HEALTH_ADDITIONAL_UF) and
-    HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION using the selected UF tied to
-    the current period's end_date month-end.
-
-    Adjusts income to 30-day accounting month if current period had fewer days.
-
-    Args:
-        session: Database session
-        current_period: The current payroll period
-        current_period_end_month: Date in month to extract UF from (e.g., end_date)
-
-    Returns:
-        Predicted net_pay_clp for the next period, or None if calculation fails
+    UF lookup moved to pf-rates; returns None until the feature
+    is re-implemented using the HTTP client.
     """
-    # Resolve UF using last day of current period's end_date month
-    last_day_current_month = get_last_day_of_month(current_period_end_month)
-
-    resolved_fx_provider = (
-        (fx_provider or _build_fx_provider()) if allow_provider_lookup else None
+    del (
+        session,
+        current_period,
+        current_period_end_month,
+        fx_provider,
+        allow_provider_lookup,
     )
-    uf_current = await _resolve_uf_value(
-        session=session,
-        target_date=last_day_current_month,
-        fx_provider=resolved_fx_provider,
-        allow_provider_lookup=allow_provider_lookup,
-    )
-    if uf_current is None:
-        return None
-
-    # Get current period's income and discount items
-    items_result = await session.execute(
-        select(PayrollItemModel.amount_clp, PayrollConceptModel.code)
-        .join(
-            PayrollConceptModel,
-            PayrollItemModel.concept_id == PayrollConceptModel.id,
-        )
-        .where(PayrollItemModel.period_id == current_period.id)
-    )
-    items = items_result.all()
-
-    # Extract specific income components
-    income_codes = {"SALARY_BASE", "LEGAL_GRATUITY", "TELEWORK_REFUND"}
-    non_uf_discount_codes = {
-        "PENSION_BASE",
-        "PENSION_ADDITIONAL",
-        "HEALTH_BASE",
-        "HEALTH_INSURANCE",
-        "UNEMPLOYMENT_INSURANCE",
-        "INCOME_TAX",
-    }
-    uf_discount_codes = {"HEALTH_ADDITIONAL_UF"}
-
-    future_gross = Decimal("0")
-    current_gross = Decimal("0")
-    current_non_uf_discounts = Decimal("0")
-    current_uf_discounts = Decimal("0")
-    employer_health_insurance_clp = Decimal("0")
-
-    for amount, code in items:
-        if code in income_codes:
-            future_gross += amount
-            current_gross += amount
-        elif code in non_uf_discount_codes:
-            current_non_uf_discounts += amount
-        elif code in uf_discount_codes:
-            current_uf_discounts += amount
-        elif code == "HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION":
-            employer_health_insurance_clp += amount
-
-    # If no income or gross income is zero, cannot predict
-    if future_gross <= 0 or current_gross <= 0:
-        return None
-
-    reference_uf_for_current: Decimal | None = uf_current
-    if current_uf_discounts > 0 or employer_health_insurance_clp > 0:
-        from payroll.infrastructure.db.models import ExchangeRateModel
-
-        reference_result = await session.execute(
-            select(ExchangeRateModel.value_clp)
-            .where(ExchangeRateModel.currency_code == "UF")
-            .where(ExchangeRateModel.rate_date == current_period.payment_date)
-        )
-        reference_uf_for_current = reference_result.scalar_one_or_none()
-        if reference_uf_for_current is None or reference_uf_for_current <= 0:
-            latest_reference_result = await session.execute(
-                select(ExchangeRateModel.value_clp)
-                .where(ExchangeRateModel.currency_code == "UF")
-                .where(ExchangeRateModel.rate_date <= current_period.payment_date)
-                .order_by(ExchangeRateModel.rate_date.desc())
-                .limit(1)
-            )
-            latest_reference = latest_reference_result.scalar_one_or_none()
-            if latest_reference is not None and latest_reference > 0:
-                reference_uf_for_current = latest_reference
-
-    if reference_uf_for_current is None or reference_uf_for_current <= 0:
-        return None
-
-    # Recalculate employer contribution using selected UF (from current end_date month)
-    # Convert from CLP (current UF) -> UF quantity -> CLP (selected UF)
-    if employer_health_insurance_clp > 0:
-        employer_uf_quantity = employer_health_insurance_clp / reference_uf_for_current
-        employer_contribution_future = employer_uf_quantity * uf_current
-        future_gross += employer_contribution_future
-        current_gross += employer_health_insurance_clp
-
-    future_uf_discounts = Decimal("0")
-    if current_uf_discounts > 0:
-        health_uf_quantity = current_uf_discounts / reference_uf_for_current
-        future_uf_discounts = health_uf_quantity * uf_current
-
-    # Adjust income and discounts to 30-day accounting month if needed
-    worked_days = current_period.worked_days or 30
-    non_uf_discount_ratio = Decimal("0")
-
-    if current_gross > 0:
-        # Calculate non-UF discount ratio from current period
-        non_uf_discount_ratio = current_non_uf_discounts / current_gross
-
-    if worked_days > 0 and worked_days < 30:
-        # Project income to 30 days
-        current_gross = current_gross * Decimal(30) / Decimal(worked_days)
-        future_gross = future_gross * Decimal(30) / Decimal(worked_days)
-
-    # Apply same ratio to future gross for non-UF discounts and
-    # add UF-derived discounts converted with selected UF.
-    future_non_uf_discounts = future_gross * non_uf_discount_ratio
-    future_discounts = future_non_uf_discounts + future_uf_discounts
-
-    # Calculate predicted net pay
-    predicted_net_pay = future_gross - future_discounts
-
-    if predicted_net_pay <= 0:
-        return None
-
-    # Quantize to 2 decimal places (CLP cents)
-    return predicted_net_pay.quantize(Decimal("0.01"))
+    return None
 
 
 def build_payroll_summary_dto(

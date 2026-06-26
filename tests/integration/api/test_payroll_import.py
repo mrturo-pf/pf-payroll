@@ -3,7 +3,6 @@
 from datetime import date
 from decimal import Decimal
 from io import BytesIO
-from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -25,9 +24,7 @@ from payroll.application.dto import (
     ComputeIncomeTaxResultDTO,
     ImportPayrollResultDTO,
     ImportedPayrollPeriodDTO,
-    MarketDataSyncRequestDTO,
     ReviewPayrollPeriodResultDTO,
-    SyncRecentMarketDataResultDTO,
 )
 
 from payroll.domain.contributions import (
@@ -89,22 +86,6 @@ class FakeImportPayroll:
                     ),
                 )
             ],
-        )
-
-
-class FakeImportPayrollWithSyncRequest:
-    """Test double for Import Payroll returning pending market-data gaps."""
-
-    async def from_bytes(self, filename: str, content: bytes) -> ImportPayrollResultDTO:
-        """Create from bytes."""
-        assert filename == "sample.csv"
-        return ImportPayrollResultDTO(
-            imported_periods=1,
-            imported_items=1,
-            periods=[],
-            market_data_sync_request=MarketDataSyncRequestDTO(
-                exchange_rate_dates={"UF": [date(2026, 1, 31)]}
-            ),
         )
 
 
@@ -261,16 +242,6 @@ def _post_compute_contributions(client: TestClient) -> object:
     )
 
 
-async def _async_return(
-    result: object,
-    observed_requests: list[MarketDataSyncRequestDTO | None],
-    sync_request: MarketDataSyncRequestDTO | None,
-) -> object:
-    """Return an async result while capturing the sync request."""
-    observed_requests.append(sync_request)
-    return result
-
-
 def test_payroll_import_endpoint() -> None:
     """Test payroll import endpoint."""
     app.dependency_overrides[get_import_payroll_use_case] = lambda: FakeImportPayroll()
@@ -323,55 +294,6 @@ def test_payroll_import_endpoint() -> None:
     }
 
 
-def test_payroll_import_endpoint_schedules_background_market_data_sync(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test payroll import endpoint schedules a background market-data sync."""
-    scheduled_requests: list[MarketDataSyncRequestDTO | None] = []
-    synced_requests: list[MarketDataSyncRequestDTO | None] = []
-    app.dependency_overrides[get_import_payroll_use_case] = lambda: (
-        FakeImportPayrollWithSyncRequest()
-    )
-    app.dependency_overrides[get_process_imported_payroll_periods_use_case] = lambda: (
-        FakeProcessImportedPayrollPeriods()
-    )
-    monkeypatch.setattr(
-        "payroll.interfaces.api.routes.payroll.sync_payroll_market_data_now",
-        lambda sync_request: _async_return(
-            (
-                SyncRecentMarketDataResultDTO(
-                    requested_exchange_rates=1,
-                    requested_economic_indices=0,
-                    upserted_exchange_rates=1,
-                    upserted_economic_indices=0,
-                ),
-                None,
-            ),
-            synced_requests,
-            sync_request,
-        ),
-    )
-    monkeypatch.setattr(
-        "payroll.interfaces.api.routes.payroll.schedule_payroll_market_data_sync",
-        lambda app, sync_request: scheduled_requests.append(sync_request),
-    )
-    client = TestClient(app)
-
-    try:
-        response = client.post(
-            "/payroll/import",
-            files={"file": ("sample.csv", b"noop", "text/csv")},
-        )
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    assert synced_requests == [
-        MarketDataSyncRequestDTO(exchange_rate_dates={"UF": [date(2026, 1, 31)]})
-    ]
-    assert scheduled_requests == [None]
-
-
 def test_payroll_import_endpoint_requires_filename_and_surfaces_value_errors() -> None:
     """Test payroll import endpoint requires filename and surfaces value errors."""
 
@@ -410,7 +332,6 @@ async def test_payroll_import_endpoint_rejects_empty_filename_in_handler() -> No
     """Test payroll import endpoint rejects empty filename in handler."""
     with pytest.raises(HTTPException, match="A payroll file name is required."):
         await import_payroll(
-            SimpleNamespace(app=app),  # type: ignore[arg-type]
             UploadFile(file=BytesIO(b"noop"), filename=""),
             FakeImportPayroll(),
             FakeProcessImportedPayrollPeriods(),

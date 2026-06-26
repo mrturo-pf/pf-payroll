@@ -1,6 +1,6 @@
 """Tests for test payroll repository."""
 
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -25,7 +25,6 @@ from payroll.domain.contributions import (
     EmploymentContractKind,
     UnemploymentContribution,
 )
-from payroll.domain.taxes import IncomeTaxBracket
 from payroll.infrastructure.db.models import (
     EmployerModel,
     PayrollItemModel,
@@ -43,7 +42,6 @@ from payroll.infrastructure.db.models.reference_data import (
     ContributionCapType,
     HealthInstitutionModel,
     HealthPlanModel,
-    IncomeTaxBracketModel,
     PensionInstitutionModel,
     PensionPlanModel,
 )
@@ -51,13 +49,11 @@ from payroll.infrastructure.db.repositories.payroll_repository import (
     SqlAlchemyPayrollRepository,
 )
 from payroll.infrastructure.db.repositories.payroll_repository_shared import (
-    _build_fx_provider,
     build_net_pay_warning,
     get_last_day_of_month,
     predict_next_period_net_pay,
 )
 from payroll.interfaces.api import dependencies
-from payroll.shared.dates import add_months, resolve_payment_date
 
 
 class FakeResult(FakeAllMixin):
@@ -620,14 +616,6 @@ async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
         "Declared net_pay will be reconciled after computed contributions "
         "and income tax are generated."
     )
-    assert result.market_data_sync_request is not None
-    assert result.market_data_sync_request.exchange_rate_dates == {
-        "USD": [date(2026, 1, 31)],
-        "EUR": [date(2026, 1, 31)],
-        "UF": [date(2026, 1, 31)],
-        "UTM": [date(2026, 1, 1)],
-    }
-    assert result.market_data_sync_request.economic_index_periods == {}
     assert session.flush_count == 1
     assert session.commit_count == 2
     assert any(isinstance(item, PayrollPeriodModel) for item in session.added)
@@ -1018,242 +1006,6 @@ async def test_sqlalchemy_payroll_repository_rejects_unknown_concepts() -> None:
                 )
             ]
         )
-
-
-@pytest.mark.asyncio
-async def test_sa_payroll_repository_skips_sync_when_market_data_is_complete() -> None:
-    """Test imported periods skip sync scheduling when coverage is complete."""
-    session = FakeSession(
-        [
-            FakeResult(scalar_one=None),
-            FakeResult(scalar_rows=[date(2026, 1, 31)]),
-            FakeResult(scalar_rows=[date(2026, 1, 31)]),
-            FakeResult(scalar_rows=[date(2026, 1, 31)]),
-            FakeResult(scalar_rows=[date(2026, 1, 1)]),
-            FakeResult(joined_rows=[(2026, 1)]),
-        ]
-    )
-    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
-    period = build_period()
-
-    assert await repository._build_market_data_sync_request([period]) is None
-
-
-@pytest.mark.asyncio
-async def test_sa_payroll_repository_builds_sync_request_with_prior_gaps() -> None:
-    """Test imported periods enqueue only the missing gaps after the previous period."""
-    session = FakeSession(
-        [
-            FakeResult(
-                scalar_one=PayrollPeriodModel(
-                    id=4,
-                    employer_id=10,
-                    period_year=2025,
-                    period_month=12,
-                    payment_date=date(2025, 12, 30),
-                    status=PayrollStatus.PROJECTED,
-                )
-            ),
-            FakeResult(
-                scalar_rows=[date(2025, 12, 30), date(2025, 12, 31), date(2026, 1, 2)]
-            ),
-            FakeResult(
-                scalar_rows=[date(2025, 12, 30), date(2025, 12, 31), date(2026, 1, 1)]
-            ),
-            FakeResult(
-                scalar_rows=[date(2025, 12, 30), date(2026, 1, 1), date(2026, 1, 2)]
-            ),
-            FakeResult(scalar_rows=[date(2025, 12, 1)]),
-            FakeResult(joined_rows=[(2025, 12)]),
-        ]
-    )
-    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 2),
-        status=PayrollStatus.PROJECTED,
-    )
-
-    result = await repository._build_market_data_sync_request([period])
-
-    assert result is not None
-    assert result.exchange_rate_dates == {
-        "USD": [date(2026, 1, 1)],
-        "EUR": [date(2026, 1, 2)],
-        "UF": [date(2025, 12, 31), date(2026, 1, 31)],
-        "UTM": [date(2026, 1, 1)],
-    }
-    assert result.economic_index_periods == {}
-
-
-@pytest.mark.asyncio
-async def test_sa_payroll_repository_omits_latest_ipc_only_gap() -> None:
-    """Test sync request is skipped when only the latest IPC period is missing."""
-    session = FakeSession(
-        [
-            FakeResult(scalar_one=None),
-            FakeResult(scalar_rows=[date(2026, 1, 31)]),
-            FakeResult(scalar_rows=[date(2026, 1, 31)]),
-            FakeResult(scalar_rows=[date(2026, 1, 31), date(2026, 1, 1)]),
-            FakeResult(scalar_rows=[date(2026, 1, 1)]),
-            FakeResult(joined_rows=[]),
-        ]
-    )
-    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
-    period = build_period()
-
-    assert await repository._build_market_data_sync_request([period]) is None
-
-
-@pytest.mark.asyncio
-async def test_sa_payroll_repository_adds_current_period_uf_anchor_dates() -> None:
-    """Test sync request adds UF month-end and today's anchor for current period."""
-    today = date.today()
-    month_start = date(today.year, today.month, 1)
-    month_end = get_last_day_of_month(month_start)
-    next_month_start = date(
-        today.year + (1 if today.month == 12 else 0),
-        1 if today.month == 12 else today.month + 1,
-        1,
-    )
-    current_period = PayrollPeriodModel(
-        id=50,
-        employer_id=10,
-        period_year=today.year,
-        period_month=today.month,
-        payment_date=month_start,
-        status=PayrollStatus.PROJECTED,
-        declared_net_pay_clp=Decimal("1"),
-    )
-    current_employer = EmployerModel(id=10, name="ACME", started_at=month_start)
-    session = FakeSession(
-        [
-            FakeResult(scalar_one=None),
-            FakeResult(scalar_rows=[month_start]),
-            FakeResult(scalar_rows=[month_start]),
-            FakeResult(scalar_rows=[month_start]),
-            FakeResult(scalar_rows=[month_start]),
-            FakeResult(joined_rows=[(today.year, today.month)]),
-            FakeResult(first_row=(current_period, current_employer)),
-            FakeResult(scalar_one=next_month_start),
-            FakeResult(scalar_rows=[]),
-        ]
-    )
-    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
-    period = PayrollPeriodModel(
-        id=5,
-        employer_id=10,
-        period_year=today.year,
-        period_month=today.month,
-        payment_date=month_start,
-        status=PayrollStatus.PROJECTED,
-    )
-
-    result = await repository._build_market_data_sync_request([period])
-
-    assert result is not None
-    assert result.exchange_rate_dates == {"UF": sorted({month_end, today})}
-    assert result.economic_index_periods == {}
-
-
-@pytest.mark.asyncio
-async def test_sa_payroll_repository_skips_empty_uf_anchor() -> None:
-    """Test current-period UF anchor helper skips empty period lists."""
-    repository = SqlAlchemyPayrollRepository(FakeSession([]))  # type: ignore[arg-type]
-    missing_dates_by_code: dict[str, set[date]] = {}
-
-    await repository._collect_current_period_uf_anchor_dates(
-        [],
-        missing_dates_by_code,
-    )
-
-    assert missing_dates_by_code == {}
-
-
-@pytest.mark.asyncio
-async def test_sa_payroll_repository_resolves_end_month_without_next() -> None:
-    """Test UF anchor uses resolved next period when no persisted next period exists."""
-    today = date.today()
-    month_start = date(today.year, today.month, 1)
-    current_period = PayrollPeriodModel(
-        id=50,
-        employer_id=10,
-        period_year=today.year,
-        period_month=today.month,
-        payment_date=month_start,
-        status=PayrollStatus.PROJECTED,
-        declared_net_pay_clp=Decimal("1"),
-    )
-    current_employer = EmployerModel(
-        id=10,
-        name="ACME",
-        country_code="CL",
-        started_at=month_start,
-        payment_date_rule=EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH,
-        payment_month_offset=0,
-        payment_day_of_month=None,
-        payment_business_day_offset=0,
-        payment_calendar_day_offset=0,
-        payment_effective_on_processing_next_day=False,
-        payment_fixed_day_roll=EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY,
-    )
-    session = FakeSession(
-        [
-            FakeResult(first_row=(current_period, current_employer)),
-            FakeResult(scalar_one=None),
-            FakeResult(scalar_rows=[]),
-        ]
-    )
-    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
-    missing_dates_by_code: dict[str, set[date]] = {}
-
-    await repository._collect_current_period_uf_anchor_dates(
-        [current_period],
-        missing_dates_by_code,
-    )
-
-    next_period_month = add_months(month_start, 1)
-    next_period_start = resolve_payment_date(
-        next_period_month.year,
-        next_period_month.month,
-        country_code="CL",
-        payment_date_rule=EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH.value,
-        payment_month_offset=0,
-        payment_day_of_month=None,
-        payment_business_day_offset=0,
-        payment_calendar_day_offset=0,
-        payment_effective_on_processing_next_day=False,
-        payment_fixed_day_roll=EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY.value,
-    )
-    expected_anchor_month_end = get_last_day_of_month(
-        next_period_start - timedelta(days=1)
-    )
-    assert missing_dates_by_code == {"UF": {today, expected_anchor_month_end}}
-
-
-@pytest.mark.asyncio
-async def test_sa_payroll_repository_handles_empty_gap_requests() -> None:
-    """Test imported periods helper returns no missing entries for empty ranges."""
-    repository = SqlAlchemyPayrollRepository(FakeSession([]))  # type: ignore[arg-type]
-
-    assert await repository._build_market_data_sync_request([]) is None
-    assert (
-        await repository._list_missing_exchange_rate_dates(
-            currency_code="UF",
-            requested_dates=[],
-        )
-        == []
-    )
-    assert (
-        await repository._list_missing_index_periods(
-            code="IPC_CL",
-            requested_periods=[],
-        )
-        == []
-    )
 
 
 @pytest.mark.asyncio
@@ -2268,44 +2020,22 @@ async def test_sqlalchemy_payroll_repository_marks_scheduled_future_increases() 
 
 
 @pytest.mark.asyncio
-async def test_sa_payroll_repository_builds_income_tax_context_and_bracket() -> None:
-    """Test sqlalchemy payroll repository builds income tax context and bracket."""
+async def test_sa_payroll_repository_builds_income_tax_context() -> None:
+    """Test sqlalchemy payroll repository builds income tax context."""
     period = build_period(employer_id=1, status=PayrollStatus.ACTUAL)
     session = FakeSession(
         [
             FakeResult(scalar_one=period),
             FakeResult(scalar_one=Decimal("1000000")),
             FakeResult(scalar_one=Decimal("176000")),
-            FakeResult(
-                scalar_one=IncomeTaxBracketModel(
-                    id=1,
-                    valid_from=date(2026, 1, 1),
-                    valid_to=None,
-                    lower_bound_utm=Decimal("0"),
-                    upper_bound_utm=Decimal("13.5"),
-                    marginal_rate=Decimal("0"),
-                    rebate_utm=Decimal("0"),
-                )
-            ),
         ]
     )
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
     context = await repository.get_income_tax_context(SimpleNamespace(period_id=5))
-    bracket = await repository.get_income_tax_bracket(
-        date(2026, 1, 31), Decimal("12.388060")
-    )
 
     assert context.taxable_income_clp == Decimal("1000000")
     assert context.deductible_amount_clp == Decimal("176000")
-    assert bracket == IncomeTaxBracket(
-        valid_from=date(2026, 1, 1),
-        valid_to=None,
-        lower_bound_utm=Decimal("0"),
-        upper_bound_utm=Decimal("13.5"),
-        marginal_rate=Decimal("0"),
-        rebate_utm=Decimal("0"),
-    )
 
 
 @pytest.mark.asyncio
@@ -2336,19 +2066,6 @@ async def test_sa_payroll_repository_rejects_missing_period_for_income_tax_ctx()
 
     with pytest.raises(ValueError, match="Payroll period 5 was not found."):
         await repository.get_income_tax_context(SimpleNamespace(period_id=5))
-
-
-@pytest.mark.asyncio
-async def test_sa_payroll_repository_returns_none_for_missing_income_tax_bracket() -> (
-    None
-):
-    """Test returning None when no income-tax bracket matches."""
-    repository = SqlAlchemyPayrollRepository(FakeSession([FakeResult(scalar_one=None)]))  # type: ignore[arg-type]
-
-    assert (
-        await repository.get_income_tax_bracket(date(2026, 1, 31), Decimal("20"))
-        is None
-    )
 
 
 @pytest.mark.asyncio
@@ -2545,9 +2262,7 @@ async def test_api_dependencies_build_payroll_repository_and_use_case(
     assign_use_case = dependencies.get_assign_plans_use_case(repository)
     review_use_case = dependencies.get_review_payroll_period_use_case(repository)
     compute_use_case = dependencies.get_compute_contributions_use_case(repository)
-    compute_tax_use_case = dependencies.get_compute_income_tax_use_case(
-        repository, repository
-    )  # type: ignore[arg-type]
+    compute_tax_use_case = dependencies.get_compute_income_tax_use_case(repository)  # type: ignore[arg-type]
 
     assert isinstance(repository, SqlAlchemyPayrollRepository)
     assert isinstance(use_case, ImportPayroll)
@@ -2591,20 +2306,6 @@ def test_get_last_day_of_month_when_input_is_month_end() -> None:
     assert get_last_day_of_month(leap_february_end) == leap_february_end
 
 
-def test_build_fx_provider_uses_api_dependencies(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test _build_fx_provider delegates to API dependency wiring."""
-    fake_provider = object()
-    monkeypatch.setattr(
-        dependencies,
-        "get_fx_rate_provider",
-        lambda: fake_provider,
-    )
-
-    assert _build_fx_provider() is fake_provider
-
-
 @pytest.mark.asyncio
 async def test_predict_next_period_net_pay_returns_none_for_missing_uf() -> None:
     """Test predict_next_period_net_pay returns None when UF data is missing."""
@@ -2644,149 +2345,14 @@ async def test_predict_next_period_net_pay_returns_none_for_missing_income() -> 
 
 
 @pytest.mark.asyncio
-async def test_predict_next_period_net_pay_uf_fallback_cascade() -> None:
-    """Test UF lookup cascade: provider target, provider today, then latest DB."""
+async def test_predict_next_period_net_pay_stub_returns_none() -> None:
+    """Test predict_next_period_net_pay always returns None (pending pf-rates)."""
     current_period = build_june_2026_period()
-    items = [(Decimal("1000"), "SALARY_BASE")]
-
-    target_provider_session = FakeSession(
-        [
-            FakeResult(scalar_one=None),  # selected UF month-end missing
-            FakeResult(joined_rows=items),
-        ]
-    )
-    target_provider = FakeFxRateProvider({date(2026, 6, 30): Decimal("40820.31")})
-    target_provider_result = await predict_next_period_net_pay(
-        target_provider_session,
-        current_period,
-        date(2026, 6, 1),
-        fx_provider=target_provider,
-    )
-
-    today_provider_session = FakeSession(
-        [
-            FakeResult(scalar_one=None),  # selected UF month-end missing
-            FakeResult(joined_rows=items),
-        ]
-    )
-    today_provider = FakeFxRateProvider({date.today(): Decimal("40820.31")})
-    today_provider_result = await predict_next_period_net_pay(
-        today_provider_session,
-        current_period,
-        date(2026, 6, 1),
-        fx_provider=today_provider,
-    )
-
-    latest_db_session = FakeSession(
-        [
-            FakeResult(scalar_one=None),  # selected UF month-end missing
-            FakeResult(scalar_one=Decimal("40820.31")),  # latest UF in DB
-            FakeResult(joined_rows=items),
-        ]
-    )
-    latest_db_result = await predict_next_period_net_pay(
-        latest_db_session,
-        current_period,
-        date(2026, 6, 1),
-        fx_provider=FakeFxRateProvider(),
-    )
-
-    assert target_provider_result == Decimal("1000.00")
-    assert today_provider_result == Decimal("1000.00")
-    assert latest_db_result == Decimal("1000.00")
-
-
-@pytest.mark.asyncio
-async def test_predict_next_period_net_pay_db_only_mode() -> None:
-    """Test prediction can resolve UF from DB only without provider lookups."""
-    current_period = build_june_2026_period()
-    session = FakeSession(
-        [
-            FakeResult(scalar_one=None),  # selected UF month-end missing
-            FakeResult(scalar_one=Decimal("40820.31")),  # latest UF in DB
-            FakeResult(joined_rows=[(Decimal("1000"), "SALARY_BASE")]),
-        ]
-    )
-    fx_provider = FakeFxRateProvider({date.today(): Decimal("99999.99")})
-
-    result = await predict_next_period_net_pay(
-        session,
-        current_period,
-        date(2026, 6, 1),
-        fx_provider=fx_provider,
-        allow_provider_lookup=False,
-    )
-
-    assert result == Decimal("1000.00")
-
-
-@pytest.mark.asyncio
-async def test_predict_next_period_net_pay_calculates_correctly() -> None:
-    """Test prediction recalculates UF-based discounts with selected UF."""
-    current_period = build_june_2026_period(worked_days=30)
-    items = [
-        (Decimal("3000000"), "SALARY_BASE"),
-        (Decimal("200000"), "LEGAL_GRATUITY"),
-        (Decimal("100000"), "TELEWORK_REFUND"),
-        (Decimal("35000"), "HEALTH_ADDITIONAL_UF"),
-        (Decimal("8000"), "HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION"),
-        (Decimal("100000"), "PENSION_BASE"),
-        (Decimal("50000"), "HEALTH_BASE"),
-        (Decimal("30000"), "HEALTH_INSURANCE"),
-        (Decimal("50000"), "INCOME_TAX"),
-    ]
-    selected_uf = Decimal("40821.18")
-    current_reference_uf = Decimal("40000.00")
-    session = FakeSession(
-        [
-            FakeResult(scalar_one=selected_uf),  # selected UF for prediction target
-            FakeResult(joined_rows=items),  # items
-            FakeResult(scalar_one=current_reference_uf),  # current-period UF reference
-        ]
-    )
-    fx_provider = FakeFxRateProvider()
-
-    result = await predict_next_period_net_pay(
-        session, current_period, date(2026, 6, 1), fx_provider=fx_provider
-    )
-
-    employer_uf_quantity = Decimal("8000") / current_reference_uf
-    future_employer_contribution = employer_uf_quantity * selected_uf
-    future_health_additional_uf = (
-        Decimal("35000") / current_reference_uf
-    ) * selected_uf
-    expected_gross = Decimal("3300000") + future_employer_contribution
-    expected_discount_ratio = Decimal("230000") / Decimal("3308000")
-    expected_discounts = (
-        expected_gross * expected_discount_ratio
-    ) + future_health_additional_uf
-    expected_net_pay = expected_gross - expected_discounts
-
-    assert result == expected_net_pay.quantize(Decimal("0.01"))
-
-
-@pytest.mark.asyncio
-async def test_predict_next_period_net_pay_uses_historical_uf_fallback() -> None:
-    """Test UF discounts fallback to latest historical UF when exact date is missing."""
-    current_period = build_june_2026_period(worked_days=30)
-    session = FakeSession(
-        [
-            FakeResult(
-                scalar_one=Decimal("41000.00")
-            ),  # selected UF for prediction target
-            FakeResult(joined_rows=_HEALTH_UF_ITEMS),  # items
-            FakeResult(scalar_one=None),  # exact current-period UF missing
-            FakeResult(scalar_one=Decimal("40000.00")),  # latest historical UF
-        ]
-    )
-
+    session = FakeSession([])
     result = await predict_next_period_net_pay(
         session, current_period, date(2026, 6, 1)
     )
-
-    expected_uf_discount = (Decimal("10000") / Decimal("40000")) * Decimal("41000")
-    expected_net_pay = Decimal("100000") - expected_uf_discount
-    assert result == expected_net_pay.quantize(Decimal("0.01"))
+    assert result is None
 
 
 @pytest.mark.asyncio
@@ -2825,35 +2391,6 @@ async def _predict_june_2026(
     return await predict_next_period_net_pay(
         session, current_period, date(2026, 6, 1), fx_provider=FakeFxRateProvider()
     )
-
-
-@pytest.mark.asyncio
-async def test_predict_next_period_net_pay_adjusts_for_worked_days() -> None:
-    """Test predict adjusts income to 30 days if fewer days worked."""
-    current_period = build_june_2026_period(worked_days=20)
-    items = [
-        (Decimal("2000000"), "SALARY_BASE"),
-        (Decimal("100000"), "LEGAL_GRATUITY"),
-        (Decimal("50000"), "TELEWORK_REFUND"),
-        (Decimal("70000"), "PENSION_BASE"),
-        (Decimal("30000"), "HEALTH_BASE"),
-        (Decimal("20000"), "HEALTH_INSURANCE"),
-        (Decimal("35000"), "INCOME_TAX"),
-    ]
-
-    result = await _predict_june_2026(current_period, items)
-
-    # Income for 20 days
-    income_20_days = Decimal("2150000")
-    discounts_20_days = Decimal("155000")
-
-    # Project to 30 days
-    income_30_days = income_20_days * Decimal(30) / Decimal(20)
-    discount_ratio = discounts_20_days / income_20_days
-    predicted_discounts = income_30_days * discount_ratio
-    expected_net_pay = income_30_days - predicted_discounts
-
-    assert result == expected_net_pay.quantize(Decimal("0.01"))
 
 
 @pytest.mark.asyncio

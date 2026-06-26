@@ -15,13 +15,8 @@ from payroll.application.dto import (
     ComputeUnemploymentInsuranceResultDTO,
     ContributionComputationContextDTO,
     ContributionCapDTO,
-    CurrencyDTO,
-    EconomicIndexDTO,
-    ExchangeRateDTO,
     HealthInstitutionDTO,
     HealthPlanDTO,
-    IncomeTaxBracketDTO,
-    IncomeTaxBracketWriteDTO,
     IncomeTaxContextDTO,
     ImportPayrollResultDTO,
     ImportPayrollRowDTO,
@@ -31,22 +26,15 @@ from payroll.application.dto import (
     PayrollSummaryDTO,
     PensionInstitutionDTO,
     PensionPlanDTO,
-    RefreshRatesCommandDTO,
-    RefreshRatesResultDTO,
     ReviewPayrollPeriodCommandDTO,
     ReviewPayrollPeriodResultDTO,
     UnemploymentComputationContextDTO,
 )
 from payroll.domain.contributions import ComplementaryInsurancePlan
-from payroll.domain.taxes import IncomeTaxBracket
 
 
 class ReferenceDataRepository(Protocol):
     """Access to reference catalogs and official synchronization flows."""
-
-    async def list_currencies(self) -> list[CurrencyDTO]:
-        """List currencies."""
-        ...
 
     async def list_pension_institutions(self) -> list[PensionInstitutionDTO]:
         """List pension institutions."""
@@ -74,16 +62,6 @@ class ReferenceDataRepository(Protocol):
 
     async def list_payroll_concepts(self) -> list[PayrollConceptDTO]:
         """List payroll concepts."""
-        ...
-
-    async def list_income_tax_brackets(self) -> list[IncomeTaxBracketDTO]:
-        """List income tax brackets."""
-        ...
-
-    async def upsert_income_tax_brackets(
-        self, brackets: list[IncomeTaxBracketWriteDTO]
-    ) -> int:
-        """Handle upsert income tax brackets."""
         ...
 
 
@@ -156,12 +134,6 @@ class PayrollRepository(Protocol):
         """Get income tax context."""
         ...
 
-    async def get_income_tax_bracket(
-        self, payment_date: date, taxable_base_utm: Decimal
-    ) -> IncomeTaxBracket | None:
-        """Get income tax bracket."""
-        ...
-
     async def save_computed_income_tax(
         self, result: ComputeIncomeTaxResultDTO
     ) -> ComputeIncomeTaxResultDTO:
@@ -190,19 +162,7 @@ class ComplementaryInsuranceRepository(Protocol):
 
 
 class MarketDataRepository(Protocol):
-    """Persistence port for historical rates and indices."""
-
-    async def list_exchange_rates(
-        self, currency_code: str | None = None
-    ) -> list[ExchangeRateDTO]:
-        """List exchange rates."""
-        ...
-
-    async def list_economic_indices(
-        self, code: str | None = None
-    ) -> list[EconomicIndexDTO]:
-        """List economic indices."""
-        ...
+    """Read port for financial market data served by pf-rates."""
 
     async def get_exchange_rate_value(
         self, currency_code: str, rate_date: date
@@ -210,31 +170,8 @@ class MarketDataRepository(Protocol):
         """Get exchange rate value."""
         ...
 
-    async def list_exchange_rate_dates(
-        self, currency_code: str, start_date: date, end_date: date
-    ) -> list[date]:
-        """List stored exchange-rate dates for a currency and range."""
-        ...
-
-    async def refresh_rates(
-        self, command: RefreshRatesCommandDTO
-    ) -> RefreshRatesResultDTO:
-        """Refresh rates."""
-        ...
-
     async def get_economic_index_value(
         self, code: str, period_year: int, period_month: int
     ) -> Decimal | None:
         """Get economic index value."""
-        ...
-
-    async def list_economic_index_periods(
-        self,
-        code: str,
-        start_year: int,
-        start_month: int,
-        end_year: int,
-        end_month: int,
-    ) -> list[tuple[int, int]]:
-        """List stored economic-index periods for a code and range."""
         ...

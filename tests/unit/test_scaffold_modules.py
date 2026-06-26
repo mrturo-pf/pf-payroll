@@ -14,9 +14,8 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from payroll.application.dto import ExchangeRateWriteDTO, MoneyDTO
+from payroll.application.dto import MoneyDTO
 from payroll.application.use_cases.assign_plans import AssignPlans
-from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.compute_unemployment_insurance import (
     ComputeUnemploymentInsurance,
@@ -30,12 +29,7 @@ from payroll.application.use_cases.process_imported_payroll_periods import (
     ProcessImportedPayrollPeriods,
 )
 from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
-from payroll.application.use_cases.refresh_income_tax_brackets import (
-    RefreshIncomeTaxBrackets,
-)
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
-from payroll.application.use_cases.refresh_rates import RefreshRates
-from payroll.application.use_cases.sync_recent_market_data import SyncRecentMarketData
 from payroll.config import Settings
 from payroll.domain.contribution_calculator import ContributionCalculator, quantize_clp
 from payroll.domain.contributions import (
@@ -60,7 +54,6 @@ from payroll.infrastructure.logging.logger import logger
 from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import (
     WeasyPrintPayrollReportRenderer,
 )
-from payroll.infrastructure.rate_providers.chained_provider import ChainedFxProvider
 from payroll.interfaces.cli.main import app as cli_app
 from payroll.interfaces.dashboard.app import main as dashboard_main
 from payroll.shared.constants import DEFAULT_CURRENCY
@@ -168,52 +161,17 @@ def test_use_case_placeholders_are_instantiable() -> None:
             """Save computed contributions."""
             return result
 
-        async def list_exchange_rates(
-            self, currency_code: str | None = None
-        ) -> list[object]:
-            """List exchange rates."""
-            return []
-
-        async def list_economic_indices(self, code: str | None = None) -> list[object]:
-            """List economic indices."""
-            return []
-
         async def get_exchange_rate_value(
             self, currency_code: str, rate_date: date
         ) -> Decimal | None:
             """Get exchange rate value."""
             return Decimal("1")
 
-        async def list_exchange_rate_dates(
-            self, currency_code: str, start_date: date, end_date: date
-        ) -> list[date]:
-            """List exchange rate dates."""
-            return []
-
         async def get_economic_index_value(
             self, code: str, period_year: int, period_month: int
         ) -> Decimal | None:
             """Get economic index value."""
             return Decimal("100")
-
-        async def list_economic_index_periods(
-            self,
-            code: str,
-            start_year: int,
-            start_month: int,
-            end_year: int,
-            end_month: int,
-        ) -> list[tuple[int, int]]:
-            """List economic index periods."""
-            return []
-
-        async def refresh_rates(self, command: object) -> object:
-            """Refresh rates."""
-            return command
-
-        async def upsert_income_tax_brackets(self, brackets: list[object]) -> int:
-            """Handle upsert income tax brackets."""
-            return len(brackets)
 
         async def get_period_detail(self, period_id: int) -> object:
             """Get period detail."""
@@ -227,12 +185,6 @@ def test_use_case_placeholders_are_instantiable() -> None:
             """Get income tax context."""
             return command
 
-        async def get_income_tax_bracket(
-            self, payment_date: date, taxable_base_utm: Decimal
-        ) -> object:
-            """Get income tax bracket."""
-            return object()
-
         async def save_computed_income_tax(self, result: object) -> object:
             """Save computed income tax."""
             return result
@@ -245,6 +197,15 @@ def test_use_case_placeholders_are_instantiable() -> None:
             """Save computed unemployment."""
             return result
 
+    class StubIncomeTaxBracketPort:
+        """Test double for IncomeTaxBracketPort."""
+
+        async def get_income_tax_bracket(
+            self, payment_date: date, taxable_base_utm: Decimal
+        ) -> object:
+            """Get income tax bracket."""
+            return object()
+
     assert isinstance(
         ImportPayroll(StubRepository(), XlsxPayrollImporter()), ImportPayroll
     )
@@ -256,7 +217,6 @@ def test_use_case_placeholders_are_instantiable() -> None:
     )
     assert isinstance(ReviewPayrollPeriod(StubRepository()), ReviewPayrollPeriod)
     assert isinstance(ReferenceDataQueries(object()), ReferenceDataQueries)
-    assert isinstance(MarketDataQueries(StubRepository()), MarketDataQueries)
     assert isinstance(
         ComputeContributions(StubRepository(), StubRepository()), ComputeContributions
     )
@@ -264,7 +224,10 @@ def test_use_case_placeholders_are_instantiable() -> None:
         DeflateAmounts(StubRepository(), StubRepository()), DeflateAmounts
     )
     assert isinstance(
-        ComputeIncomeTax(StubRepository(), StubRepository()), ComputeIncomeTax
+        ComputeIncomeTax(
+            StubRepository(), StubRepository(), StubIncomeTaxBracketPort()
+        ),
+        ComputeIncomeTax,
     )
     assert isinstance(
         ComputeUnemploymentInsurance(StubRepository(), StubRepository()),
@@ -272,17 +235,12 @@ def test_use_case_placeholders_are_instantiable() -> None:
     )
     assert isinstance(
         ProcessImportedPayrollPeriods(
-            StubRepository(), StubRepository(), StubRepository()
+            StubRepository(),
+            StubRepository(),
+            StubRepository(),
+            StubIncomeTaxBracketPort(),
         ),
         ProcessImportedPayrollPeriods,
-    )
-    assert isinstance(RefreshRates(StubRepository()), RefreshRates)
-    assert isinstance(
-        RefreshIncomeTaxBrackets(StubRepository(), object()), RefreshIncomeTaxBrackets
-    )
-    assert isinstance(
-        SyncRecentMarketData(StubRepository(), object(), object()),
-        SyncRecentMarketData,
     )
 
 
@@ -338,73 +296,6 @@ def test_xlsx_importer_transforms_and_reads_files() -> None:
     assert dataframe.iloc[0]["employer"] == "ACME"
 
 
-@pytest.mark.asyncio
-async def test_chained_provider_returns_first_available_rate() -> None:
-    """Test chained provider returns first available rate."""
-
-    class Provider:
-        """Provide provider."""
-
-        def __init__(self, value: Decimal | None) -> None:
-            """Initialize the instance."""
-            self.value = value
-
-        async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
-            """Handle fetch rate."""
-            assert currency_code == "USD"
-            assert on == date(2026, 5, 1)
-            return self.value
-
-        async def fetch_rate_entries(
-            self, currency_code: str, requested_dates: list[date]
-        ) -> list[ExchangeRateWriteDTO]:
-            """Handle fetch rate entries."""
-            return [
-                ExchangeRateWriteDTO(
-                    currency_code=currency_code,
-                    rate_date=requested_date,
-                    value_clp=self.value,
-                    source="test",
-                )
-                for requested_date in requested_dates
-                if self.value is not None
-            ]
-
-    provider = ChainedFxProvider(
-        [Provider(None), Provider(Decimal("950.12")), Provider(Decimal("999.99"))]
-    )
-
-    result = await provider.fetch_rate("USD", date(2026, 5, 1))
-
-    assert result == Decimal("950.12")
-
-
-@pytest.mark.asyncio
-async def test_chained_provider_returns_none_when_all_providers_miss() -> None:
-    """Test chained provider returns none when all providers miss."""
-
-    class Provider:
-        """Provide provider."""
-
-        async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
-            """Handle fetch rate."""
-            assert currency_code == "EUR"
-            assert on == date(2026, 5, 2)
-            return None
-
-        async def fetch_rate_entries(
-            self, currency_code: str, requested_dates: list[date]
-        ) -> list[ExchangeRateWriteDTO]:
-            """Handle fetch rate entries."""
-            return []
-
-    provider = ChainedFxProvider([Provider(), Provider()])
-
-    result = await provider.fetch_rate("EUR", date(2026, 5, 2))
-
-    assert result is None
-
-
 def test_logger_is_available() -> None:
     """Test logger is available."""
     assert logger is not None
@@ -434,15 +325,14 @@ def test_package_modules_import() -> None:
         "payroll",
         "payroll.application",
         "payroll.application.ports",
-        "payroll.application.ports.rate_provider",
         "payroll.application.ports.repositories",
         "payroll.application.use_cases",
         "payroll.domain",
         "payroll.infrastructure",
         "payroll.infrastructure.db",
+        "payroll.infrastructure.http",
         "payroll.infrastructure.importers",
         "payroll.infrastructure.logging",
-        "payroll.infrastructure.rate_providers",
         "payroll.interfaces",
         "payroll.interfaces.api",
         "payroll.interfaces.api.routes",

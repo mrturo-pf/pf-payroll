@@ -1,7 +1,5 @@
 """Tests for test reference data queries."""
 
-from decimal import Decimal
-
 import pytest
 
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
@@ -18,7 +16,6 @@ async def test_reference_data_queries_delegate_to_repository() -> None:
     repository = StubReferenceDataRepository()
     queries = ReferenceDataQueries(repository)
 
-    assert [item.code for item in await queries.list_currencies()] == ["CLP"]
     assert [item.code for item in await queries.list_pension_institutions()] == [
         "AFP_UNO"
     ]
@@ -34,9 +31,6 @@ async def test_reference_data_queries_delegate_to_repository() -> None:
     assert [item.code for item in await queries.list_payroll_concepts()] == [
         "SALARY_BASE"
     ]
-    assert [
-        item.lower_bound_utm for item in await queries.list_income_tax_brackets()
-    ] == [Decimal("0")]
     assert repository.include_inactive_health_institutions is False
 
 

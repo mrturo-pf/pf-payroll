@@ -5,27 +5,19 @@ from collections.abc import AsyncIterator
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from payroll.application.ports.income_tax_bracket import IncomeTaxBracketPort
 from payroll.application.ports.repositories import (
     ComplementaryInsuranceRepository,
     MarketDataRepository,
     PayrollRepository,
     ReferenceDataRepository,
 )
-from payroll.infrastructure.rate_providers.chained_provider import (
-    ChainedEconomicIndexProvider,
-    ChainedFxProvider,
-)
-from payroll.infrastructure.rate_providers.official_providers import (
-    BcchSeriesProvider,
-    MindicadorRateProvider,
-    SiiIncomeTaxBracketProvider,
-    SiiIndicatorsProvider,
-)
+from payroll.infrastructure.http.financial_data_client import FinancialDataClient
+from payroll.infrastructure.http.income_tax_bracket_client import IncomeTaxBracketClient
 from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import (
     WeasyPrintPayrollReportRenderer,
 )
 from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
-from payroll.application.use_cases.market_data import MarketDataQueries
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
@@ -37,15 +29,9 @@ from payroll.application.use_cases.process_imported_payroll_periods import (
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
-from payroll.application.use_cases.refresh_income_tax_brackets import (
-    RefreshIncomeTaxBrackets,
-)
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
-from payroll.application.use_cases.refresh_rates import RefreshRates
-from payroll.application.use_cases.sync_recent_market_data import SyncRecentMarketData
 from payroll.interfaces.repositories import (
     SqlAlchemyComplementaryInsuranceRepository,
-    SqlAlchemyMarketDataRepository,
     SqlAlchemyPayrollRepository,
     SqlAlchemyReferenceDataRepository,
 )
@@ -73,21 +59,6 @@ def get_reference_data_queries(
     return ReferenceDataQueries(repository)
 
 
-def get_income_tax_bracket_provider() -> SiiIncomeTaxBracketProvider:
-    """Get income tax bracket provider."""
-    return SiiIncomeTaxBracketProvider(
-        base_url=settings.sii_base_url,
-        timeout_seconds=settings.rate_provider_timeout_seconds,
-    )
-
-
-def get_refresh_income_tax_brackets_use_case(
-    repository: ReferenceDataRepository = Depends(get_reference_data_repository),
-) -> RefreshIncomeTaxBrackets:
-    """Get refresh income tax brackets use case."""
-    return RefreshIncomeTaxBrackets(repository, get_income_tax_bracket_provider())
-
-
 def get_payroll_repository(
     session: AsyncSession = Depends(get_session),
 ) -> PayrollRepository:
@@ -95,11 +66,22 @@ def get_payroll_repository(
     return SqlAlchemyPayrollRepository(session)
 
 
-def get_market_data_repository(
-    session: AsyncSession = Depends(get_session),
-) -> MarketDataRepository:
-    """Get market data repository."""
-    return SqlAlchemyMarketDataRepository(session)
+def get_market_data_repository() -> MarketDataRepository:
+    """Get market data repository (HTTP adapter backed by pf-rates)."""
+    return FinancialDataClient(
+        base_url=settings.financial_data_base_url,
+        api_key=settings.financial_data_api_key,
+        cache_ttl_seconds=settings.financial_data_cache_ttl_seconds,
+    )
+
+
+def get_income_tax_bracket_client() -> IncomeTaxBracketPort:
+    """Get income tax bracket client (HTTP adapter backed by pf-rates)."""
+    return IncomeTaxBracketClient(
+        base_url=settings.financial_data_base_url,
+        api_key=settings.financial_data_api_key,
+        cache_ttl_seconds=settings.financial_data_cache_ttl_seconds,
+    )
 
 
 def get_complementary_insurance_repository(
@@ -107,84 +89,6 @@ def get_complementary_insurance_repository(
 ) -> ComplementaryInsuranceRepository:
     """Get complementary insurance repository."""
     return SqlAlchemyComplementaryInsuranceRepository(session)
-
-
-def get_market_data_queries(
-    repository: MarketDataRepository = Depends(get_market_data_repository),
-) -> MarketDataQueries:
-    """Get market data queries."""
-    return MarketDataQueries(repository)
-
-
-def get_refresh_rates_use_case(
-    repository: MarketDataRepository = Depends(get_market_data_repository),
-) -> RefreshRates:
-    """Get refresh rates use case."""
-    return RefreshRates(
-        repository, get_fx_rate_provider(), get_economic_index_provider()
-    )
-
-
-def build_market_data_sync_use_case(session: AsyncSession) -> SyncRecentMarketData:
-    """Build the market-data sync use case."""
-    return SyncRecentMarketData(
-        SqlAlchemyMarketDataRepository(session),
-        get_fx_rate_provider(),
-        get_economic_index_provider(),
-    )
-
-
-def build_startup_market_data_sync(session: AsyncSession) -> SyncRecentMarketData:
-    """Build startup market-data sync use case."""
-    return build_market_data_sync_use_case(session)
-
-
-def get_fx_rate_provider() -> ChainedFxProvider:
-    """Get fx rate provider."""
-    bcch_provider = BcchSeriesProvider(
-        user=settings.bcch_api_user,
-        password=settings.bcch_api_password,
-        series_codes={
-            "UF": settings.bcch_series_uf,
-            "USD": settings.bcch_series_usd,
-            "EUR": settings.bcch_series_eur,
-            "UTM": settings.bcch_series_utm,
-        },
-        base_url=settings.bcch_api_base_url,
-        timeout_seconds=settings.rate_provider_timeout_seconds,
-    )
-    return ChainedFxProvider(
-        [
-            bcch_provider,
-            SiiIndicatorsProvider(
-                base_url=settings.sii_base_url,
-                timeout_seconds=settings.rate_provider_timeout_seconds,
-            ),
-            MindicadorRateProvider(
-                base_url=settings.mindicador_base_url,
-                timeout_seconds=settings.rate_provider_timeout_seconds,
-            ),
-        ]
-    )
-
-
-def get_economic_index_provider() -> ChainedEconomicIndexProvider:
-    """Get economic index provider."""
-    return ChainedEconomicIndexProvider(
-        [
-            BcchSeriesProvider(
-                user=settings.bcch_api_user,
-                password=settings.bcch_api_password,
-                series_codes={"IPC_CL": settings.bcch_series_ipc_cl},
-                base_url=settings.bcch_api_base_url,
-                timeout_seconds=settings.rate_provider_timeout_seconds,
-            ),
-            SiiIndicatorsProvider(
-                base_url=settings.sii_base_url,
-                timeout_seconds=settings.rate_provider_timeout_seconds,
-            ),
-        ]
-    )
 
 
 def get_import_payroll_use_case(
@@ -196,14 +100,16 @@ def get_import_payroll_use_case(
 
 def get_process_imported_payroll_periods_use_case(
     repository: PayrollRepository = Depends(get_payroll_repository),
-    market_data_repository: MarketDataRepository = Depends(get_market_data_repository),
     complementary_insurance_repository: ComplementaryInsuranceRepository = Depends(
         get_complementary_insurance_repository
     ),
 ) -> ProcessImportedPayrollPeriods:
     """Get imported-payroll post-processing use case."""
     return ProcessImportedPayrollPeriods(
-        repository, market_data_repository, complementary_insurance_repository
+        repository,
+        get_market_data_repository(),
+        complementary_insurance_repository,
+        get_income_tax_bracket_client(),
     )
 
 
@@ -237,23 +143,24 @@ def get_review_payroll_period_use_case(
 
 def get_compute_contributions_use_case(
     repository: PayrollRepository = Depends(get_payroll_repository),
-    market_data_repository: MarketDataRepository = Depends(get_market_data_repository),
 ) -> ComputeContributions:
     """Get compute contributions use case."""
-    return ComputeContributions(repository, market_data_repository)
+    return ComputeContributions(repository, get_market_data_repository())
 
 
 def get_compute_income_tax_use_case(
     repository: PayrollRepository = Depends(get_payroll_repository),
-    market_data_repository: MarketDataRepository = Depends(get_market_data_repository),
 ) -> ComputeIncomeTax:
     """Get compute income tax use case."""
-    return ComputeIncomeTax(repository, market_data_repository)
+    return ComputeIncomeTax(
+        repository,
+        get_market_data_repository(),
+        get_income_tax_bracket_client(),
+    )
 
 
 def get_deflate_amounts_use_case(
     repository: PayrollRepository = Depends(get_payroll_repository),
-    market_data_repository: MarketDataRepository = Depends(get_market_data_repository),
 ) -> DeflateAmounts:
     """Get deflate amounts use case."""
-    return DeflateAmounts(repository, market_data_repository)
+    return DeflateAmounts(repository, get_market_data_repository())

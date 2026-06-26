@@ -2,31 +2,13 @@
 
 from fastapi.testclient import TestClient
 
-from payroll.application.errors import PayrollDependencyError
-from payroll.application.dto import (
-    RefreshIncomeTaxBracketsResultDTO,
-)
-from payroll.interfaces.api.dependencies import (
-    get_reference_data_queries,
-    get_refresh_income_tax_brackets_use_case,
-)
+from payroll.interfaces.api.dependencies import get_reference_data_queries
 from payroll.interfaces.api.main import app
 from helpers.reference_data import ReferenceDataStubMixin
 
 
 class FakeReferenceDataQueries(ReferenceDataStubMixin):
     """Test double for Reference Data Queries."""
-
-
-class FakeRefreshIncomeTaxBrackets:
-    """Test double for Refresh Income Tax Brackets."""
-
-    async def execute(self, command: object) -> RefreshIncomeTaxBracketsResultDTO:
-        """Handle execute."""
-        assert getattr(command, "year") == 2026
-        return RefreshIncomeTaxBracketsResultDTO(
-            year=2026, refreshed_months=6, upserted_brackets=48
-        )
 
 
 def test_reference_data_endpoints() -> None:
@@ -36,14 +18,6 @@ def test_reference_data_endpoints() -> None:
     client = TestClient(app)
 
     try:
-        assert client.get("/reference-data/currencies").json() == [
-            {
-                "code": "CLP",
-                "name": "Peso chileno",
-                "is_fiat": True,
-                "unit_kind": "currency",
-            }
-        ]
         assert client.get("/reference-data/pension-institutions").json() == [
             {
                 "code": "AFP_UNO",
@@ -99,16 +73,6 @@ def test_reference_data_endpoints() -> None:
                 "is_taxable": True,
             }
         ]
-        assert client.get("/reference-data/income-tax-brackets").json() == [
-            {
-                "valid_from": "2026-01-01",
-                "valid_to": None,
-                "lower_bound_utm": "0",
-                "upper_bound_utm": "13.5",
-                "marginal_rate": "0",
-                "rebate_utm": "0",
-            }
-        ]
         assert fake_queries.include_inactive_health_institutions is False
         assert fake_queries.include_inactive_health_plans is False
     finally:
@@ -137,55 +101,14 @@ def test_reference_data_endpoints_forward_include_inactive_query_param() -> None
     assert fake_queries.include_inactive_health_plans is True
 
 
-def test_reference_data_refresh_income_tax_brackets_endpoint() -> None:
-    """Test reference data refresh income tax brackets endpoint."""
-    app.dependency_overrides[get_refresh_income_tax_brackets_use_case] = lambda: (
-        FakeRefreshIncomeTaxBrackets()
-    )
+def test_currencies_and_income_tax_brackets_routes_no_longer_exist() -> None:
+    """Verify that routes removed in pf-rates migration return 404."""
     client = TestClient(app)
-
-    try:
-        response = client.post(
+    assert client.get("/reference-data/currencies").status_code == 404
+    assert client.get("/reference-data/income-tax-brackets").status_code == 404
+    assert (
+        client.post(
             "/reference-data/income-tax-brackets/refresh", json={"year": 2026}
-        )
-
-        assert response.status_code == 200
-        assert response.json() == {
-            "year": 2026,
-            "refreshed_months": 6,
-            "upserted_brackets": 48,
-        }
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_reference_data_refresh_income_tax_brackets_endpoint_returns_bad_request() -> (
-    None
-):
-    """Test reference data refresh income tax brackets endpoint returns bad request."""
-
-    class ErrorRefreshIncomeTaxBrackets:
-        """Represent the error refresh income tax brackets."""
-
-        async def execute(self, command: object) -> RefreshIncomeTaxBracketsResultDTO:
-            """Handle execute."""
-            raise PayrollDependencyError(
-                "No official income tax brackets were found for 2026."
-            )
-
-    app.dependency_overrides[get_refresh_income_tax_brackets_use_case] = lambda: (
-        ErrorRefreshIncomeTaxBrackets()
+        ).status_code
+        == 404
     )
-    client = TestClient(app)
-
-    try:
-        response = client.post(
-            "/reference-data/income-tax-brackets/refresh", json={"year": 2026}
-        )
-
-        assert response.status_code == 502
-        assert response.json() == {
-            "detail": "No official income tax brackets were found for 2026."
-        }
-    finally:
-        app.dependency_overrides.clear()

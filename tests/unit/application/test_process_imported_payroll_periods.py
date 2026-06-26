@@ -108,6 +108,7 @@ async def _execute_and_assert_period_preserved(
         stub_repository,  # type: ignore[arg-type]
         StubMarketDataRepository(),  # type: ignore[arg-type]
         StubComplementaryInsuranceRepository(),  # type: ignore[arg-type]
+        StubIncomeTaxBracketPort(),  # type: ignore[arg-type]
     ).execute(
         ImportPayrollResultDTO(
             imported_periods=1,
@@ -290,10 +291,21 @@ class StubPayrollRepository:
             },
         )()
 
+    async def save_computed_income_tax(
+        self, result: ComputeIncomeTaxResultDTO
+    ) -> ComputeIncomeTaxResultDTO:
+        """Save computed income tax."""
+        self.saved_tax.append(result.period_id)
+        return result
+
+
+class StubIncomeTaxBracketPort:
+    """Test double for IncomeTaxBracketPort."""
+
     async def get_income_tax_bracket(
         self, payment_date: date, taxable_base_utm: Decimal
     ) -> object:
-        """Get income tax bracket."""
+        """Return a zero-rate bracket."""
         return type(
             "Bracket",
             (),
@@ -306,13 +318,6 @@ class StubPayrollRepository:
                 "rebate_utm": Decimal("0"),
             },
         )()
-
-    async def save_computed_income_tax(
-        self, result: ComputeIncomeTaxResultDTO
-    ) -> ComputeIncomeTaxResultDTO:
-        """Save computed income tax."""
-        self.saved_tax.append(result.period_id)
-        return result
 
 
 class StubMarketDataRepository:
@@ -423,6 +428,7 @@ async def test_process_imported_payroll_periods_compute_and_refresh() -> None:
         repository,
         StubMarketDataRepository(),  # type: ignore[arg-type]
         StubComplementaryInsuranceRepository(),  # type: ignore[arg-type]
+        StubIncomeTaxBracketPort(),  # type: ignore[arg-type]
     )
 
     result = await _execute_default_and_assert_contributions_saved(use_case, repository)
@@ -467,6 +473,7 @@ async def test_process_imported_payroll_periods_validates_imported_contributions
         repository,
         StubMarketDataRepository(Decimal("35000")),  # type: ignore[arg-type]
         StubComplementaryInsuranceRepository(),  # type: ignore[arg-type]
+        StubIncomeTaxBracketPort(),  # type: ignore[arg-type]
     )
 
     result = await _execute_default_and_assert_contributions_saved(use_case, repository)
@@ -499,6 +506,7 @@ async def test_process_imported_payroll_periods_skips_missing_imported_codes() -
         repository,
         StubMarketDataRepository(),  # type: ignore[arg-type]
         StubComplementaryInsuranceRepository(),  # type: ignore[arg-type]
+        StubIncomeTaxBracketPort(),  # type: ignore[arg-type]
     )
 
     result = await use_case.execute(
@@ -584,6 +592,7 @@ async def test_process_imported_payroll_periods_keeps_import_when_uf_missing() -
         repository,
         StubMarketDataRepository(uf_value=None),  # type: ignore[arg-type]
         FixedUfComplementaryInsuranceRepository(),  # type: ignore[arg-type]
+        StubIncomeTaxBracketPort(),  # type: ignore[arg-type]
     ).execute(_default_import_result(declared_net_pay_clp=Decimal("1050000")))
 
     assert repository.saved_unemployment == []
@@ -608,6 +617,7 @@ async def test_process_imported_payroll_periods_replaces_warning_on_missing_uf()
         MissingUfValidationRepository(),
         FailingUfMarketDataRepository(),
         FixedUfComplementaryInsuranceRepository(),  # type: ignore[arg-type]
+        StubIncomeTaxBracketPort(),  # type: ignore[arg-type]
     )
     use_case._contributions = EconomicIndexFailingContributions()  # type: ignore[attr-defined]
     result = await use_case.execute(

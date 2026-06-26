@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NERDCTL_BIN="${NERDCTL_BIN:-nerdctl}"
-DB_CONTAINER="${DB_CONTAINER:-pf-payroll-postgres}"
-DB_VOLUME="${DB_VOLUME:-pf-payroll-postgres-data}"
-DB_NAME="${DB_NAME:-payroll}"
-DB_USER="${DB_USER:-payroll}"
-DB_PASSWORD="${DB_PASSWORD:-payroll}"
+# Database is now managed by pf-db (shared with pf-rates).
+# The pf-db container must be running before this script is called.
+# Start it with: cd ../pf-db && make db-up
+
+DB_CONTAINER="${DB_CONTAINER:-pf-db-db-1}"
+DB_NAME="${DB_NAME:-pf}"
+DB_USER="${DB_USER:-pf}"
+DB_PASSWORD="${DB_PASSWORD:-pf}"
 DB_PORT="${DB_PORT:-5432}"
 ADMINER_CONTAINER="${ADMINER_CONTAINER:-pf-payroll-adminer}"
 ADMINER_PORT="${ADMINER_PORT:-8080}"
 APP_PORT="${APP_PORT:-8000}"
 VENV="${VENV:-.venv}"
 ENV_FILE="${ENV_FILE:-.env}"
+NERDCTL_BIN="${NERDCTL_BIN:-nerdctl}"
 
 log() {
   printf '[local-up] %s\n' "$1"
@@ -23,15 +26,18 @@ venv_ready() {
     "$VENV/bin/python" -c "import fastapi, greenlet, multipart, pydantic_settings, sqlalchemy, uvicorn" >/dev/null 2>&1
 }
 
-log "Starting or reusing PostgreSQL"
-NERDCTL_BIN="$NERDCTL_BIN" \
-DB_CONTAINER="$DB_CONTAINER" \
-DB_VOLUME="$DB_VOLUME" \
-DB_NAME="$DB_NAME" \
-DB_USER="$DB_USER" \
-DB_PASSWORD="$DB_PASSWORD" \
-DB_PORT="$DB_PORT" \
-./scripts/rancher_db.sh up
+# Verify the shared pf-db container is running.
+log "Checking shared pf-db container ($DB_CONTAINER)"
+if ! docker inspect --format '{{.State.Status}}' "$DB_CONTAINER" 2>/dev/null | grep -q "^running$"; then
+  echo ""
+  echo "ERROR: pf-db container '$DB_CONTAINER' is not running."
+  echo ""
+  echo "Start the shared database first:"
+  echo "  cd ../pf-db && make db-up"
+  echo ""
+  exit 1
+fi
+log "pf-db container is running"
 
 log "Starting or reusing Adminer"
 adminer_output="$(

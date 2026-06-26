@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     """Represent Settings."""
 
     env: str = "development"
-    database_url: str = "postgresql+asyncpg://payroll:payroll@localhost:5432/payroll"
+    database_url: str = "postgresql+asyncpg://pf:pf@localhost:5432/pf"
     api_base_url: str = "http://127.0.0.1:8000"
     log_level: str = "INFO"
     financial_data_base_url: str = ""

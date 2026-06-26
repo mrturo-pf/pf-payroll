@@ -2,9 +2,9 @@
 set -euo pipefail
 
 ENV_FILE="${ENV_FILE:-.env}"
-DB_NAME="${DB_NAME:-payroll}"
-DB_USER="${DB_USER:-payroll}"
-DB_PASSWORD="${DB_PASSWORD:-payroll}"
+DB_NAME="${DB_NAME:-pf}"
+DB_USER="${DB_USER:-pf}"
+DB_PASSWORD="${DB_PASSWORD:-pf}"
 DB_PORT="${DB_PORT:-5432}"
 PAYROLL_ENV="${PAYROLL_ENV:-development}"
 PAYROLL_LOG_LEVEL="${PAYROLL_LOG_LEVEL:-INFO}"

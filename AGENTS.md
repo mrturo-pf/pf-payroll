@@ -50,8 +50,9 @@ shared/          # Cross-cutting utilities (dates, constants)
 ## Development commands
 
 ```bash
-make local-up              # start DB, write .env, start Adminer, install deps, run API
-make db-up                 # start/reuse PostgreSQL (Rancher Desktop)
+# Database must be started from pf-db first (see Database section below)
+make local-up              # check pf-db is running, start Adminer, write .env, install deps, run API
+make db-psql               # open psql session in the shared pf-db container
 make env-write             # regenerate .env with default local DB values
 make check                 # lint → dead-code → typecheck → dup-check → test → test-cov
 # Individual: make lint | dead-code | typecheck | duplicate-code-src | duplicate-code-tests | test | test-cov
@@ -106,19 +107,19 @@ class StubPayrollRepository:
 | `test` | PR + push `main` | lint, vulture, mypy, jscpd, pytest+coverage |
 | `build` | PR + push `main` | Docker build, Trivy scan (SARIF + blocking gate on CRITICAL/HIGH) |
 | `gate` | push `main` | manual approval via `production` environment |
-| `deploy` | push `main` | push image to AR, run Alembic migration job, deploy Cloud Run |
+| `deploy` | push `main` | push image to AR, deploy Cloud Run |
 | `notify-failure` | any job failure on `main` | SMTP failure email |
 | `notify-success` | successful deploy | SMTP success email |
 
 Pipeline invariants (never violate):
 
-1. Migrations before traffic — `pf-payroll-migrate` Cloud Run Job runs `alembic upgrade head --wait --max-retries=0`
+1. Migrations before traffic — the `pf-db` Cloud Run Job must run `alembic upgrade head` before either service receives traffic. pf-payroll no longer runs its own migration job.
 2. DB URL via `--set-secrets` only — never `--set-env-vars`
 3. AR scanning stays disabled — pipeline uses Trivy (~$5/month if enabled)
 4. `--min-instances=0` — intentional scale-to-zero; do not change without approval
 5. Image tagged with both `github.sha` and `latest` — deploy references SHA, not `latest`
 6. Non-root container — Dockerfile switches to `appuser` in final stage
-7. Multi-stage build — final stage copies only venv + `alembic.ini`; do not add `COPY src ./src`
+7. Multi-stage build — final stage copies only the venv; do not add `COPY alembic.ini`, `COPY alembic`, or `COPY src ./src`
 
 GitHub Secrets:
 
@@ -126,11 +127,11 @@ GitHub Secrets:
 |---|---|
 | `GCP_SA_KEY` | GCP auth (deploy job) |
 | `GCP_PROJECT_ID` | image tags, IAM |
-| `PAYROLL_DATABASE_URL` | Cloud Run `--set-secrets` |
+| `PAYROLL_DATABASE_URL` | Cloud Run `--set-secrets` (points to shared pf-db instance) |
 | `GCP_CLOUD_SQL_INSTANCE` | optional Cloud SQL proxy sidecar |
 | `MAIL_SERVER/PORT/USERNAME/PASSWORD/FROM/TO` | SMTP notifications |
 
-DB options: A) External — set `PAYROLL_DATABASE_URL` → Neon/Supabase, leave `GCP_CLOUD_SQL_INSTANCE` empty. B) Cloud SQL — set `GCP_CLOUD_SQL_INSTANCE=PROJECT:us-central1:pf-payroll-db`, pipeline adds proxy sidecar.
+DB options: A) External — set `PAYROLL_DATABASE_URL` → shared Neon/Supabase pf-db instance, leave `GCP_CLOUD_SQL_INSTANCE` empty. B) Cloud SQL — set `GCP_CLOUD_SQL_INSTANCE=PROJECT:us-central1:pf-db`, pipeline adds proxy sidecar.
 
 Cloud Run: region `us-central1`, min 0/max 2 instances, 512 MiB/1 CPU, port 8000, SA `pf-payroll@<PROJECT>.iam.gserviceaccount.com` needs `roles/secretmanager.secretAccessor`.
 
@@ -141,8 +142,40 @@ Cloud Run: region `us-central1`, min 0/max 2 instances, 512 MiB/1 CPU, port 8000
 
 ## Database
 
-- Schema: `db/01_schema.sql` (idempotent DDL); base seed: `db/02_seed_base.sql`
-- Migrations: Alembic; config: `alembic.ini` → `src/payroll/infrastructure/db/migrations`
-- Connection: `PAYROLL_DATABASE_URL` env var (default local: `postgresql+asyncpg://payroll:payroll@localhost:5432/payroll`)
-- Sessions: `infrastructure/db/session.py` — always use `async with SessionLocal() as session`
-- Repositories implement port `Protocol`s and live in `infrastructure/db/repositories/`
+Schema and migrations are owned by **[pf-db](../pf-db)** — a separate repository.
+pf-payroll only holds SQLAlchemy ORM models and repositories.
+
+- **Connection**: `PAYROLL_DATABASE_URL` env var (default local: `postgresql+asyncpg://pf:pf@localhost:5432/pf`)
+- **Sessions**: `infrastructure/db/session.py` — always use `async with SessionLocal() as session`
+- **Repositories**: implement port `Protocol`s; live in `infrastructure/db/repositories/`
+- **ORM models**: `infrastructure/db/models/payroll.py` and `reference_data.py`
+- **Schema changes**: add a migration in `pf-db/alembic/versions/` — never edit models without a corresponding pf-db migration
+
+### Local database setup
+
+pf-payroll no longer manages its own postgres container. Start the shared database from pf-db:
+
+```bash
+cd ../pf-db
+make local-up        # start postgres + apply schema + load base seed
+# or
+make local-up-test   # same + test fixtures
+```
+
+Then start pf-payroll:
+
+```bash
+cd ../pf-payroll
+make local-up        # verifies pf-db is running, starts Adminer, writes .env, runs API
+```
+
+### Tables owned by pf-payroll
+
+`pension_institutions` · `health_institutions` · `pension_plans` · `health_plans` ·
+`contribution_caps` · `complementary_insurance_providers` · `complementary_insurance_plans` ·
+`employers` · `payroll_periods` · `payroll_period_health_plans` ·
+`payroll_complementary_insurance` · `payroll_concepts` · `payroll_items` ·
+`mv_payroll_summary` (materialized view)
+
+Tables `currencies`, `exchange_rates`, `economic_indices`, `income_tax_brackets` are owned by
+`pf-rates` and accessed by pf-payroll via the pf-rates HTTP API (never direct SQL).

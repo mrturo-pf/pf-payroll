@@ -30,8 +30,6 @@ Activate the virtual environment:
 source .venv/bin/activate
 ```
 
-Start the local database — see [`local-development.md`](local-development.md#rancher-desktop-postgresql) for all `db-up` variants, fixture options, and reset commands.
-
 Run the API:
 
 ```bash

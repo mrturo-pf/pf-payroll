@@ -52,7 +52,6 @@ shared/          # Cross-cutting utilities (dates, constants)
 ```bash
 # Database must be started from pf-db first (see Database section below)
 make local-up              # check pf-db is running, start Adminer, write .env, install deps, run API
-make db-psql               # open psql session in the shared pf-db container
 make env-write             # regenerate .env with default local DB values
 make check                 # lint → dead-code → typecheck → dup-check → test → test-cov
 # Individual: make lint | dead-code | typecheck | duplicate-code-src | duplicate-code-tests | test | test-cov

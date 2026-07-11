@@ -5,17 +5,11 @@ set -euo pipefail
 # The pf-db container must be running before this script is called.
 # Start it with: cd ../pf-db && make db-up
 
-DB_CONTAINER="${DB_CONTAINER:-pf-db-db-1}"
-DB_NAME="${DB_NAME:-pf}"
-DB_USER="${DB_USER:-pf}"
-DB_PASSWORD="${DB_PASSWORD:-pf}"
-DB_PORT="${DB_PORT:-5432}"
-ADMINER_CONTAINER="${ADMINER_CONTAINER:-pf-payroll-adminer}"
-ADMINER_PORT="${ADMINER_PORT:-8080}"
+DB_CONTAINER="${DB_CONTAINER:-pf-db-1}"
+PAYROLL_DATABASE_URL="${PAYROLL_DATABASE_URL:-postgresql+asyncpg://pf_db:pf_db@localhost:5432/pf_db}"
 APP_PORT="${APP_PORT:-8000}"
 VENV="${VENV:-.venv}"
 ENV_FILE="${ENV_FILE:-.env}"
-NERDCTL_BIN="${NERDCTL_BIN:-nerdctl}"
 
 log() {
   printf '[local-up] %s\n' "$1"
@@ -39,22 +33,8 @@ if ! docker inspect --format '{{.State.Status}}' "$DB_CONTAINER" 2>/dev/null | g
 fi
 log "pf-db container is running"
 
-log "Starting or reusing Adminer"
-adminer_output="$(
-  NERDCTL_BIN="$NERDCTL_BIN" \
-  ADMINER_CONTAINER="$ADMINER_CONTAINER" \
-  ADMINER_PORT="$ADMINER_PORT" \
-  ./scripts/adminer.sh up
-)"
-printf '%s\n' "$adminer_output"
-adminer_url="$(printf '%s\n' "$adminer_output" | tail -n 1)"
-
 log "Writing environment file to $ENV_FILE"
-ADMINER_URL="$adminer_url" \
-DB_NAME="$DB_NAME" \
-DB_USER="$DB_USER" \
-DB_PASSWORD="$DB_PASSWORD" \
-DB_PORT="$DB_PORT" \
+PAYROLL_DATABASE_URL="$PAYROLL_DATABASE_URL" \
 ENV_FILE="$ENV_FILE" \
 ./scripts/write_env.sh >/dev/null
 
@@ -70,7 +50,6 @@ else
 fi
 
 printf '\n'
-printf 'Adminer: %s\n' "$adminer_url"
 printf 'API: http://127.0.0.1:%s\n' "$APP_PORT"
 printf 'Env file: %s\n' "$ENV_FILE"
 printf '\n'

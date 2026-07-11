@@ -5,25 +5,13 @@
 # Auto-detected at install time; override with PYTHON=pythonX.Y to pin a specific interpreter.
 PYTHON ?= python3.12
 VENV ?= .venv
-# Auto-detect the correct nerdctl invocation.
-# Rancher Desktop routes nerdctl through Docker-managed containerd; the default
-# k3s socket is absent on that setup, so we fall back to the Docker socket address.
-NERDCTL ?= $(shell nerdctl info >/dev/null 2>&1 && echo "nerdctl" || echo "nerdctl --address /var/run/docker/containerd/containerd.sock")
-# Database is now managed by pf-db (shared with pf-rates).
-# Run `make db-up` in the pf-db repo to start the database.
-DB_CONTAINER ?= pf-db-db-1
-DB_NAME ?= pf_db
-DB_USER ?= pf_db
-DB_PASSWORD ?= pf_db
-DB_PORT ?= 5432
-ADMINER_CONTAINER ?= pf-payroll-adminer
-ADMINER_PORT ?= 8080
+# Database is managed by pf-db. Run `make db-up` in that repo to start it.
+DB_CONTAINER ?= pf-db-1
+PAYROLL_DATABASE_URL ?= postgresql+asyncpg://pf_db:pf_db@localhost:5432/pf_db
 APP_PORT ?= 8000
 ENV_FILE ?= .env
 VENV_BIN = PATH="$(VENV)/bin:$$PATH"
 
-DB_ENV = NERDCTL_BIN="$(NERDCTL)" DB_CONTAINER="$(DB_CONTAINER)" DB_NAME="$(DB_NAME)" DB_USER="$(DB_USER)" DB_PASSWORD="$(DB_PASSWORD)" DB_PORT="$(DB_PORT)"
-ADMINER_ENV = NERDCTL_BIN="$(NERDCTL)" ADMINER_CONTAINER="$(ADMINER_CONTAINER)" ADMINER_PORT="$(ADMINER_PORT)"
 UNSET_PROXY_VARS = bash -eu -o pipefail -c 'vars=(http_proxy https_proxy all_proxy no_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY); for v in "$${vars[@]}"; do if [[ -n "$${!v-}" ]]; then printf "  ✓ Unsetting %s → %s\n" "$$v" "$${!v}"; unset "$$v"; else printf "  • %s not set\n" "$$v"; fi; done'
 
 # Corporate registry URLs — set in .env; empty here so .env values take priority.
@@ -81,46 +69,13 @@ reinstall: clean
 # Writes a local .env file with database connection and tooling defaults.
 env-write:
 	@printf 'PAYROLL_ENV=development\n' > $(ENV_FILE)
-	@printf 'PAYROLL_DATABASE_URL=postgresql+asyncpg://$(DB_USER):$(DB_PASSWORD)@localhost:$(DB_PORT)/$(DB_NAME)\n' >> $(ENV_FILE)
+	@printf 'PAYROLL_DATABASE_URL=$(PAYROLL_DATABASE_URL)\n' >> $(ENV_FILE)
 	@printf 'PAYROLL_LOG_LEVEL=INFO\n' >> $(ENV_FILE)
-	@printf 'PAYROLL_DB_HOST=localhost\n' >> $(ENV_FILE)
-	@printf 'PAYROLL_DB_PORT=$(DB_PORT)\n' >> $(ENV_FILE)
-	@printf 'PAYROLL_DB_NAME=$(DB_NAME)\n' >> $(ENV_FILE)
-	@printf 'PAYROLL_DB_USER=$(DB_USER)\n' >> $(ENV_FILE)
-	@printf 'PAYROLL_DB_PASSWORD=$(DB_PASSWORD)\n' >> $(ENV_FILE)
-	@printf 'PAYROLL_ADMINER_URL=http://localhost:$(ADMINER_PORT)\n' >> $(ENV_FILE)
 	@printf '\n# Tooling — corporate pip/npm registries (used by make install/check on VPN)\n' >> $(ENV_FILE)
 	@printf 'CORPORATIVE_PIP_INDEX=https://pypi.ci.artifacts.corporative.com/artifactory/api/pypi/pythonhosted-pypi-release-remote/simple\n' >> $(ENV_FILE)
 	@printf 'CORPORATIVE_NPM_REGISTRY=https://npm.ci.artifacts.corporative.com/artifactory/api/npm/external-npm\n' >> $(ENV_FILE)
 	@printf 'CORPORATIVE_PROXY=http://sysproxy.corpo-rative.com:8080\n' >> $(ENV_FILE)
 	@echo "  ✓ $(ENV_FILE) written"
-
-# Database is owned by pf-db. Use `make db-up` in that repo to start it.
-db-up:
-	@echo "pf-payroll no longer manages its own database container."
-	@echo "Start the shared database from the pf-db repository:"
-	@echo "  cd ../pf-db && make db-up"
-
-db-down:
-	@echo "Database is managed by pf-db. To stop it:"
-	@echo "  cd ../pf-db && make db-down"
-
-# Opens an interactive psql session inside the shared pf-db container.
-db-psql:
-	$(DB_ENV) ./scripts/rancher_db.sh psql
-
-# Starts Adminer after ensuring PostgreSQL is up.
-adminer-up: db-up
-	$(ADMINER_ENV) ./scripts/adminer.sh up
-
-# Stops and removes the Adminer container.
-adminer-down: db-down
-	$(ADMINER_ENV) ./scripts/adminer.sh down
-
-# Stops Adminer (if running) and starts it again — does not restart the database.
-adminer-restart:
-	-$(ADMINER_ENV) ./scripts/adminer.sh down
-	$(ADMINER_ENV) ./scripts/adminer.sh up
 
 # Unsets common proxy variables in the current shell invocation.
 unset-proxy-vars:
@@ -128,17 +83,10 @@ unset-proxy-vars:
 
 # Brings up the full local stack (DB, Adminer, env, deps, and API).
 local-up:
-	NERDCTL_BIN="$(NERDCTL)" \
-		APP_PORT="$(APP_PORT)" \
+	APP_PORT="$(APP_PORT)" \
 		VENV="$(VENV)" \
 		DB_CONTAINER="$(DB_CONTAINER)" \
-		DB_VOLUME="$(DB_VOLUME)" \
-		DB_NAME="$(DB_NAME)" \
-		DB_USER="$(DB_USER)" \
-		DB_PASSWORD="$(DB_PASSWORD)" \
-		DB_PORT="$(DB_PORT)" \
-		ADMINER_CONTAINER="$(ADMINER_CONTAINER)" \
-		ADMINER_PORT="$(ADMINER_PORT)" \
+		PAYROLL_DATABASE_URL="$(PAYROLL_DATABASE_URL)" \
 		ENV_FILE="$(ENV_FILE)" \
 		./scripts/local_stack.sh
 

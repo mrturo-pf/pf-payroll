@@ -11,64 +11,10 @@ The repository includes a Rancher Desktop flow that:
 - seeds default catalog data idempotently
 - loads test-only seed data only when explicitly requested
 
-Start or reuse the local database:
-
-```bash
-make db-up
-```
-
-Start or reuse the local database with test-only fixtures:
-
-```bash
-make db-up-test
-```
-
-Start or reuse the local database with real fixtures:
-
-```bash
-make db-up-real
-```
-
-Reset the local database data, reapply the schema, and reload the base seed data:
-
-```bash
-make db-reset-data
-```
-
-Reset the local database data and reload both base and test-only seed data:
-
-```bash
-make db-reset-data-test
-```
-
-Reset the local database data and reload both base and real operational seed data:
-
-```bash
-make db-reset-data-real
-```
-
-Open a `psql` session inside the running container:
-
-```bash
-make db-psql
-```
-
-Stop the container without deleting its data volume:
-
-```bash
-make db-down
-```
-
 Default local connection string:
 
 ```text
 postgresql+asyncpg://payroll:payroll@localhost:5432/payroll
-```
-
-Override defaults when needed:
-
-```bash
-make db-up DB_CONTAINER=my-payroll-db DB_PORT=5433 DB_PASSWORD=secret
 ```
 
 The schema lives in `db/01_schema.sql`, the default catalog data in `db/02_seed_base.sql`, the real operational bootstrap data in `db/03_seed_real.sql`, and test-only fixtures in `db/03_seed_test.sql`.

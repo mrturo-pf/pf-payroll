@@ -331,7 +331,7 @@ def build_specific_chile_employer(
     """Build the specific employer model used in period-range tests."""
     model = EmployerModel(
         id=1,
-        name="WALMART-CHILE",
+        name="COMPANY",
         country_code="CL",
         started_at=date(2024, 11, 18),
         payment_date_rule=EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH,

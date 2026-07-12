@@ -15,7 +15,7 @@ def test_reference_data_endpoints() -> None:
     """Test reference data endpoints."""
     fake_queries = FakeReferenceDataQueries()
     app.dependency_overrides[get_reference_data_queries] = lambda: fake_queries
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
         assert client.get("/reference-data/pension-institutions").json() == [
@@ -83,7 +83,7 @@ def test_reference_data_endpoints_forward_include_inactive_query_param() -> None
     """Test reference data endpoints forward include_inactive query param."""
     fake_queries = FakeReferenceDataQueries()
     app.dependency_overrides[get_reference_data_queries] = lambda: fake_queries
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
         health_institutions_response = client.get(
@@ -103,7 +103,7 @@ def test_reference_data_endpoints_forward_include_inactive_query_param() -> None
 
 def test_currencies_and_income_tax_brackets_routes_no_longer_exist() -> None:
     """Verify that routes removed in pf-rates migration return 404."""
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
     assert client.get("/reference-data/currencies").status_code == 404
     assert client.get("/reference-data/income-tax-brackets").status_code == 404
     assert (

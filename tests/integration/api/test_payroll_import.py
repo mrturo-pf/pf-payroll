@@ -242,13 +242,25 @@ def _post_compute_contributions(client: TestClient) -> object:
     )
 
 
+def _post_assign_plans(client: TestClient) -> object:
+    return client.post(
+        "/payroll/5/assign-plans", json={"pension_plan_id": 1, "health_plan_id": 2}
+    )
+
+
+def _post_deflate_amounts(client: TestClient) -> object:
+    return client.post(
+        "/payroll/5/deflate", json={"target_year": 2026, "target_month": 3}
+    )
+
+
 def test_payroll_import_endpoint() -> None:
     """Test payroll import endpoint."""
     app.dependency_overrides[get_import_payroll_use_case] = lambda: FakeImportPayroll()
     app.dependency_overrides[get_process_imported_payroll_periods_use_case] = lambda: (
         FakeProcessImportedPayrollPeriods()
     )
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
         response = client.post(
@@ -310,7 +322,7 @@ def test_payroll_import_endpoint_requires_filename_and_surfaces_value_errors() -
     app.dependency_overrides[get_process_imported_payroll_periods_use_case] = lambda: (
         FakeProcessImportedPayrollPeriods()
     )
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
         missing_name = client.post(
@@ -343,7 +355,7 @@ def test_compute_contributions_endpoint() -> None:
     app.dependency_overrides[get_compute_contributions_use_case] = lambda: (
         FakeComputeContributions()
     )
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
         response = _post_compute_contributions(client)
@@ -392,12 +404,9 @@ def test_compute_contributions_endpoint() -> None:
 def test_assign_plans_endpoint() -> None:
     """Test assign plans endpoint."""
     app.dependency_overrides[get_assign_plans_use_case] = lambda: FakeAssignPlans()
-    client = TestClient(app)
-
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
     try:
-        response = client.post(
-            "/payroll/5/assign-plans", json={"pension_plan_id": 1, "health_plan_id": 2}
-        )
+        response = _post_assign_plans(client)
     finally:
         app.dependency_overrides.clear()
 
@@ -415,7 +424,7 @@ def test_review_payroll_period_endpoint() -> None:
     app.dependency_overrides[get_review_payroll_period_use_case] = lambda: (
         FakeReviewPayrollPeriod()
     )
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
         response = client.post("/payroll/5/review")
@@ -435,7 +444,7 @@ def test_payroll_report_endpoint_returns_pdf() -> None:
     app.dependency_overrides[get_generate_payroll_report_use_case] = lambda: (
         FakeGeneratePayrollReport()
     )
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
         response = client.get("/payroll/5/report.pdf")
@@ -462,12 +471,9 @@ def test_assign_plans_endpoint_surfaces_domain_errors() -> None:
             raise PayrollConflictError("invalid plan for period")
 
     app.dependency_overrides[get_assign_plans_use_case] = lambda: ErrorAssignPlans()
-    client = TestClient(app)
-
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
     try:
-        response = client.post(
-            "/payroll/5/assign-plans", json={"pension_plan_id": 1, "health_plan_id": 2}
-        )
+        response = _post_assign_plans(client)
     finally:
         app.dependency_overrides.clear()
 
@@ -488,7 +494,7 @@ def test_review_payroll_period_endpoint_surfaces_domain_errors() -> None:
     app.dependency_overrides[get_review_payroll_period_use_case] = lambda: (
         ErrorReviewPayrollPeriod()
     )
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
         response = client.post("/payroll/5/review")
@@ -516,7 +522,7 @@ def test_payroll_report_endpoint_surfaces_domain_errors() -> None:
     app.dependency_overrides[get_generate_payroll_report_use_case] = lambda: (
         ErrorGeneratePayrollReport()
     )
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
         response = client.get("/payroll/5/report.pdf")
@@ -542,7 +548,7 @@ def test_compute_contributions_endpoint_surfaces_domain_errors() -> None:
     app.dependency_overrides[get_compute_contributions_use_case] = lambda: (
         ErrorComputeContributions()
     )
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
         response = _post_compute_contributions(client)
@@ -558,7 +564,7 @@ def test_compute_income_tax_endpoint() -> None:
     app.dependency_overrides[get_compute_income_tax_use_case] = lambda: (
         FakeComputeIncomeTax()
     )
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
         response = client.post("/payroll/5/compute-tax", json={})
@@ -595,7 +601,7 @@ def test_compute_income_tax_endpoint_surfaces_domain_errors() -> None:
     app.dependency_overrides[get_compute_income_tax_use_case] = lambda: (
         ErrorComputeIncomeTax()
     )
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
         response = client.post("/payroll/5/compute-tax", json={})
@@ -611,12 +617,9 @@ def test_deflate_amounts_endpoint() -> None:
     app.dependency_overrides[get_deflate_amounts_use_case] = lambda: (
         FakeDeflateAmounts()
     )
-    client = TestClient(app)
-
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
     try:
-        response = client.post(
-            "/payroll/5/deflate", json={"target_year": 2026, "target_month": 3}
-        )
+        response = _post_deflate_amounts(client)
     finally:
         app.dependency_overrides.clear()
 
@@ -650,12 +653,9 @@ def test_deflate_amounts_endpoint_surfaces_domain_errors() -> None:
     app.dependency_overrides[get_deflate_amounts_use_case] = lambda: (
         ErrorDeflateAmounts()
     )
-    client = TestClient(app)
-
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
     try:
-        response = client.post(
-            "/payroll/5/deflate", json={"target_year": 2026, "target_month": 3}
-        )
+        response = _post_deflate_amounts(client)
     finally:
         app.dependency_overrides.clear()
 

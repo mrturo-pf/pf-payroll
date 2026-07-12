@@ -126,7 +126,7 @@ class FakePayrollQueries:
 def test_payroll_query_endpoints() -> None:
     """Test payroll query endpoints."""
     app.dependency_overrides[get_payroll_queries] = lambda: FakePayrollQueries()
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
         range_response = client.get("/payroll/period-range")
@@ -246,7 +246,7 @@ def test_payroll_detail_endpoint_surfaces_not_found() -> None:
             return []
 
     app.dependency_overrides[get_payroll_queries] = lambda: ErrorPayrollQueries()
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
         response = client.get("/payroll/9")
@@ -410,7 +410,7 @@ def test_period_range_endpoint_computes_increase_for_previous_with_salary_data()
             ]
 
     app.dependency_overrides[get_payroll_queries] = lambda: SalaryFakeQueries()
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
         response = client.get("/payroll/period-range")
@@ -487,7 +487,7 @@ def test_period_range_oldest_previous_uses_lookback_as_predecessor() -> None:
             ]
 
     app.dependency_overrides[get_payroll_queries] = lambda: LookbackFakeQueries()
-    client = TestClient(app)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
         response = client.get("/payroll/period-range")

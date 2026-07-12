@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     pf_rates_base_url: str = Field(default="", validation_alias="PF_RATES_URL")
     pf_rates_api_key: str = Field(default="", validation_alias="PF_RATES_API_KEY")
+    pf_payroll_api_key: str = Field(validation_alias="PF_PAYROLL_API_KEY")
     pf_rates_cache_ttl_seconds: int = 300
 
     model_config = SettingsConfigDict(
@@ -27,4 +28,4 @@ class Settings(BaseSettings):
     )
 
 
-settings = Settings()
+settings = Settings()  # type: ignore[call-arg]

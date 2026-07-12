@@ -1,5 +1,13 @@
 """Shared pytest fixtures."""
 
+import os
+
+# Force a predictable test key before any source module is imported so that
+# Settings() (a required field, no default) loads successfully.  Forced
+# assignment (not setdefault) ensures this works even when the host shell
+# already exports a different PF_PAYROLL_API_KEY value.
+os.environ["PF_PAYROLL_API_KEY"] = "test-key"
+
 from datetime import date
 from decimal import Decimal
 

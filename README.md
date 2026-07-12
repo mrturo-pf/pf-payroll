@@ -30,7 +30,7 @@ See [`docs/getting-started.md`](docs/getting-started.md) to install, set up the 
 | [`docs/getting-started.md`](docs/getting-started.md) | Installation, first run, and basic validation. |
 | [`docs/interfaces.md`](docs/interfaces.md) | Complete API endpoint inventory, CLI commands, and dashboard usage. |
 | [`docs/payroll-workflow.md`](docs/payroll-workflow.md) | End-to-end payroll flow, full CSV/XLSX import format, supported taxable income columns, and examples. |
-| [`docs/local-development.md`](docs/local-development.md) | Rancher Desktop database workflow, Adminer, testing, linting, and cleanup. |
+| [`docs/local-development.md`](docs/local-development.md) | Rancher Desktop database workflow, testing, linting, and cleanup. |
 | [`docs/architectural-report.md`](docs/architectural-report.md) | Architecture report and target design. |
 
 ## Engineering policy

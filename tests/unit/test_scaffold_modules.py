@@ -66,7 +66,7 @@ def test_settings_defaults_and_env_override(monkeypatch: pytest.MonkeyPatch) -> 
     assert defaults.log_level == "INFO"
 
     monkeypatch.setenv("PAYROLL_ENV", "test")
-    monkeypatch.setenv("PAYROLL_DATABASE_URL", "postgresql+asyncpg://example/db")
+    monkeypatch.setenv("PF_DATABASE_URL", "postgresql+asyncpg://example/db")
     overridden = Settings()
 
     assert overridden.env == "test"

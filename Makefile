@@ -7,7 +7,8 @@ PYTHON ?= python3.12
 VENV ?= .venv
 # Database is managed by pf-db. Run `make db-up` in that repo to start it.
 DB_CONTAINER ?= pf-db-1
-PAYROLL_DATABASE_URL ?= postgresql+asyncpg://pf_db:pf_db@localhost:5432/pf_db
+PF_DATABASE_URL ?= postgresql+asyncpg://pf_db:pf_db@localhost:5432/pf_db
+PF_RATES_URL ?= http://localhost:8001
 APP_PORT ?= 8000
 ENV_FILE ?= .env
 VENV_BIN = PATH="$(VENV)/bin:$$PATH"
@@ -69,8 +70,9 @@ reinstall: clean
 # Writes a local .env file with database connection and tooling defaults.
 env-write:
 	@printf 'PAYROLL_ENV=development\n' > $(ENV_FILE)
-	@printf 'PAYROLL_DATABASE_URL=$(PAYROLL_DATABASE_URL)\n' >> $(ENV_FILE)
+	@printf 'PF_DATABASE_URL=$(PF_DATABASE_URL)\n' >> $(ENV_FILE)
 	@printf 'PAYROLL_LOG_LEVEL=INFO\n' >> $(ENV_FILE)
+	@printf 'PF_RATES_URL=$(PF_RATES_URL)\n' >> $(ENV_FILE)
 	@printf '\n# Tooling — corporate pip/npm registries (used by make install/check on VPN)\n' >> $(ENV_FILE)
 	@printf 'CORPORATIVE_PIP_INDEX=https://pypi.ci.artifacts.corporative.com/artifactory/api/pypi/pythonhosted-pypi-release-remote/simple\n' >> $(ENV_FILE)
 	@printf 'CORPORATIVE_NPM_REGISTRY=https://npm.ci.artifacts.corporative.com/artifactory/api/npm/external-npm\n' >> $(ENV_FILE)
@@ -81,12 +83,13 @@ env-write:
 unset-proxy-vars:
 	@$(UNSET_PROXY_VARS)
 
-# Brings up the full local stack (DB, Adminer, env, deps, and API).
+# Brings up the full local stack (DB, env, deps, and API).
 local-up:
 	APP_PORT="$(APP_PORT)" \
 		VENV="$(VENV)" \
 		DB_CONTAINER="$(DB_CONTAINER)" \
-		PAYROLL_DATABASE_URL="$(PAYROLL_DATABASE_URL)" \
+		PF_DATABASE_URL="$(PF_DATABASE_URL)" \
+		PF_RATES_URL="$(PF_RATES_URL)" \
 		ENV_FILE="$(ENV_FILE)" \
 		./scripts/local_stack.sh
 

@@ -38,22 +38,6 @@ Examples:
 - 7 calendar days before month end: set `payment_date_rule = 'calendar_days_before_end_of_month'` and `payment_calendar_day_offset = 7`
 - when the employer initiates the transfer on the previous business day and it settles on the next calendar day, set `payment_effective_on_processing_next_day = TRUE`; this only shifts inferred payment dates when non-business gaps exist between processing and the nominal payment date
 
-## Adminer
-
-Start Adminer:
-
-```bash
-make adminer-up
-```
-
-Stop Adminer:
-
-```bash
-make adminer-down
-```
-
-If the preferred port is busy, the script chooses a free one automatically and prints the exact URL.
-
 ## Environment file
 
 Write the local `.env` file with default database connection values:
@@ -84,7 +68,6 @@ This will:
 
 - start or reuse PostgreSQL
 - write `.env`
-- start Adminer
 - install dependencies
 - run the API
 

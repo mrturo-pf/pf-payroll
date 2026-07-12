@@ -1,4 +1,4 @@
-"""Integration test: ComputeContributions → FinancialDataClient → respx-mocked pf-rates.
+"""Integration test: ComputeContributions → PfRatesClient → respx-mocked pf-rates.
 
 Verifies that the real HTTP adapter wires correctly into the use case:
 the UF value is fetched from pf-rates exactly once, parsed as Decimal,
@@ -27,7 +27,7 @@ from payroll.domain.contributions import (
     PensionInstitution,
     PensionPlan,
 )
-from payroll.infrastructure.http.financial_data_client import FinancialDataClient
+from payroll.infrastructure.http.pf_rates_client import PfRatesClient
 
 _PF_RATES_BASE = "http://pf-rates.integration-test"
 
@@ -96,18 +96,18 @@ async def test_compute_contributions_fetches_uf_from_pf_rates() -> None:
     - caps = 90.0 UF (income is below cap, so no capping applies)
 
     uf_value_clp is omitted from the command so the use case must call
-    FinancialDataClient.get_exchange_rate_value.
+    PfRatesClient.get_exchange_rate_value.
     """
     uf_route = respx.get(f"{_PF_RATES_BASE}/exchange-rates/value").mock(
         return_value=httpx.Response(200, json={"value_clp": "40000.00"})
     )
 
     repository = StubPayrollRepository()
-    client = FinancialDataClient(_PF_RATES_BASE, "test-key", cache_ttl_seconds=60)
+    client = PfRatesClient(_PF_RATES_BASE, "test-key", cache_ttl_seconds=60)
     use_case = ComputeContributions(repository, client)
 
     result = await use_case.execute(
-        # No uf_value_clp: use case must call FinancialDataClient
+        # No uf_value_clp: use case must call PfRatesClient
         ComputeContributionsCommandDTO(period_id=1, pension_plan_id=1, health_plan_id=2)
     )
 

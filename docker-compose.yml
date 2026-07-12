@@ -6,7 +6,7 @@ services:
     environment:
       PAYROLL_ENV: development
       # Database is managed by pf-db. Start it with: cd ../pf-db && make db-up
-      PAYROLL_DATABASE_URL: postgresql+asyncpg://pf_db:pf_db@host.docker.internal:5432/pf_db
+      PF_DATABASE_URL: postgresql+asyncpg://pf_db:pf_db@host.docker.internal:5432/pf_db
       PAYROLL_LOG_LEVEL: INFO
     ports:
       - "8000:8000"

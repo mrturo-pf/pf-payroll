@@ -1,4 +1,4 @@
-"""Tests for FinancialDataClient."""
+"""Tests for PfRatesClient."""
 
 from datetime import date
 from decimal import Decimal
@@ -8,8 +8,8 @@ import respx
 import httpx
 
 from payroll.application.errors import PayrollDependencyError
-from payroll.infrastructure.http.financial_data_client import (
-    FinancialDataClient,
+from payroll.infrastructure.http.pf_rates_client import (
+    PfRatesClient,
     _normalize_exchange_rate_date,
 )
 
@@ -17,16 +17,12 @@ from payroll.infrastructure.http.financial_data_client import (
 BASE_URL = "http://pf-rates.test"
 
 
-def _client(
-    ttl: int = 300, clock_values: list[float] | None = None
-) -> FinancialDataClient:
-    """Build a FinancialDataClient with an optional deterministic clock."""
+def _client(ttl: int = 300, clock_values: list[float] | None = None) -> PfRatesClient:
+    """Build a PfRatesClient with an optional deterministic clock."""
     if clock_values is not None:
         values = iter(clock_values)
-        return FinancialDataClient(
-            BASE_URL, "test-key", ttl, clock=lambda: next(values)
-        )
-    return FinancialDataClient(BASE_URL, "test-key", ttl)
+        return PfRatesClient(BASE_URL, "test-key", ttl, clock=lambda: next(values))
+    return PfRatesClient(BASE_URL, "test-key", ttl)
 
 
 # ---------------------------------------------------------------------------

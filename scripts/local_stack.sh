@@ -6,7 +6,8 @@ set -euo pipefail
 # Start it with: cd ../pf-db && make db-up
 
 DB_CONTAINER="${DB_CONTAINER:-pf-db-1}"
-PAYROLL_DATABASE_URL="${PAYROLL_DATABASE_URL:-postgresql+asyncpg://pf_db:pf_db@localhost:5432/pf_db}"
+PF_DATABASE_URL="${PF_DATABASE_URL:-postgresql+asyncpg://pf_db:pf_db@localhost:5432/pf_db}"
+PF_RATES_URL="${PF_RATES_URL:-http://localhost:8001}"
 APP_PORT="${APP_PORT:-8000}"
 VENV="${VENV:-.venv}"
 ENV_FILE="${ENV_FILE:-.env}"
@@ -34,7 +35,8 @@ fi
 log "pf-db container is running"
 
 log "Writing environment file to $ENV_FILE"
-PAYROLL_DATABASE_URL="$PAYROLL_DATABASE_URL" \
+PF_DATABASE_URL="$PF_DATABASE_URL" \
+PF_RATES_URL="$PF_RATES_URL" \
 ENV_FILE="$ENV_FILE" \
 ./scripts/write_env.sh >/dev/null
 

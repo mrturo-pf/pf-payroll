@@ -12,7 +12,7 @@ from payroll.application.ports.repositories import (
     PayrollRepository,
     ReferenceDataRepository,
 )
-from payroll.infrastructure.http.financial_data_client import FinancialDataClient
+from payroll.infrastructure.http.pf_rates_client import PfRatesClient
 from payroll.infrastructure.http.income_tax_bracket_client import IncomeTaxBracketClient
 from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import (
     WeasyPrintPayrollReportRenderer,
@@ -68,19 +68,19 @@ def get_payroll_repository(
 
 def get_market_data_repository() -> MarketDataRepository:
     """Get market data repository (HTTP adapter backed by pf-rates)."""
-    return FinancialDataClient(
-        base_url=settings.financial_data_base_url,
-        api_key=settings.financial_data_api_key,
-        cache_ttl_seconds=settings.financial_data_cache_ttl_seconds,
+    return PfRatesClient(
+        base_url=settings.pf_rates_base_url,
+        api_key=settings.pf_rates_api_key,
+        cache_ttl_seconds=settings.pf_rates_cache_ttl_seconds,
     )
 
 
 def get_income_tax_bracket_client() -> IncomeTaxBracketPort:
     """Get income tax bracket client (HTTP adapter backed by pf-rates)."""
     return IncomeTaxBracketClient(
-        base_url=settings.financial_data_base_url,
-        api_key=settings.financial_data_api_key,
-        cache_ttl_seconds=settings.financial_data_cache_ttl_seconds,
+        base_url=settings.pf_rates_base_url,
+        api_key=settings.pf_rates_api_key,
+        cache_ttl_seconds=settings.pf_rates_cache_ttl_seconds,
     )
 
 

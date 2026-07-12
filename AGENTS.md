@@ -51,7 +51,7 @@ shared/          # Cross-cutting utilities (dates, constants)
 
 ```bash
 # Database must be started from pf-db first (see Database section below)
-make local-up              # check pf-db is running, start Adminer, write .env, install deps, run API
+make local-up              # check pf-db is running, write .env, install deps, run API
 make env-write             # regenerate .env with default local DB values
 make check                 # lint → dead-code → typecheck → dup-check → test → test-cov
 # Individual: make lint | dead-code | typecheck | duplicate-code-src | duplicate-code-tests | test | test-cov
@@ -126,11 +126,11 @@ GitHub Secrets:
 |---|---|
 | `GCP_SA_KEY` | GCP auth (deploy job) |
 | `GCP_PROJECT_ID` | image tags, IAM |
-| `PAYROLL_DATABASE_URL` | Cloud Run `--set-secrets` (points to shared pf-db instance) |
+| `PF_DATABASE_URL` | Cloud Run `--set-secrets` (points to shared pf-db instance) |
 | `GCP_CLOUD_SQL_INSTANCE` | optional Cloud SQL proxy sidecar |
 | `MAIL_SERVER/PORT/USERNAME/PASSWORD/FROM/TO` | SMTP notifications |
 
-DB options: A) External — set `PAYROLL_DATABASE_URL` → shared Neon/Supabase pf-db instance, leave `GCP_CLOUD_SQL_INSTANCE` empty. B) Cloud SQL — set `GCP_CLOUD_SQL_INSTANCE=PROJECT:us-central1:pf-db`, pipeline adds proxy sidecar.
+DB options: A) External — set `PF_DATABASE_URL` → shared Neon/Supabase pf-db instance, leave `GCP_CLOUD_SQL_INSTANCE` empty. B) Cloud SQL — set `GCP_CLOUD_SQL_INSTANCE=PROJECT:us-central1:pf-db`, pipeline adds proxy sidecar.
 
 Cloud Run: region `us-central1`, min 0/max 2 instances, 512 MiB/1 CPU, port 8000, SA `pf-payroll@<PROJECT>.iam.gserviceaccount.com` needs `roles/secretmanager.secretAccessor`.
 
@@ -144,7 +144,7 @@ Cloud Run: region `us-central1`, min 0/max 2 instances, 512 MiB/1 CPU, port 8000
 Schema and migrations are owned by **[pf-db](../pf-db)** — a separate repository.
 pf-payroll only holds SQLAlchemy ORM models and repositories.
 
-- **Connection**: `PAYROLL_DATABASE_URL` env var (default local: `postgresql+asyncpg://pf_db:pf_db@localhost:5432/pf_db`)
+- **Connection**: `PF_DATABASE_URL` env var (default local: `postgresql+asyncpg://pf_db:pf_db@localhost:5432/pf_db`)
 - **Sessions**: `infrastructure/db/session.py` — always use `async with SessionLocal() as session`
 - **Repositories**: implement port `Protocol`s; live in `infrastructure/db/repositories/`
 - **ORM models**: `infrastructure/db/models/payroll.py` and `reference_data.py`
@@ -165,7 +165,7 @@ Then start pf-payroll:
 
 ```bash
 cd ../pf-payroll
-make local-up        # verifies pf-db is running, starts Adminer, writes .env, runs API
+make local-up        # verifies pf-db is running, writes .env, runs API
 ```
 
 ### Tables owned by pf-payroll

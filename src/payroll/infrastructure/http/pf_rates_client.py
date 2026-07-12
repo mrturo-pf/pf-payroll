@@ -20,7 +20,7 @@ def _normalize_exchange_rate_date(currency_code: str, rate_date: date) -> date:
     return rate_date
 
 
-class FinancialDataClient(PfRatesClientBase):
+class PfRatesClient(PfRatesClientBase):
     """HTTP adapter implementing MarketDataRepository via pf-rates REST API."""
 
     async def get_exchange_rate_value(

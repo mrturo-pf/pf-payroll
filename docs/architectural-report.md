@@ -401,7 +401,7 @@ pg_dump \
 
 # 2. Configurar el endpoint de la nube en la sesión del Shell
 export TARGET_DSN="postgresql://[USER]:[PASS]@[NEON-HOST]/payroll?sslmode=require"
-export PAYROLL_DATABASE_URL="postgresql+asyncpg://${TARGET_DSN#postgresql://}"
+export PF_DATABASE_URL="postgresql+asyncpg://${TARGET_DSN#postgresql://}"
 
 # 3. Aplicar migraciones (DML + Idempotency)
 alembic upgrade head

@@ -110,6 +110,29 @@ def test_weasyprint_payroll_report_renderer_uses_weasyprint_when_available(
     assert pdf == b"%PDF-weasy"
 
 
+def test_weasyprint_payroll_report_renderer_falls_back_on_os_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test renderer falls back to built-in PDF when WeasyPrint raises OSError."""
+
+    class BrokenHTML:
+        """Test double that simulates missing native rendering library."""
+
+        def __init__(self, string: str) -> None:
+            """Initialize the instance."""
+
+        def write_pdf(self) -> bytes:
+            """Raise OSError to simulate missing native libs."""
+            raise OSError("missing native rendering library")
+
+    fake_module = type("FakeWeasyPrintModule", (), {"HTML": BrokenHTML})()
+    monkeypatch.setitem(sys.modules, "weasyprint", fake_module)
+
+    pdf = WeasyPrintPayrollReportRenderer().render_payroll_period(sample_detail())
+
+    assert pdf.startswith(b"%PDF")
+
+
 def test_weasyprint_payroll_report_renderer_requires_summary() -> None:
     """Test weasyprint payroll report renderer requires summary."""
     with pytest.raises(

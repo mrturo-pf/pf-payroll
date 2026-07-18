@@ -356,7 +356,10 @@ async def import_payroll(
         result = await use_case.from_bytes(file.filename, await file.read())
     except PayrollError as exc:
         raise to_http_exception(exc, default_status=400) from exc
-    result = await process_use_case.execute(result)
+    try:
+        result = await process_use_case.execute(result)
+    except PayrollError as exc:
+        raise to_http_exception(exc) from exc
 
     return ImportPayrollResponse(
         imported_periods=result.imported_periods,

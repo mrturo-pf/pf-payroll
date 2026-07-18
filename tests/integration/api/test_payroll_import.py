@@ -12,6 +12,7 @@ from starlette.datastructures import UploadFile
 from payroll.application.errors import (
     EconomicIndexNotFoundError,
     PayrollConflictError,
+    PayrollDependencyError,
     PayrollPeriodNotFoundError,
     PayrollValidationError,
 )
@@ -304,6 +305,53 @@ def test_payroll_import_endpoint() -> None:
             }
         ],
     }
+
+
+def test_payroll_import_returns_502_when_processing_raises_dependency_error() -> None:
+    """Processing failure from a dependency returns 502 with error detail."""
+
+    class FakeImportPayrollOK:
+        """Test double — import always succeeds with an empty result."""
+
+        async def from_bytes(
+            self, filename: str, content: bytes
+        ) -> ImportPayrollResultDTO:
+            """Return an empty successful import."""
+            return ImportPayrollResultDTO(
+                imported_periods=0, imported_items=0, periods=[]
+            )
+
+    class FakeProcessRaisesDependencyError:
+        """Test double — processing always raises a dependency error."""
+
+        async def execute(
+            self, result: ImportPayrollResultDTO
+        ) -> ImportPayrollResultDTO:
+            """Raise to simulate pf-rates being unreachable."""
+            raise PayrollDependencyError(
+                "Network error fetching exchange rate from pf-rates: missing protocol"
+            )
+
+    app.dependency_overrides[get_import_payroll_use_case] = lambda: (
+        FakeImportPayrollOK()
+    )
+    app.dependency_overrides[get_process_imported_payroll_periods_use_case] = lambda: (
+        FakeProcessRaisesDependencyError()
+    )
+    client = TestClient(
+        app, headers={"X-API-Key": "test-key"}, raise_server_exceptions=False
+    )
+
+    try:
+        response = client.post(
+            "/payroll/import",
+            files={"file": ("payroll.csv", b"data", "text/csv")},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 502
+    assert "pf-rates" in response.json()["detail"]
 
 
 def test_payroll_import_endpoint_requires_filename_and_surfaces_value_errors() -> None:

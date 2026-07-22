@@ -13,7 +13,8 @@ from payroll.application.ports.repositories import (
     PayrollRepository,
 )
 from payroll.application.services.exchange_rates import resolve_required_exchange_rate
-from payroll.domain.tax_calculator import ChileanTaxCalculator, quantize_utm
+from payroll.domain.quantizers import quantize_utm
+from payroll.domain.tax_calculator import ChileanTaxCalculator
 
 
 class ComputeIncomeTax:

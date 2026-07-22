@@ -31,7 +31,8 @@ from payroll.application.use_cases.process_imported_payroll_periods import (
 from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.config import Settings
-from payroll.domain.contribution_calculator import ContributionCalculator, quantize_clp
+from payroll.domain.contribution_calculator import ContributionCalculator
+from payroll.domain.quantizers import quantize_clp
 from payroll.domain.contributions import (
     ContributionCap,
     HealthInstitution,

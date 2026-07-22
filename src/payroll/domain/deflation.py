@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-from payroll.domain.contribution_calculator import quantize_clp
+from payroll.domain.quantizers import quantize_clp
 
 
 @dataclass(frozen=True, slots=True)

@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-from payroll.domain.errors import UnsupportedEmploymentContractKindError
 from payroll.domain.contributions import (
     ContributionCap,
     EmploymentContractKind,
@@ -14,13 +13,8 @@ from payroll.domain.contributions import (
     PensionPlan,
     UnemploymentContribution,
 )
-
-CLP_QUANT = Decimal("1")
-
-
-def quantize_clp(value: Decimal) -> Decimal:
-    """Quantize clp."""
-    return value.quantize(CLP_QUANT)
+from payroll.domain.errors import UnsupportedEmploymentContractKindError
+from payroll.domain.quantizers import quantize_clp
 
 
 @dataclass(frozen=True, slots=True)

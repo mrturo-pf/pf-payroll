@@ -23,8 +23,7 @@ shared/          # Cross-cutting utilities (dates, constants)
 
 - Always use `Decimal`, never `float` for monetary/rate values
 - PostgreSQL columns use `NUMERIC`, never `FLOAT`
-- CLP quantization helper: `quantize_clp()` in `domain/contribution_calculator.py`
-- UTM quantization helper: `quantize_utm()` in `domain/tax_calculator.py`
+- Quantization helpers: `quantize_clp()` and `quantize_utm()` in `domain/quantizers.py`
 
 ## Language policy
 

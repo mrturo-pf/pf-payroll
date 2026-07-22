@@ -3,7 +3,8 @@
 from datetime import date
 from decimal import Decimal
 
-from payroll.domain.tax_calculator import ChileanTaxCalculator, quantize_utm
+from payroll.domain.quantizers import quantize_utm
+from payroll.domain.tax_calculator import ChileanTaxCalculator
 from payroll.domain.taxes import IncomeTaxBracket
 
 

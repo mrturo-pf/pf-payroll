@@ -3,15 +3,8 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-from payroll.domain.contribution_calculator import quantize_clp
+from payroll.domain.quantizers import quantize_clp, quantize_utm
 from payroll.domain.taxes import IncomeTaxBracket, IncomeTaxComputation
-
-UTM_QUANT = Decimal("0.000001")
-
-
-def quantize_utm(value: Decimal) -> Decimal:
-    """Quantize utm."""
-    return value.quantize(UTM_QUANT)
 
 
 @dataclass(frozen=True, slots=True)

@@ -83,7 +83,7 @@ class StubPayrollRepository:
 
 - Shared fixtures go in `tests/helpers/` (e.g., `reference_data.py`, `interface_stubs.py`, `db_fakes.py`) or `tests/conftest.py`
 - Verify meaningful outputs (return values, state, errors) — not just that methods were called
-- Mark async tests with `@pytest.mark.asyncio`
+- Mark async tests with `@pytest.mark.asyncio` (`asyncio_mode = "strict"` in `pyproject.toml`)
 - 100% coverage required for `src/`
 
 ## Adding a new use case

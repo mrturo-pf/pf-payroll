@@ -23,38 +23,15 @@ This repository implements a microservice for Chilean payroll operations with:
 
 See [`docs/getting-started.md`](docs/getting-started.md) to install, set up the database, and run the API.
 
-## Documentation map
+## Documentation
 
 | Document | Purpose |
 | --- | --- |
-| [`docs/getting-started.md`](docs/getting-started.md) | Installation, first run, and basic validation. |
-| [`docs/interfaces.md`](docs/interfaces.md) | Complete API endpoint inventory, CLI commands, and dashboard usage. |
-| [`docs/payroll-workflow.md`](docs/payroll-workflow.md) | End-to-end payroll flow, full CSV/XLSX import format, supported taxable income columns, and examples. |
-| [`docs/local-development.md`](docs/local-development.md) | Rancher Desktop database workflow, testing, linting, and cleanup. |
-| [`docs/architectural-report.md`](docs/architectural-report.md) | Architecture report and target design. |
-
-## Engineering policy
-
-This repository adopts the following engineering standards and conventions:
-
-- **PEP 8** for Python style and formatting.
-- **PEP 257** for module, package, class, function, method, and script docstrings.
-- **PEP 484** for type hints across public contracts and application flows.
-- **PEP 544** for structural contracts via `Protocol` in application ports.
-- **PEP 585** for built-in generic types such as `list[str]`.
-- **PEP 604** for union syntax such as `X | None`.
-- **PEP 498** for preferred string interpolation via f-strings.
-- **PEP 492** for explicit asynchronous I/O with `async` / `await`.
-- **PEP 621** for project metadata in `pyproject.toml`.
-- **PEP 654** when concurrent failures need to be aggregated and surfaced together.
-- **SemVer** for project versioning.
-- **Twelve-Factor** principles for configuration, dependency declaration, disposability, stateless execution, and logging.
-
-## Repository structure
-
-- `src/payroll/domain`: entities, value objects, and calculation rules
-- `src/payroll/application`: use cases and ports
-- `src/payroll/infrastructure`: database, importers, rate providers, reporting, logging
-- `src/payroll/interfaces`: FastAPI, Typer CLI, and dashboard entrypoints
-- `tests`: unit and integration coverage
-- `db`: SQL schema, default seed data, and test-only seed data
+| [`docs/getting-started.md`](docs/getting-started.md) | Installation, first run, and basic validation |
+| [`docs/development.md`](docs/development.md) | Development commands, testing, git hooks, adding features |
+| [`docs/deployment.md`](docs/deployment.md) | CI/CD pipeline, Cloud Run deployment, production config |
+| [`docs/database.md`](docs/database.md) | Database connection, schema ownership, local setup |
+| [`docs/interfaces.md`](docs/interfaces.md) | API endpoints, CLI commands, dashboard usage |
+| [`docs/payroll-workflow.md`](docs/payroll-workflow.md) | End-to-end payroll flow, CSV/XLSX import format |
+| [`docs/architectural-report.md`](docs/architectural-report.md) | Architecture report and target design |
+| [`AGENTS.md`](AGENTS.md) | AI agent reference: architecture, code style, design principles |

@@ -58,4 +58,3 @@ This repository adopts the following engineering standards and conventions:
 - `src/payroll/interfaces`: FastAPI, Typer CLI, and dashboard entrypoints
 - `tests`: unit and integration coverage
 - `db`: SQL schema, default seed data, and test-only seed data
-

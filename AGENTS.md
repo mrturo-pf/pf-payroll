@@ -113,7 +113,7 @@ class StubPayrollRepository:
 
 Pipeline invariants (never violate):
 
-1. Migrations before traffic — the `pf-db` Cloud Run Job must run `alembic upgrade head` before either service receives traffic. pf-payroll no longer runs its own migration job.
+1. Migrations before traffic — the `pf-db` Cloud Run Job must apply all pending migrations before either service receives traffic. pf-payroll ships no migration tooling.
 2. DB URL via `--set-secrets` only — never `--set-env-vars`
 3. AR scanning stays disabled — pipeline uses Trivy (~$5/month if enabled)
 4. `--min-instances=0` — intentional scale-to-zero; do not change without approval

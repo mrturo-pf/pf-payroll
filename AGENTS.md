@@ -1,6 +1,6 @@
 # AGENTS.md — pf-payroll
 
-Chilean payroll simulation and tax calculation suite. Hexagonal (Ports & Adapters) modular monolith with strict financial precision requirements.
+Chilean payroll simulation and tax calculation suite. Microservice with Hexagonal (Ports & Adapters) architecture and strict financial precision requirements.
 
 ## Architecture
 
@@ -95,6 +95,8 @@ class StubPayrollRepository:
 5. Add route in `interfaces/api/routes/` or a command in `interfaces/cli/main.py`
 6. Add stub-based unit test in `tests/unit/application/`
 7. `make check` must pass clean
+
+> **Note:** Schema changes (new tables/columns) are managed exclusively by [pf-db](../pf-db). Coordinate with pf-db maintainers if your use case requires database modifications.
 
 ## CI/CD pipeline
 

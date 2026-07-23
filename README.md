@@ -4,7 +4,7 @@ Personal financial suite for Chilean payroll simulation, tax calculation, and hi
 
 ## Overview
 
-This repository implements a modular monolith for Chilean payroll operations with:
+This repository implements a microservice for Chilean payroll operations with:
 
 - payroll import from CSV/XLSX
 - support for taxable imported income items such as legal gratuity, vacation
@@ -45,6 +45,7 @@ This repository adopts the following engineering standards and conventions:
 - **PEP 604** for union syntax such as `X | None`.
 - **PEP 498** for preferred string interpolation via f-strings.
 - **PEP 492** for explicit asynchronous I/O with `async` / `await`.
+- **PEP 621** for project metadata in `pyproject.toml`.
 - **PEP 654** when concurrent failures need to be aggregated and surfaced together.
 - **SemVer** for project versioning.
 - **Twelve-Factor** principles for configuration, dependency declaration, disposability, stateless execution, and logging.

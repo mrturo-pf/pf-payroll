@@ -1084,7 +1084,7 @@ async def test_repository_rejects_context_without_health_snapshots() -> None:
 @pytest.mark.asyncio
 async def test_repository_sums_contracted_uf_for_multiple_period_health_plans() -> None:
     """Test contribution context sums contracted UF across period health plans."""
-    period, session = _multi_health_session(
+    _period, session = _multi_health_session(
         build_health_pair(plan_id=23, contracted_uf=Decimal("0.91"), plan_name="GES")
     )
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]

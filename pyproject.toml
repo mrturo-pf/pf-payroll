@@ -52,6 +52,7 @@ target-version = "py312"
 extend-select = ["D", "E", "W", "UP"]
 ignore = [
   "B008",    # FastAPI Depends() in function defaults is the correct pattern
+  "DTZ001",  # datetime() without tzinfo is acceptable in tests
   "DTZ011",  # date.today() is acceptable when timezone-naive dates are needed
 ]
 

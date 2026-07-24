@@ -1,6 +1,6 @@
 # Payroll workflow
 
-This guide focuses on the payroll business flow endpoints. For the **complete API endpoint inventory**, including market-data and reference-data routes, see [`interfaces.md`](interfaces.md).
+This guide focuses on the payroll business flow endpoints. For the **complete API endpoint inventory**, including market-data and reference-data routes, see [`api.md`](api.md).
 
 ## Business flow
 

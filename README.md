@@ -31,7 +31,7 @@ See [`docs/getting-started.md`](docs/getting-started.md) to install, set up the 
 | [`docs/development.md`](docs/development.md) | Development commands, testing, git hooks, adding features |
 | [`docs/deployment.md`](docs/deployment.md) | CI/CD pipeline, Cloud Run deployment, production config |
 | [`docs/database.md`](docs/database.md) | Database connection, schema ownership, local setup |
-| [`docs/interfaces.md`](docs/interfaces.md) | API endpoints, CLI commands, dashboard usage |
+| [`docs/api.md`](docs/api.md) | HTTP API, CLI commands, dashboard |
 | [`docs/payroll-workflow.md`](docs/payroll-workflow.md) | End-to-end payroll flow, CSV/XLSX import format |
 | [`docs/architectural-report.md`](docs/architectural-report.md) | Architecture report and target design |
 | [`AGENTS.md`](AGENTS.md) | AI agent reference: architecture, code style, design principles |

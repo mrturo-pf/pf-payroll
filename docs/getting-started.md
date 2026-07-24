@@ -139,7 +139,7 @@ Expected output: 100% coverage on `src/`.
 - [Development Guide](development.md) - Make commands, testing, git hooks
 - [Database Guide](database.md) - Schema, tables, local setup
 - [Deployment Guide](deployment.md) - CI/CD, Cloud Run deployment
-- [Interfaces Guide](interfaces.md) - API endpoints, CLI commands, dashboard
+- [API Reference](api.md) - HTTP API, CLI commands, dashboard
 - [Payroll Workflow](payroll-workflow.md) - End-to-end payroll flow
 - [Architectural Report](architectural-report.md) - Architecture design and target state
 

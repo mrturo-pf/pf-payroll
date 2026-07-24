@@ -1,8 +1,10 @@
-# Interfaces
+# API Reference
 
-## API
+Complete reference for all interfaces exposed by pf-payroll: HTTP API, CLI commands, and HTML dashboard.
 
-This document is the **complete inventory of API endpoints** currently exposed by the application.
+## HTTP API
+
+This section is the **complete inventory of HTTP endpoints** currently exposed by the application.
 
 ### Health and documentation
 

@@ -18,18 +18,20 @@ from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import 
     WeasyPrintPayrollReportRenderer,
 )
 from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
+
+# Use cases
 from payroll.application.use_cases.assign_plans import AssignPlans
+from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
-from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
+from payroll.application.use_cases.import_payroll import ImportPayroll
+from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.application.use_cases.process_imported_payroll_periods import (
     ProcessImportedPayrollPeriods,
 )
-from payroll.application.use_cases.import_payroll import ImportPayroll
-from payroll.application.use_cases.payroll_queries import PayrollQueries
-from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
+from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
 from payroll.interfaces.repositories import (
     SqlAlchemyComplementaryInsuranceRepository,
     SqlAlchemyPayrollRepository,

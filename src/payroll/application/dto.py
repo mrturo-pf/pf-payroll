@@ -504,8 +504,8 @@ class ComplementaryInsuranceValidationAuditDTO:
     individual_plan_costs: list[ComplementaryInsuranceCostDTO] = field(
         default_factory=list
     )
-    difference_clp: Decimal = Decimal("0")
-    tolerance_clp: Decimal = Decimal("100")
+    difference_clp: Decimal = Decimal(0)
+    tolerance_clp: Decimal = Decimal(100)
     has_discrepancy: bool = False
 
 

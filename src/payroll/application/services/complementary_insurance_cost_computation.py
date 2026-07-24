@@ -54,7 +54,7 @@ class ComplementaryInsuranceCostComputationService:
             return ComputeComplementaryInsuranceResultDTO(
                 period_id=period_id,
                 costs=[],
-                total_cost_clp=Decimal("0"),
+                total_cost_clp=Decimal(0),
             )
 
         # Get assigned plans
@@ -86,7 +86,7 @@ class ComplementaryInsuranceCostComputationService:
 
         # Calculate cost for each plan
         costs: list[ComplementaryInsuranceCostDTO] = []
-        total_cost = Decimal("0")
+        total_cost = Decimal(0)
 
         salary_base = period_detail.summary.taxable_income_clp
         for plan in plans:

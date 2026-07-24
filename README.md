@@ -17,7 +17,7 @@ This repository implements a microservice for Chilean payroll operations with:
 - AFP, health, unemployment insurance, and income tax computation
 - payroll period review and PDF generation
 - FastAPI API, Typer CLI, and an operational HTML dashboard
-- PostgreSQL persistence with local Rancher Desktop workflows
+- PostgreSQL persistence (schema managed by pf-db)
 
 ## Quick start
 

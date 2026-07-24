@@ -50,6 +50,10 @@ target-version = "py312"
 
 [tool.ruff.lint]
 extend-select = ["D", "E", "W", "UP"]
+ignore = [
+  "B008",    # FastAPI Depends() in function defaults is the correct pattern
+  "DTZ011",  # date.today() is acceptable when timezone-naive dates are needed
+]
 
 [tool.ruff.lint.pydocstyle]
 convention = "pep257"

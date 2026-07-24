@@ -2,7 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import Literal, TYPE_CHECKING
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile
 from fastapi.responses import Response
@@ -38,19 +38,17 @@ from payroll.interfaces.api.dependencies import (
     get_review_payroll_period_use_case,
 )
 
-if TYPE_CHECKING:
-    from payroll.application.use_cases.assign_plans import AssignPlans
-    from payroll.application.use_cases.compute_contributions import ComputeContributions
-    from payroll.application.use_cases.deflate_amounts import DeflateAmounts
-    from payroll.application.use_cases.generate_payroll_report import (
-        GeneratePayrollReport,
-    )
-    from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
-    from payroll.application.use_cases.import_payroll import ImportPayroll
-    from payroll.application.use_cases.process_imported_payroll_periods import (
-        ProcessImportedPayrollPeriods,
-    )
-    from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
+# Use case imports for type hints (required at runtime by FastAPI Depends)
+from payroll.application.use_cases.assign_plans import AssignPlans
+from payroll.application.use_cases.compute_contributions import ComputeContributions
+from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
+from payroll.application.use_cases.deflate_amounts import DeflateAmounts
+from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
+from payroll.application.use_cases.import_payroll import ImportPayroll
+from payroll.application.use_cases.process_imported_payroll_periods import (
+    ProcessImportedPayrollPeriods,
+)
+from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
 
 router = APIRouter(prefix="/payroll", tags=["payroll"])
 

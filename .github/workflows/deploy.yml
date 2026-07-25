@@ -62,18 +62,18 @@
 #   #      CMD ["uvicorn", "financial_data.interfaces.api.app:app", \
 #   #           "--host", "0.0.0.0", "--port", "8080"]
 #
-#   # 8. Grant pf-payroll access to PF_RATES_API_KEY (to call pf-rates service)
-#   #    NOTE: This secret was already created during pf-rates setup.
-#   #    We only need to grant this service account access to read it.
-#   gcloud secrets add-iam-policy-binding PF_RATES_API_KEY \
-#     --member="serviceAccount:${SA}" \
-#     --role="roles/secretmanager.secretAccessor"
-#
-#   # 9. Create the PF_PAYROLL_API_KEY secret (API key clients must supply to call this service)
+#   # 8. Create the PF_PAYROLL_API_KEY secret (API key clients must supply to call this service)
 #   echo -n "<STRONG_RANDOM_KEY>" | \
 #     gcloud secrets create PF_PAYROLL_API_KEY --data-file=-
 #
 #   gcloud secrets add-iam-policy-binding PF_PAYROLL_API_KEY \
+#     --member="serviceAccount:${SA}" \
+#     --role="roles/secretmanager.secretAccessor"
+#
+#   # 9. Grant pf-payroll access to PF_RATES_API_KEY (to call pf-rates service)
+#   #    NOTE: This secret was already created during pf-rates setup.
+#   #    We only need to grant this service account access to read it.
+#   gcloud secrets add-iam-policy-binding PF_RATES_API_KEY \
 #     --member="serviceAccount:${SA}" \
 #     --role="roles/secretmanager.secretAccessor"
 #

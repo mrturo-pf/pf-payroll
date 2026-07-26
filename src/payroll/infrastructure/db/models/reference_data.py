@@ -43,7 +43,7 @@ class PayrollConceptKind(StrEnum):
 class PensionInstitutionModel(Base):
     """Represent Pension Institution Model."""
 
-    __tablename__ = "pension_institutions"
+    __tablename__ = "PAY_PENS_INST"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(String(40), unique=True)
@@ -59,7 +59,7 @@ class PensionInstitutionModel(Base):
 class HealthInstitutionModel(Base):
     """Represent Health Institution Model."""
 
-    __tablename__ = "health_institutions"
+    __tablename__ = "PAY_HLTH_INST"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(String(40), unique=True)
@@ -82,10 +82,10 @@ class HealthInstitutionModel(Base):
 class PensionPlanModel(Base):
     """Represent Pension Plan Model."""
 
-    __tablename__ = "pension_plans"
+    __tablename__ = "PAY_PENS_PLAN"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    institution_id: Mapped[int] = mapped_column(ForeignKey("pension_institutions.id"))
+    institution_id: Mapped[int] = mapped_column(ForeignKey("PAY_PENS_INST.id"))
     valid_from: Mapped[date] = mapped_column(Date)
     valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
     additional_rate: Mapped[Decimal] = mapped_column(
@@ -98,10 +98,10 @@ class PensionPlanModel(Base):
 class HealthPlanModel(Base):
     """Represent Health Plan Model."""
 
-    __tablename__ = "health_plans"
+    __tablename__ = "PAY_HLTH_PLAN"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    institution_id: Mapped[int] = mapped_column(ForeignKey("health_institutions.id"))
+    institution_id: Mapped[int] = mapped_column(ForeignKey("PAY_HLTH_INST.id"))
     valid_from: Mapped[date] = mapped_column(Date)
     valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
     plan_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -113,7 +113,7 @@ class HealthPlanModel(Base):
 class ContributionCapModel(Base):
     """Represent Contribution Cap Model."""
 
-    __tablename__ = "contribution_caps"
+    __tablename__ = "PAY_CNTRB_CAP"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     cap_type: Mapped[ContributionCapType] = mapped_column(
@@ -131,7 +131,7 @@ class ContributionCapModel(Base):
 class PayrollConceptModel(Base):
     """Represent Payroll Concept Model."""
 
-    __tablename__ = "payroll_concepts"
+    __tablename__ = "PAY_CONCEPT"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(String(40), unique=True)
@@ -150,7 +150,7 @@ class PayrollConceptModel(Base):
 class ComplementaryInsuranceProviderModel(Base):
     """Represent Complementary Insurance Provider Model."""
 
-    __tablename__ = "complementary_insurance_providers"
+    __tablename__ = "PAY_COMP_PROV"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120), unique=True)
@@ -159,11 +159,11 @@ class ComplementaryInsuranceProviderModel(Base):
 class ComplementaryInsurancePlanModel(Base):
     """Represent Complementary Insurance Plan Model."""
 
-    __tablename__ = "complementary_insurance_plans"
+    __tablename__ = "PAY_COMP_PLAN"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     provider_id: Mapped[int] = mapped_column(
-        ForeignKey("complementary_insurance_providers.id")
+        ForeignKey("PAY_COMP_PROV.id")
     )
     name: Mapped[str] = mapped_column(String(120))
     cost_type: Mapped[ComplementaryInsuranceCostType] = mapped_column(

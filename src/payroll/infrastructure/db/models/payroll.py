@@ -41,7 +41,7 @@ class EmployerFixedDayRoll(StrEnum):
 class EmployerModel(Base):
     """Represent Employer Model."""
 
-    __tablename__ = "employers"
+    __tablename__ = "PAY_EMPLOYER"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120), unique=True)
@@ -84,10 +84,10 @@ class EmployerModel(Base):
 class PayrollPeriodModel(Base):
     """Represent Payroll Period Model."""
 
-    __tablename__ = "payroll_periods"
+    __tablename__ = "PAY_PERIOD"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    employer_id: Mapped[int] = mapped_column(ForeignKey("employers.id"))
+    employer_id: Mapped[int] = mapped_column(ForeignKey("PAY_EMPLOYER.id"))
     period_year: Mapped[int]
     period_month: Mapped[int]
     payment_date: Mapped[date] = mapped_column(Date)
@@ -114,7 +114,7 @@ class PayrollPeriodModel(Base):
         Numeric(18, 2), nullable=True
     )
     pension_plan_id: Mapped[int | None] = mapped_column(
-        ForeignKey("pension_plans.id"), nullable=True
+        ForeignKey("PAY_PENS_PLAN.id"), nullable=True
     )
 
     employer: Mapped[EmployerModel] = relationship(back_populates="payroll_periods")
@@ -128,14 +128,14 @@ class PayrollPeriodModel(Base):
 class PayrollPeriodHealthPlanModel(Base):
     """Represent health plan snapshots assigned to a payroll period."""
 
-    __tablename__ = "payroll_period_health_plans"
+    __tablename__ = "PAY_PRD_HLTH"
 
     period_id: Mapped[int] = mapped_column(
-        ForeignKey("payroll_periods.id", ondelete="CASCADE"),
+        ForeignKey("PAY_PERIOD.id", ondelete="CASCADE"),
         primary_key=True,
     )
     health_plan_id: Mapped[int] = mapped_column(
-        ForeignKey("health_plans.id"),
+        ForeignKey("PAY_HLTH_PLAN.id"),
         primary_key=True,
     )
 
@@ -145,14 +145,14 @@ class PayrollPeriodHealthPlanModel(Base):
 class PayrollComplementaryInsuranceModel(Base):
     """Represent complementary insurance plans assigned to a payroll period."""
 
-    __tablename__ = "payroll_complementary_insurance"
+    __tablename__ = "PAY_PRD_COMP"
 
     period_id: Mapped[int] = mapped_column(
-        ForeignKey("payroll_periods.id", ondelete="CASCADE"),
+        ForeignKey("PAY_PERIOD.id", ondelete="CASCADE"),
         primary_key=True,
     )
     complementary_insurance_plan_id: Mapped[int] = mapped_column(
-        ForeignKey("complementary_insurance_plans.id"),
+        ForeignKey("PAY_COMP_PLAN.id"),
         primary_key=True,
     )
 
@@ -160,13 +160,13 @@ class PayrollComplementaryInsuranceModel(Base):
 class PayrollItemModel(Base):
     """Represent Payroll Item Model."""
 
-    __tablename__ = "payroll_items"
+    __tablename__ = "PAY_ITEM"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     period_id: Mapped[int] = mapped_column(
-        ForeignKey("payroll_periods.id", ondelete="CASCADE")
+        ForeignKey("PAY_PERIOD.id", ondelete="CASCADE")
     )
-    concept_id: Mapped[int] = mapped_column(ForeignKey("payroll_concepts.id"))
+    concept_id: Mapped[int] = mapped_column(ForeignKey("PAY_CONCEPT.id"))
     amount_clp: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     notes: Mapped[str | None] = mapped_column(nullable=True)
 
@@ -177,7 +177,7 @@ class PayrollItemModel(Base):
 class PayrollSummaryModel(Base):
     """Represent Payroll Summary Model."""
 
-    __tablename__ = "mv_payroll_summary"
+    __tablename__ = "PAY_MV_SUMARY"
 
     period_id: Mapped[int] = mapped_column(primary_key=True)
     employer_id: Mapped[int]

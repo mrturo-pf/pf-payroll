@@ -234,11 +234,11 @@ async def test_reference_data_repo_returns_none_when_no_pension_plan_for_date() 
 
 def test_reference_data_models_and_enums_are_declared() -> None:
     """Test reference data models and enums are declared."""
-    assert PensionInstitutionModel.__tablename__ == "pension_institutions"
-    assert HealthInstitutionModel.__tablename__ == "health_institutions"
-    assert PensionPlanModel.__tablename__ == "pension_plans"
-    assert HealthPlanModel.__tablename__ == "health_plans"
-    assert ContributionCapModel.__tablename__ == "contribution_caps"
-    assert PayrollConceptModel.__tablename__ == "payroll_concepts"
+    assert PensionInstitutionModel.__tablename__ == "PAY_PENS_INST"
+    assert HealthInstitutionModel.__tablename__ == "PAY_HLTH_INST"
+    assert PensionPlanModel.__tablename__ == "PAY_PENS_PLAN"
+    assert HealthPlanModel.__tablename__ == "PAY_HLTH_PLAN"
+    assert ContributionCapModel.__tablename__ == "PAY_CNTRB_CAP"
+    assert PayrollConceptModel.__tablename__ == "PAY_CONCEPT"
     assert ContributionCapType.PENSION_HEALTH.value == "pension_health"
     assert PayrollConceptKind.INCOME.value == "income"

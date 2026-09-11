@@ -55,7 +55,7 @@ make local-up-test   # same + test fixtures (plans, insurance providers)
 
 This starts a PostgreSQL 16 container on `localhost:5432` with:
 - All tables created
-- Base seed data loaded (currencies, institutions, caps, brackets, concepts)
+- Base seed data loaded (RAT_CURRENCY, institutions, caps, brackets, concepts)
 - Test fixtures loaded (if using `make local-up-test`)
 
 ### Step 2: Start pf-payroll
@@ -81,30 +81,30 @@ pf-payroll **owns** the following tables (writes allowed):
 
 | Table | Description |
 |---|---|
-| `employers` | Employer entities |
-| `payroll_periods` | Payroll periods (month/year + payment date) |
-| `payroll_period_health_plans` | Health plan selections per period |
-| `payroll_complementary_insurance` | Complementary insurance per period |
-| `payroll_concepts` | Custom payroll concepts (bonuses, deductions) |
-| `payroll_items` | Individual payroll line items |
+| `PAY_EMPLOYER` | Employer entities |
+| `PAY_PERIOD` | Payroll periods (month/year + payment date) |
+| `PAY_PRD_HLTH` | Health plan selections per period |
+| `PAY_PRD_COMP` | Complementary insurance per period |
+| `PAY_CONCEPT` | Custom payroll concepts (bonuses, deductions) |
+| `PAY_ITEM` | Individual payroll line items |
 
 ### Reference data tables
 
 | Table | Description |
 |---|---|
-| `pension_institutions` | AFP institutions (e.g., Capital, Cuprum, Habitat) |
-| `health_institutions` | Health institutions (e.g., Fonasa, Isapres) |
-| `pension_plans` | Pension plan types |
-| `health_plans` | Health plan types |
-| `contribution_caps` | Monthly contribution caps (UF-based) |
-| `complementary_insurance_providers` | Insurance providers |
-| `complementary_insurance_plans` | Insurance plan types |
+| `PAY_PENS_INST` | AFP institutions (e.g., Capital, Cuprum, Habitat) |
+| `PAY_HLTH_INST` | Health institutions (e.g., Fonasa, Isapres) |
+| `PAY_PENS_PLAN` | Pension plan types |
+| `PAY_HLTH_PLAN` | Health plan types |
+| `PAY_CNTRB_CAP` | Monthly contribution caps (UF-based) |
+| `PAY_COMP_PROV` | Insurance providers |
+| `PAY_COMP_PLAN` | Insurance plan types |
 
 ### Analytics
 
 | View | Type | Description |
 |---|---|---|
-| `mv_payroll_summary` | Materialized view | Aggregated payroll summaries |
+| `PAY_MV_SUMARY` | Materialized view | Aggregated payroll summaries |
 
 ## Tables accessed (read-only)
 
@@ -112,10 +112,10 @@ pf-payroll **reads** these tables owned by [pf-rates](../../pf-rates):
 
 | Table | Owner | Access method |
 |---|---|---|
-| `currencies` | pf-rates | **HTTP API only** (never direct SQL) |
-| `exchange_rates` | pf-rates | **HTTP API only** |
-| `economic_indices` | pf-rates | **HTTP API only** |
-| `income_tax_brackets` | pf-rates | **HTTP API only** |
+| `RAT_CURRENCY` | pf-rates | **HTTP API only** (never direct SQL) |
+| `RAT_EXCH_RATE` | pf-rates | **HTTP API only** |
+| `RAT_ECON_INDEX` | pf-rates | **HTTP API only** |
+| `RAT_TAX_BRCKT` | pf-rates | **HTTP API only** |
 
 **Important:** pf-payroll accesses financial rates via the **pf-rates HTTP API** — it never queries these tables directly via SQL.
 
@@ -125,8 +125,8 @@ SQLAlchemy models live in `infrastructure/db/models/`:
 
 | File | Tables |
 |---|---|
-| `payroll.py` | `employers`, `payroll_periods`, `payroll_period_health_plans`, `payroll_complementary_insurance`, `payroll_concepts`, `payroll_items`, `mv_payroll_summary` |
-| `reference_data.py` | `pension_institutions`, `health_institutions`, `pension_plans`, `health_plans`, `contribution_caps`, `complementary_insurance_providers`, `complementary_insurance_plans` |
+| `payroll.py` | `PAY_EMPLOYER`, `PAY_PERIOD`, `PAY_PRD_HLTH`, `PAY_PRD_COMP`, `PAY_CONCEPT`, `PAY_ITEM`, `PAY_MV_SUMARY` |
+| `reference_data.py` | `PAY_PENS_INST`, `PAY_HLTH_INST`, `PAY_PENS_PLAN`, `PAY_HLTH_PLAN`, `PAY_CNTRB_CAP`, `PAY_COMP_PROV`, `PAY_COMP_PLAN` |
 
 ### Example: Employer model
 
@@ -136,7 +136,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from payroll.infrastructure.db.models.base import Base
 
 class Employer(Base):
-    __tablename__ = "employers"
+    __tablename__ = "PAY_EMPLOYER"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     rut: Mapped[str] = mapped_column(String(12), unique=True, nullable=False)
@@ -179,13 +179,13 @@ To add a new column or table:
    ```python
    def upgrade() -> None:
        op.execute("""
-           ALTER TABLE employers 
+           ALTER TABLE "PAY_EMPLOYER" 
            ADD COLUMN industry VARCHAR(100);
        """)
    
    def downgrade() -> None:
        op.execute("""
-           ALTER TABLE employers 
+           ALTER TABLE "PAY_EMPLOYER" 
            DROP COLUMN industry;
        """)
    ```
@@ -220,13 +220,13 @@ Common queries:
 \dt
 
 -- Describe a table
-\d employers
+\d "PAY_EMPLOYER"
 
 -- Count payroll periods
-SELECT COUNT(*) FROM payroll_periods;
+SELECT COUNT(*) FROM "PAY_PERIOD";
 
 -- Show recent payroll items
-SELECT * FROM payroll_items ORDER BY id DESC LIMIT 10;
+SELECT * FROM "PAY_ITEM" ORDER BY id DESC LIMIT 10;
 ```
 
 ### Using Adminer

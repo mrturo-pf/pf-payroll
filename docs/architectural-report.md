@@ -9,7 +9,7 @@
 * **Precisión Financiera:** Cálculo exacto. Uso estricto de `Decimal` en Python y `NUMERIC` en PostgreSQL. Nunca utilizar tipos flotantes.
 * **Variables Macroeconómicas:** Monedas (CLP, USD, EUR), Unidades de Reajuste (UF, UTM) y Deflactores (IPC). Soporte nativo para consultas históricas y deflación ($Monto_{Real} = Monto_{Nominal} \times IPC_{Destino} \div IPC_{Origen}$).
 * **Módulos de Seguridad Social (Chile):** Modelado histórico e independiente de instituciones (AFP, Isapre, Fonasa), planes contratados y topes imponibles variables. Los cálculos impositivos (Impuesto Único) dependen de la tabla oficial del SII.
-* **Inmutabilidad:** Los registros en la tabla de `payroll_periods` actúan como *snapshots*. Si un plan de AFP o Isapre cambia en el futuro, los periodos históricos mantienen los IDs de los planes activos en la fecha de pago original.
+* **Inmutabilidad:** Los registros en la tabla de `PAY_PERIOD` actúan como *snapshots*. Si un plan de AFP o Isapre cambia en el futuro, los periodos históricos mantienen los IDs de los planes activos en la fecha de pago original.
 * **Persistencia y Portabilidad:** PostgreSQL 16 como motor principal. El esquema es agnóstico del entorno, usando DDL idempotente sin dependencias de extensiones que requieran privilegios de superusuario (para despliegue sin fricción en Neon, Supabase, RDS, etc.).
 
 ---
@@ -54,7 +54,7 @@ Diseño altamente normalizado. Soporta índices económicos, instituciones de sa
 -- ============================================================
 -- 1. Unidades y Monedas
 -- ============================================================
-CREATE TABLE IF NOT EXISTS currencies (
+CREATE TABLE IF NOT EXISTS "RAT_CURRENCY" (
     code        CHAR(3) PRIMARY KEY,
     name        VARCHAR(60) NOT NULL,
     is_fiat     BOOLEAN     NOT NULL DEFAULT TRUE,
@@ -62,9 +62,9 @@ CREATE TABLE IF NOT EXISTS currencies (
         CHECK (unit_kind IN ('currency', 'index_unit'))
 );
 
-CREATE TABLE IF NOT EXISTS exchange_rates (
+CREATE TABLE IF NOT EXISTS "RAT_EXCH_RATE" (
     id            BIGSERIAL PRIMARY KEY,
-    currency_code CHAR(3)         NOT NULL REFERENCES currencies(code),
+    currency_code CHAR(3)         NOT NULL REFERENCES "RAT_CURRENCY"(code),
     rate_date     DATE            NOT NULL,
     value_clp     NUMERIC(18,6)   NOT NULL CHECK (value_clp > 0),
     source        VARCHAR(40)     NOT NULL DEFAULT 'manual',
@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS exchange_rates (
     UNIQUE (currency_code, rate_date)
 );
 
-CREATE TABLE IF NOT EXISTS economic_indices (
+CREATE TABLE IF NOT EXISTS "RAT_ECON_INDEX" (
     id             BIGSERIAL PRIMARY KEY,
     code           VARCHAR(20)     NOT NULL, -- e.g., IPC_CL
     period_year    SMALLINT        NOT NULL CHECK (period_year BETWEEN 1990 AND 2100),
@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS economic_indices (
 -- ============================================================
 -- 2. Instituciones y Planes Previsionales/Salud
 -- ============================================================
-CREATE TABLE IF NOT EXISTS pension_institutions (
+CREATE TABLE IF NOT EXISTS "PAY_PENS_INST" (
     id             BIGSERIAL PRIMARY KEY,
     code           VARCHAR(40)     NOT NULL UNIQUE,
     name           VARCHAR(120)    NOT NULL,
@@ -103,7 +103,7 @@ EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
-CREATE TABLE IF NOT EXISTS health_institutions (
+CREATE TABLE IF NOT EXISTS "PAY_HLTH_INST" (
     id             BIGSERIAL PRIMARY KEY,
     code           VARCHAR(40)     NOT NULL UNIQUE,
     name           VARCHAR(120)    NOT NULL,
@@ -112,18 +112,18 @@ CREATE TABLE IF NOT EXISTS health_institutions (
     is_active      BOOLEAN         NOT NULL DEFAULT TRUE
 );
 
-CREATE TABLE IF NOT EXISTS pension_plans (
+CREATE TABLE IF NOT EXISTS "PAY_PENS_PLAN" (
     id              BIGSERIAL PRIMARY KEY,
-    institution_id  BIGINT          NOT NULL REFERENCES pension_institutions(id),
+    institution_id  BIGINT          NOT NULL REFERENCES "PAY_PENS_INST"(id),
     valid_from      DATE            NOT NULL,
     valid_to        DATE,
     additional_rate NUMERIC(6,4)    NOT NULL DEFAULT 0 CHECK (additional_rate >= 0),
     CONSTRAINT chk_pension_plan_dates CHECK (valid_to IS NULL OR valid_to >= valid_from)
 );
 
-CREATE TABLE IF NOT EXISTS health_plans (
+CREATE TABLE IF NOT EXISTS "PAY_HLTH_PLAN" (
     id              BIGSERIAL PRIMARY KEY,
-    institution_id  BIGINT          NOT NULL REFERENCES health_institutions(id),
+    institution_id  BIGINT          NOT NULL REFERENCES "PAY_HLTH_INST"(id),
     valid_from      DATE            NOT NULL,
     valid_to        DATE,
     plan_name       VARCHAR(120),
@@ -137,7 +137,7 @@ EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
-CREATE TABLE IF NOT EXISTS contribution_caps (
+CREATE TABLE IF NOT EXISTS "PAY_CNTRB_CAP" (
     id         BIGSERIAL PRIMARY KEY,
     cap_type   contribution_cap_type NOT NULL,
     valid_from DATE            NOT NULL,
@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS contribution_caps (
 -- ============================================================
 -- 3. Core Nómina
 -- ============================================================
-CREATE TABLE IF NOT EXISTS employers (
+CREATE TABLE IF NOT EXISTS "PAY_EMPLOYER" (
     id           BIGSERIAL PRIMARY KEY,
     name         VARCHAR(120)  NOT NULL UNIQUE,
     tax_id       VARCHAR(32),
@@ -163,21 +163,21 @@ EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;
 
-CREATE TABLE IF NOT EXISTS payroll_periods (
+CREATE TABLE IF NOT EXISTS "PAY_PERIOD" (
     id              BIGSERIAL PRIMARY KEY,
-    employer_id     BIGINT          NOT NULL REFERENCES employers(id),
+    employer_id     BIGINT          NOT NULL REFERENCES "PAY_EMPLOYER"(id),
     period_year     SMALLINT        NOT NULL,
     period_month    SMALLINT        NOT NULL,
     payment_date    DATE            NOT NULL,
     worked_days     SMALLINT        NOT NULL DEFAULT 30,
     status          payroll_status  NOT NULL DEFAULT 'projected',
-    pension_plan_id BIGINT          REFERENCES pension_plans(id),
-    health_plan_id  BIGINT          REFERENCES health_plans(id),
+    pension_plan_id BIGINT          REFERENCES "PAY_PENS_PLAN"(id),
+    health_plan_id  BIGINT          REFERENCES "PAY_HLTH_PLAN"(id),
     UNIQUE (employer_id, period_year, period_month)
 );
 
 -- 4. Analytics Vista Materializada (ver definición completa en db/01_schema.sql)
-CREATE MATERIALIZED VIEW IF NOT EXISTS mv_payroll_summary AS
+CREATE MATERIALIZED VIEW IF NOT EXISTS "PAY_MV_SUMARY" AS
 SELECT
     p.id AS period_id,
     p.employer_id,
@@ -191,9 +191,9 @@ SELECT
     -- net_pay = gross - discounts (calculado en la vista)
     SUM(CASE WHEN c.kind = 'income'   THEN i.amount_clp ELSE 0 END)
   - SUM(CASE WHEN c.kind = 'discount' THEN i.amount_clp ELSE 0 END) AS net_pay_clp
-FROM payroll_periods p
-JOIN payroll_items   i ON i.period_id = p.id
-JOIN payroll_concepts c ON c.id = i.concept_id
+FROM "PAY_PERIOD" p
+JOIN "PAY_ITEM"   i ON i.period_id = p.id
+JOIN "PAY_CONCEPT" c ON c.id = i.concept_id
 GROUP BY p.id;
 ```
 
@@ -418,7 +418,7 @@ pg_restore \
 
 # 5. Validación y recompilación de Analytics
 psql "$TARGET_DSN" -c "REINDEX DATABASE payroll; ANALYZE;"
-psql "$TARGET_DSN" -c "REFRESH MATERIALIZED VIEW CONCURRENTLY mv_payroll_summary;"
+psql "$TARGET_DSN" -c "REFRESH MATERIALIZED VIEW CONCURRENTLY "PAY_MV_SUMARY";"
 ```
 
 ---

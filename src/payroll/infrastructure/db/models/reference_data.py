@@ -162,9 +162,7 @@ class ComplementaryInsurancePlanModel(Base):
     __tablename__ = "PAY_COMP_PLAN"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    provider_id: Mapped[int] = mapped_column(
-        ForeignKey("PAY_COMP_PROV.id")
-    )
+    provider_id: Mapped[int] = mapped_column(ForeignKey("PAY_COMP_PROV.id"))
     name: Mapped[str] = mapped_column(String(120))
     cost_type: Mapped[ComplementaryInsuranceCostType] = mapped_column(
         SAEnum(

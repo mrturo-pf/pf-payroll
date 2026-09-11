@@ -981,7 +981,7 @@ async def test_sa_payroll_repository_creates_employer_and_replaces_period_items(
     assert existing_period.employment_contract_kind is EmploymentContractKind.FIXED_TERM
     assert result.periods[0].status == "actual"
     assert any(
-        "DELETE FROM payroll_items" in str(statement) for statement in session.executed
+        'DELETE FROM "PAY_ITEM"' in str(statement) for statement in session.executed
     )
 
 
@@ -1465,7 +1465,7 @@ async def test_sqlalchemy_payroll_repository_saves_computed_contributions() -> N
     assert sum(isinstance(item, PayrollItemModel) for item in session.added) == 5
     assert session.commit_count == 3
     assert any(
-        "DELETE FROM payroll_items" in str(statement) for statement in session.executed
+        'DELETE FROM "PAY_ITEM"' in str(statement) for statement in session.executed
     )
 
 
@@ -2276,10 +2276,10 @@ async def test_api_dependencies_build_payroll_repository_and_use_case(
 
 def test_payroll_models_are_declared() -> None:
     """Test payroll models are declared."""
-    assert EmployerModel.__tablename__ == "employers"
-    assert PayrollPeriodModel.__tablename__ == "payroll_periods"
-    assert PayrollItemModel.__tablename__ == "payroll_items"
-    assert PayrollSummaryModel.__tablename__ == "mv_payroll_summary"
+    assert EmployerModel.__tablename__ == "PAY_EMPLOYER"
+    assert PayrollPeriodModel.__tablename__ == "PAY_PERIOD"
+    assert PayrollItemModel.__tablename__ == "PAY_ITEM"
+    assert PayrollSummaryModel.__tablename__ == "PAY_MV_SUMARY"
     assert PayrollStatus.ACTUAL.value == "actual"
     assert EmploymentContractKind.INDEFINITE.value == "indefinite"
 

@@ -43,7 +43,13 @@ dev = [
 testpaths = ["tests"]
 pythonpath = ["tests"]
 asyncio_mode = "strict"
-filterwarnings = ["error"]
+filterwarnings = [
+  "error",
+  # starlette.testclient imports anyio.abc.BlockingPortal, which anyio itself
+  # deprecated in favor of anyio.from_thread.BlockingPortal. This is a
+  # third-party library internal, not something we can fix here.
+  "ignore:The anyio.abc.BlockingPortal alias is deprecated.*:DeprecationWarning",
+]
 
 [tool.ruff]
 target-version = "py312"

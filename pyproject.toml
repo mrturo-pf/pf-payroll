@@ -49,6 +49,9 @@ filterwarnings = [
   # deprecated in favor of anyio.from_thread.BlockingPortal. This is a
   # third-party library internal, not something we can fix here.
   "ignore:The anyio.abc.BlockingPortal alias is deprecated.*:DeprecationWarning",
+  # weasyprint warns when the optional HarfBuzz-Subset native library isn't
+  # installed; test_..._without_native_libs deliberately exercises that path.
+  "ignore:HarfBuzz-Subset will be required by future versions of WeasyPrint.*:DeprecationWarning",
 ]
 
 [tool.ruff]

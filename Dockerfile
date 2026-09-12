@@ -38,16 +38,16 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Runtime: installed package only.
-# Migrations are now managed by pf-db (alembic upgrade head runs from that repo).
+# Migrations are managed by pf-db — this image ships no migration tooling.
 COPY --from=builder /opt/venv /opt/venv
 
 # The base image's system pip AND our venv's pip both vendor an old
 # msgpack/setuptools that trip Trivy with known HIGH severity CVEs
 # (CVE-2025-47273, GHSA-6v7p-g79w-8964) via pip's internal vendor
-# manifest. Confirmed by elimination on pf-rates: removing only the
-# system pip had zero effect, so the venv's own pip (copied in above)
-# is the real culprit. Nothing at runtime uses pip in either location
-# — the app runs via uvicorn from /opt/venv — so delete pip from both.
+# manifest. Confirmed by elimination: removing only the system pip had
+# zero effect, so the venv's own pip (copied in above) is the real
+# culprit. Nothing at runtime uses pip in either location — the app
+# runs via uvicorn from /opt/venv — so delete pip from both.
 RUN rm -rf /opt/venv/lib/python3.12/site-packages/pip* \
            /opt/venv/bin/pip* \
            /usr/local/lib/python3.12/site-packages/pip* \

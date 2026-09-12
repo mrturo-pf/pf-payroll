@@ -157,18 +157,22 @@ python -m payroll.interfaces.cli.main period-detail 1
 Deflation:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/market-data/refresh \
+# pf-payroll fetches economic indices from pf-rates; seed the IPC_CL value there first
+# (pf-rates runs on port 8001, not on pf-payroll's port 8000):
+curl -X POST -H "X-API-Key: your-pf-rates-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "economic_indices": [
+    "source": "manual",
+    "entries": [
       {
         "code": "IPC_CL",
-        "period_year": 2026,
-        "period_month": 3,
-        "index_value": 113.100000
+        "year": 2026,
+        "month": 3,
+        "value": "113.100000"
       }
     ]
-  }'
+  }' \
+  http://127.0.0.1:8001/economic-indices/refresh
 
 curl -X POST http://127.0.0.1:8000/payroll/1/deflate \
   -H "Content-Type: application/json" \

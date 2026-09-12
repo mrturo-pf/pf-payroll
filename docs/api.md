@@ -17,18 +17,14 @@ This section is the **complete inventory of HTTP endpoints** currently exposed b
 
 ### Market data
 
-| Method | Path | Description |
-| --- | --- | --- |
-| `POST` | `/market-data/refresh` | Upserts historical exchange rates and economic indices. Supports manual payloads and provider-backed fetch requests. |
-| `GET` | `/market-data/exchange-rates` | Lists stored exchange rates, optionally filtered by `currency_code`. |
-| `GET` | `/market-data/economic-indices` | Lists stored economic indices, optionally filtered by `code`. |
-
-Default provider behavior:
-
-- `UTM` and `IPC_CL`: SII-backed lookup without credentials
-- `UF`, `USD`, `EUR`: `mindicador` fallback
-- BCCh support is available through optional environment variables for API credentials and series codes
-- API startup launches a background sync that backfills only missing periods for the last 365 daily entries of `USD`, `EUR`, and `UF`, plus the last 12 monthly entries of `IPC_CL` and `UTM`
+pf-payroll does **not** expose its own market-data endpoints. Exchange rates, economic
+indices, and income tax brackets are fetched read-only from **pf-rates** over HTTP
+through `MarketDataRepository` (configured via `PF_RATES_URL` / `PF_RATES_API_KEY`,
+see [Getting Started](getting-started.md)). pf-rates itself owns the default-provider
+behavior (SII lookups for `UTM`/`IPC_CL`, `mindicador` fallback for `UF`/`USD`/`EUR`,
+optional BCCh credentials) and the startup background sync — see
+[pf-rates' API Reference](../../pf-rates/docs/api.md) for `GET /exchange-rates`,
+`GET /economic-indices`, `GET /income-tax-brackets`, and `POST /sync`.
 
 ### Payroll
 
@@ -49,15 +45,16 @@ Default provider behavior:
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/reference-data/currencies` | Lists seeded currencies and index units. |
 | `GET` | `/reference-data/pension-institutions` | Lists seeded AFP institutions. |
 | `GET` | `/reference-data/health-institutions` | Lists seeded health institutions. |
 | `GET` | `/reference-data/pension-plans` | Lists seeded pension plans. |
 | `GET` | `/reference-data/health-plans` | Lists seeded health plans. |
 | `GET` | `/reference-data/contribution-caps` | Lists seeded contribution caps. |
 | `GET` | `/reference-data/payroll-concepts` | Lists seeded payroll concepts. |
-| `GET` | `/reference-data/income-tax-brackets` | Lists seeded UTM-based income tax brackets. |
-| `POST` | `/reference-data/income-tax-brackets/refresh` | Fetches and upserts the official SII monthly tax table for a year. |
+
+Currencies and income tax brackets are **not** served by pf-payroll; fetch them from
+pf-rates' `GET /currencies` and `GET /income-tax-brackets` (see
+[pf-rates' API Reference](../../pf-rates/docs/api.md)).
 
 ## CLI
 

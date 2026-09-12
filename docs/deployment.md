@@ -15,16 +15,35 @@ The service is deployed to **Google Cloud Run** via **GitHub Actions** (`.github
 
 ## Pipeline jobs
 
-`.github/workflows/deploy.yml` runs **six jobs**:
+`.github/workflows/deploy.yml` is a thin caller — it does **not** define jobs itself.
+It delegates the entire pipeline to a shared reusable workflow in `pf-common`:
+
+```yaml
+jobs:
+  deploy:
+    uses: mrturo-pf/pf-common/.github/workflows/deploy-reusable.yml@main
+    with:
+      repo_name: pf-payroll
+      require_approval: true
+    secrets: inherit
+```
+
+The real pipeline lives in `pf-common/.github/workflows/deploy-reusable.yml` and runs
+**seven jobs** (shared across pf-payroll and pf-rates — change it once, both services
+pick it up):
 
 | Job | Trigger | Action |
 |---|---|---|
 | `test` | PR + push `main` | lint, vulture, mypy, jscpd, pytest+coverage |
 | `build` | PR + push `main` | Docker build, Trivy scan (SARIF + blocking gate on CRITICAL/HIGH) |
-| `gate` | push `main` | manual approval via `production` environment |
-| `deploy` | push `main` | push image to AR, deploy Cloud Run |
+| `gate-with-approval` | push `main`, `require_approval: true` | manual approval via `production` environment |
+| `gate-without-approval` | push `main`, `require_approval: false` | passthrough, no manual approval |
+| `deploy` | push `main`, after the gate that ran | push image to AR, deploy Cloud Run (`GCP` environment) |
 | `notify-failure` | any job failure on `main` | SMTP failure email |
 | `notify-success` | successful deploy | SMTP success email |
+
+pf-payroll sets `require_approval: true`, so in practice `gate-with-approval` is the
+one that runs and `gate-without-approval` is skipped.
 
 ### Workflow
 
@@ -36,7 +55,7 @@ PR opened/updated
 Push to main
   └─> test job
         └─> build job (scan + upload artifact)
-              └─> gate job (manual approval)
+              └─> gate-with-approval job (manual approval; require_approval: true)
                     └─> deploy job (push to AR, deploy to Cloud Run)
                           ├─> notify-failure (on error)
                           └─> notify-success (on success)

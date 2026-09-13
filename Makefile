@@ -13,9 +13,10 @@ include ../pf-common/make/common.mk
 # Service-specific variables
 # ============================================================================
 
-DB_CONTAINER ?= pf-db-1
+DB_CONTAINER ?= pf-db-db-1
 PF_DATABASE_URL ?= postgresql+asyncpg://pf_db:pf_db@localhost:5432/pf_db
 PF_RATES_URL ?= http://localhost:8001
+PF_PAYROLL_API_KEY ?= change-me-before-use
 
 # ============================================================================
 # Service-specific targets
@@ -28,7 +29,7 @@ env-write: ## Write .env file with service-specific defaults
 	@printf 'PAYROLL_LOG_LEVEL=INFO\\n' >> $(ENV_FILE)
 	@printf 'PF_RATES_URL=$(PF_RATES_URL)\\n' >> $(ENV_FILE)
 	@printf '# API key that clients must supply as X-API-Key header to access this service.\\n' >> $(ENV_FILE)
-	@printf 'PF_PAYROLL_API_KEY=change-me-before-use\\n' >> $(ENV_FILE)
+	@printf 'PF_PAYROLL_API_KEY=$(PF_PAYROLL_API_KEY)\\n' >> $(ENV_FILE)
 	@printf '\\n# Tooling — corporate pip/npm registries (used by make install/check on VPN)\\n' >> $(ENV_FILE)
 	@printf 'CORPORATIVE_PIP_INDEX=https://pypi.ci.artifacts.corporative.com/artifactory/api/pypi/pythonhosted-pypi-release-remote/simple\\n' >> $(ENV_FILE)
 	@printf 'CORPORATIVE_NPM_REGISTRY=https://npm.ci.artifacts.corporative.com/artifactory/api/npm/external-npm\\n' >> $(ENV_FILE)
@@ -42,6 +43,7 @@ local-up: ## Start full local stack (DB verification, env, deps, API)
 		DB_CONTAINER="$(DB_CONTAINER)" \
 		PF_DATABASE_URL="$(PF_DATABASE_URL)" \
 		PF_RATES_URL="$(PF_RATES_URL)" \
+		PF_PAYROLL_API_KEY="$(PF_PAYROLL_API_KEY)" \
 		ENV_FILE="$(ENV_FILE)" \
 		./scripts/local_stack.sh
 

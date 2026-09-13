@@ -5,9 +5,10 @@ set -euo pipefail
 # The pf-db container must be running before this script is called.
 # Start it with: cd ../pf-db && make db-up
 
-DB_CONTAINER="${DB_CONTAINER:-pf-db-1}"
+DB_CONTAINER="${DB_CONTAINER:-pf-db-db-1}"
 PF_DATABASE_URL="${PF_DATABASE_URL:-postgresql+asyncpg://pf_db:pf_db@localhost:5432/pf_db}"
 PF_RATES_URL="${PF_RATES_URL:-http://localhost:8001}"
+PF_PAYROLL_API_KEY="${PF_PAYROLL_API_KEY:-change-me-before-use}"
 APP_PORT="${APP_PORT:-8000}"
 VENV="${VENV:-.venv}"
 ENV_FILE="${ENV_FILE:-.env}"
@@ -37,6 +38,7 @@ log "pf-db container is running"
 log "Writing environment file to $ENV_FILE"
 PF_DATABASE_URL="$PF_DATABASE_URL" \
 PF_RATES_URL="$PF_RATES_URL" \
+PF_PAYROLL_API_KEY="$PF_PAYROLL_API_KEY" \
 ENV_FILE="$ENV_FILE" \
 ./scripts/write_env.sh >/dev/null
 

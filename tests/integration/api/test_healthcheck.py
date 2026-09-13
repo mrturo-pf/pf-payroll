@@ -12,4 +12,8 @@ def test_healthcheck() -> None:
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["service"] == "pf-payroll"
+    assert isinstance(body["uptime_seconds"], int | float)
+    assert body["uptime_seconds"] >= 0

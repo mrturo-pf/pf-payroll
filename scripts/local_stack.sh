@@ -9,6 +9,9 @@ DB_CONTAINER="${DB_CONTAINER:-pf-db-db-1}"
 PF_DATABASE_URL="${PF_DATABASE_URL:-postgresql+asyncpg://pf_db:pf_db@localhost:5432/pf_db}"
 PF_RATES_URL="${PF_RATES_URL:-http://localhost:8001}"
 PF_PAYROLL_API_KEY="${PF_PAYROLL_API_KEY:-change-me-before-use}"
+CORPORATIVE_PIP_INDEX="${CORPORATIVE_PIP_INDEX:-}"
+CORPORATIVE_NPM_REGISTRY="${CORPORATIVE_NPM_REGISTRY:-}"
+CORPORATIVE_PROXY="${CORPORATIVE_PROXY:-}"
 APP_PORT="${APP_PORT:-8000}"
 VENV="${VENV:-.venv}"
 ENV_FILE="${ENV_FILE:-.env}"
@@ -19,7 +22,7 @@ log() {
 
 venv_ready() {
   [[ -x "$VENV/bin/python" ]] && [[ -x "$VENV/bin/uvicorn" ]] && \
-    "$VENV/bin/python" -c "import fastapi, greenlet, multipart, pydantic_settings, sqlalchemy, uvicorn" >/dev/null 2>&1
+    "$VENV/bin/python" -c "import payroll, fastapi, greenlet, multipart, pydantic_settings, sqlalchemy, uvicorn" >/dev/null 2>&1
 }
 
 # Verify the shared pf-db container is running.
@@ -39,6 +42,9 @@ log "Writing environment file to $ENV_FILE"
 PF_DATABASE_URL="$PF_DATABASE_URL" \
 PF_RATES_URL="$PF_RATES_URL" \
 PF_PAYROLL_API_KEY="$PF_PAYROLL_API_KEY" \
+CORPORATIVE_PIP_INDEX="$CORPORATIVE_PIP_INDEX" \
+CORPORATIVE_NPM_REGISTRY="$CORPORATIVE_NPM_REGISTRY" \
+CORPORATIVE_PROXY="$CORPORATIVE_PROXY" \
 ENV_FILE="$ENV_FILE" \
 ./scripts/write_env.sh >/dev/null
 

@@ -24,16 +24,16 @@ PF_PAYROLL_API_KEY ?= change-me-before-use
 
 .PHONY: env-write
 env-write: ## Write .env file with service-specific defaults
-	@printf 'PAYROLL_ENV=development\\n' > $(ENV_FILE)
-	@printf 'PF_DATABASE_URL=$(PF_DATABASE_URL)\\n' >> $(ENV_FILE)
-	@printf 'PAYROLL_LOG_LEVEL=INFO\\n' >> $(ENV_FILE)
-	@printf 'PF_RATES_URL=$(PF_RATES_URL)\\n' >> $(ENV_FILE)
-	@printf '# API key that clients must supply as X-API-Key header to access this service.\\n' >> $(ENV_FILE)
-	@printf 'PF_PAYROLL_API_KEY=$(PF_PAYROLL_API_KEY)\\n' >> $(ENV_FILE)
-	@printf '\\n# Tooling — corporate pip/npm registries (used by make install/check on VPN)\\n' >> $(ENV_FILE)
-	@printf 'CORPORATIVE_PIP_INDEX=https://pypi.ci.artifacts.corporative.com/artifactory/api/pypi/pythonhosted-pypi-release-remote/simple\\n' >> $(ENV_FILE)
-	@printf 'CORPORATIVE_NPM_REGISTRY=https://npm.ci.artifacts.corporative.com/artifactory/api/npm/external-npm\\n' >> $(ENV_FILE)
-	@printf 'CORPORATIVE_PROXY=http://sysproxy.corpo-rative.com:8080\\n' >> $(ENV_FILE)
+	@printf 'PAYROLL_ENV=development\n' > $(ENV_FILE)
+	@printf 'PF_DATABASE_URL=$(PF_DATABASE_URL)\n' >> $(ENV_FILE)
+	@printf 'PAYROLL_LOG_LEVEL=INFO\n' >> $(ENV_FILE)
+	@printf 'PF_RATES_URL=$(PF_RATES_URL)\n' >> $(ENV_FILE)
+	@printf '# API key that clients must supply as X-API-Key header to access this service.\n' >> $(ENV_FILE)
+	@printf 'PF_PAYROLL_API_KEY=$(PF_PAYROLL_API_KEY)\n' >> $(ENV_FILE)
+	@printf '\n# Tooling — corporate pip/npm registries (used by make install/check on VPN)\n' >> $(ENV_FILE)
+	@printf 'CORPORATIVE_PIP_INDEX=https://pypi.ci.artifacts.corporative.com/artifactory/api/pypi/pythonhosted-pypi-release-remote/simple\n' >> $(ENV_FILE)
+	@printf 'CORPORATIVE_NPM_REGISTRY=https://npm.ci.artifacts.corporative.com/artifactory/api/npm/external-npm\n' >> $(ENV_FILE)
+	@printf 'CORPORATIVE_PROXY=http://sysproxy.corpo-rative.com:8080\n' >> $(ENV_FILE)
 	@echo "  $(ENV_FILE) written"
 
 .PHONY: local-up

@@ -6,6 +6,10 @@ set -euo pipefail
 # Start it with: cd ../pf-db && make db-up
 
 DB_CONTAINER="${DB_CONTAINER:-pf-db-db-1}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../../pf-common/scripts/detect_container_cli.sh
+source "$SCRIPT_DIR/../../pf-common/scripts/detect_container_cli.sh"
 PF_DATABASE_URL="${PF_DATABASE_URL:-postgresql+asyncpg://pf_db:pf_db@localhost:5432/pf_db}"
 PF_RATES_URL="${PF_RATES_URL:-http://localhost:8001}"
 PF_PAYROLL_API_KEY="${PF_PAYROLL_API_KEY:-change-me-before-use}"
@@ -27,7 +31,7 @@ venv_ready() {
 
 # Verify the shared pf-db container is running.
 log "Checking shared pf-db container ($DB_CONTAINER)"
-if ! docker inspect --format '{{.State.Status}}' "$DB_CONTAINER" 2>/dev/null | grep -q "^running$"; then
+if ! container_is_running "$DB_CONTAINER"; then
   echo ""
   echo "ERROR: pf-db container '$DB_CONTAINER' is not running."
   echo ""

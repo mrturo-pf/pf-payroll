@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import importlib
 import runpy
 import sys
@@ -56,7 +55,6 @@ from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import 
     WeasyPrintPayrollReportRenderer,
 )
 from payroll.interfaces.cli.main import app as cli_app
-from payroll.interfaces.dashboard.app import main as dashboard_main
 from payroll.shared.constants import DEFAULT_CURRENCY
 
 
@@ -245,26 +243,6 @@ def test_use_case_placeholders_are_instantiable() -> None:
     )
 
 
-def test_dashboard_main_prints_rendered_html(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Test dashboard main prints rendered html."""
-
-    async def fake_build_dashboard_html() -> str:
-        """Handle fake build dashboard html."""
-        return "<html>dashboard</html>"
-
-    monkeypatch.setattr(
-        "payroll.interfaces.dashboard.app.build_dashboard_html",
-        fake_build_dashboard_html,
-    )
-
-    dashboard_main()
-
-    assert capsys.readouterr().out.strip() == "<html>dashboard</html>"
-
-
 def test_xlsx_importer_transforms_and_reads_files() -> None:
     """Test xlsx importer transforms and reads files."""
     source = pd.DataFrame(
@@ -338,7 +316,6 @@ def test_package_modules_import() -> None:
         "payroll.interfaces.api",
         "payroll.interfaces.api.routes",
         "payroll.interfaces.cli",
-        "payroll.interfaces.dashboard",
         "payroll.shared",
     ]
 
@@ -360,22 +337,3 @@ def test_cli_module_runs_as_main(monkeypatch: pytest.MonkeyPatch) -> None:
     runpy.run_module("payroll.interfaces.cli.main", run_name="__main__")
 
     assert called == [True]
-
-
-def test_dashboard_module_runs_as_main(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Test dashboard module runs as main."""
-
-    def fake_run(coro: object) -> str:
-        """Handle fake run."""
-        getattr(coro, "close")()
-        return "<html>dashboard</html>"
-
-    monkeypatch.setattr(asyncio, "run", fake_run)
-    sys.modules.pop("payroll.interfaces.dashboard.app", None)
-
-    runpy.run_module("payroll.interfaces.dashboard.app", run_name="__main__")
-
-    assert capsys.readouterr().out.strip() == "<html>dashboard</html>"

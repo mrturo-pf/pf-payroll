@@ -94,7 +94,7 @@ def sample_acme_april_2026_period_detail_dto(
     summary: PayrollSummaryDTO | None = None,
     health_institution_is_active: bool | None = None,
 ) -> PayrollPeriodDetailDTO:
-    """Return an ACME April-2026 period detail for process/cli/dashboard tests.
+    """Return an ACME April-2026 period detail for process/cli tests.
 
     Structural fields (id=7, employer_tax_id, employer_country_code, dates,
     worked_days, employment_contract_kind) are fixed; callers supply the
@@ -128,10 +128,9 @@ def sample_acme_april_2026_summary_dto() -> PayrollSummaryDTO:
     """Return a base ACME April-2026 summary DTO for testing.
 
     Provides the twelve structural fields shared across
-    test_process_imported_payroll_periods, test_cli_main, and
-    test_dashboard_app.  Call-site code adds divergent optional
-    fields (declared_net_pay_clp, expected_net_pay_clp, etc.) via
-    dataclasses.replace().
+    test_process_imported_payroll_periods and test_cli_main. Call-site
+    code adds divergent optional fields (declared_net_pay_clp,
+    expected_net_pay_clp, etc.) via dataclasses.replace().
     """
     return PayrollSummaryDTO(
         period_id=7,

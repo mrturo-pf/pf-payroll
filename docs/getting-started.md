@@ -107,19 +107,6 @@ make cli
 # Interactive shell with available commands
 ```
 
-### Option D: Dashboard (HTML)
-
-The service includes an operational dashboard:
-
-```
-http://localhost:8000/dashboard
-```
-
-The dashboard provides:
-- Payroll period overview
-- Recent imports
-- System health metrics
-
 ## Step 7: Run tests
 
 ```bash
@@ -139,7 +126,7 @@ Expected output: 100% coverage on `src/`.
 - [Development Guide](development.md) - Make commands, testing, git hooks
 - [Database Guide](database.md) - Schema, tables, local setup
 - [Deployment Guide](deployment.md) - CI/CD, Cloud Run deployment
-- [API Reference](api.md) - HTTP API, CLI commands, dashboard
+- [API Reference](api.md) - HTTP API, CLI commands
 - [Payroll Workflow](payroll-workflow.md) - End-to-end payroll flow
 - [Architectural Report](architectural-report.md) - Architecture design and target state
 
@@ -223,6 +210,5 @@ Once running, access:
 
 - **Swagger UI:** `http://localhost:8000/docs` (interactive API explorer)
 - **ReDoc:** `http://localhost:8000/redoc` (alternative documentation view)
-- **Dashboard:** `http://localhost:8000/dashboard` (operational metrics)
 
 All provide the same API specification but with different UIs.

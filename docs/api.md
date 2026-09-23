@@ -1,6 +1,6 @@
 # API Reference
 
-Complete reference for all interfaces exposed by pf-payroll: HTTP API, CLI commands, and HTML dashboard.
+Complete reference for all interfaces exposed by pf-payroll: HTTP API and CLI commands.
 
 ## HTTP API
 
@@ -86,18 +86,3 @@ Available commands:
 | `report-pdf <period_id> [--output]` | Writes the payroll PDF to disk. |
 
 All CLI commands emit JSON except `health`.
-
-## Dashboard
-
-Render the dashboard as HTML:
-
-```bash
-python -m payroll.interfaces.dashboard.app > payroll-dashboard.html
-open payroll-dashboard.html
-```
-
-The dashboard:
-
-- summarizes payroll periods already loaded in PostgreSQL
-- highlights the next business action for each period
-- shows available pension and health plan snapshot ids

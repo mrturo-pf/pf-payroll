@@ -16,12 +16,12 @@
 
 ## 2. Diseño de Arquitectura: Monolito Modular
 
-Se utiliza una arquitectura de puertos y adaptadores (Hexagonal) para aislar la lógica de cálculo impositivo y previsional chileno de los mecanismos de entrega (API, CLI, Dashboards) y almacenamiento.
+Se utiliza una arquitectura de puertos y adaptadores (Hexagonal) para aislar la lógica de cálculo impositivo y previsional chileno de los mecanismos de entrega (API, CLI) y almacenamiento.
 
 ```text
 ┌────────────────────────────────────────────────────────────────┐
 │                   Interfaces (Adapters In)                     │
-│  CLI (Typer) │ HTTP API (FastAPI) │ Dashboard (Dash/Streamlit) │
+│              CLI (Typer)      │      HTTP API (FastAPI)        │
 └──────────────────────────┬─────────────────────────────────────┘
                            │
 ┌──────────────────────────▼─────────────────────────────────────┐

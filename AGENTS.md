@@ -7,7 +7,7 @@ Chilean payroll simulation and tax calculation suite. Microservice with Hexagona
 Four layers; dependency flows inward only (interfaces → application → domain; infrastructure → application).
 
 ```
-interfaces/      # FastAPI, Typer CLI, HTML dashboard (adapters in)
+interfaces/      # FastAPI, Typer CLI (adapters in)
 application/     # Use cases, ports (Protocols), DTOs, services
 domain/          # Entities, value objects, domain services — no I/O
 infrastructure/  # SQLAlchemy, importers, WeasyPrint, rate providers (adapters out)
@@ -42,7 +42,7 @@ shared/          # Cross-cutting utilities (dates, constants)
 
 - Apply DRY, SOLID, Clean Code, DDD — avoid god objects; prefer small, focused classes
 - Extract constants/mappings/literals to `shared/`; zero duplication in `src/` or `tests/`
-- Thin interface layers (HTTP/CLI/dashboard): orchestration logic belongs in use cases, not routes or commands
+- Thin interface layers (HTTP/CLI): orchestration logic belongs in use cases, not routes or commands
 - Never `assert` for production validation; raise from `application/errors.py`
 - No silent fallbacks
 - **Cloud cost is always the priority in cloud decisions**: cheapest viable option first

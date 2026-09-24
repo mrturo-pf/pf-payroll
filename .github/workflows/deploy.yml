@@ -81,7 +81,6 @@
 #   GCP_SA_KEY                      — service account JSON key (base64 or raw JSON)
 #   GCP_PROJECT_ID                  — GCP project ID
 #   GCP_CLOUD_SQL_INSTANCE          — (optional) Cloud SQL instance for proxy sidecar
-#   PF_RATES_URL                    — Cloud Run URL of the deployed pf-rates service
 #   GH_PAT                          — (optional) GitHub PAT for private repo access
 #   MAIL_SERVER                     — SMTP server hostname (e.g. smtp.gmail.com)
 #   MAIL_PORT                       — SMTP port (e.g. 587)
@@ -89,6 +88,13 @@
 #   MAIL_PASSWORD                   — SMTP password or app-specific password
 #   MAIL_FROM                       — Sender address (e.g. you@example.com)
 #   MAIL_TO                         — Recipient address(es), comma-separated
+#
+# NOTE: PF_RATES_URL is NOT a GitHub secret (it used to be listed as one here,
+# but the reusable workflow never actually read it -- a real bug that shipped
+# undetected because /health, the only thing the deploy smoke-test checks,
+# doesn't call pf-rates). It's resolved dynamically at deploy time via
+# 'gcloud run services describe pf-rates' and injected as a plain env var --
+# see the "Deploy to Cloud Run" step in deploy-reusable.yml.
 #
 # Secret Manager Secrets (auto-injected by reusable workflow):
 #   PF_DATABASE_URL                 — Database connection string

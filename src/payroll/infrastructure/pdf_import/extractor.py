@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from payroll.application.dto import (
     PdfImportPreviewRowDTO,
 )
 from payroll.application.ports.pdf_extractors import PdfPayrollExtractor
+from payroll.domain.contributions import EmploymentContractKind
 from payroll.infrastructure.logging.logger import logger
 from payroll.infrastructure.pdf_import.templates import (
     Template,
@@ -26,6 +28,8 @@ from payroll.infrastructure.pdf_import.text_extraction import (
     parse_detail_line,
     parse_header,
 )
+from payroll.shared.constants import UNEMPLOYMENT_INSURANCE_CONCEPT_CODE
+from payroll.shared.dates import resolve_payment_date
 
 _UNMATCHED_CONFIDENCE = 0.0
 _FALLBACK_KIND: PayrollConceptKind = "income"
@@ -78,11 +82,66 @@ class TemplatePdfPayrollExtractor(PdfPayrollExtractor):
             employer=template.employer_name if template else None,
             period_year=header.period_year,
             period_month=header.period_month,
+            payment_date=_resolve_payment_date(header.period_year, header.period_month),
             worked_days=header.worked_days,
             declared_net_pay_clp=header.declared_net_pay_clp,
+            employment_contract_kind=_infer_employment_contract_kind(rows),
             template_id=template.template_id if template else None,
             rows=rows,
         )
+
+
+def _infer_employment_contract_kind(
+    rows: list[PdfImportPreviewRowDTO],
+) -> EmploymentContractKind | None:
+    """Best-effort indefinite/fixed_term inference from the payslip itself.
+
+    Chilean law: unemployment insurance ("seguro de cesantia") only deducts
+    from the employee on an indefinite contract (0.6% employee rate) --
+    fixed-term contracts have a 0% employee rate (see
+    contribution_calculator.py's compute_unemployment_contribution, the same
+    domain rule this reuses rather than re-deriving). A resolved
+    UNEMPLOYMENT_INSURANCE discount row with a positive amount is therefore
+    self-contained evidence the payslip belongs to an indefinite contract; a
+    zero amount (present but not actually deducted) means fixed_term.
+    Stays unresolved (None) when no such row was found at all -- an
+    unmatched template, or one that doesn't map this concept -- rather than
+    guessing from nothing. Either way, this only pre-fills
+    PdfImportPreviewResponse for a human to confirm or correct before
+    POST /payroll/import/rows, which still requires employment_contract_kind
+    explicitly -- this is never used to persist anything by itself.
+    """
+    matches = [
+        row
+        for row in rows
+        if row.concept_code == UNEMPLOYMENT_INSURANCE_CONCEPT_CODE
+        and row.kind == "discount"
+    ]
+    if not matches:
+        return None
+    return (
+        EmploymentContractKind.INDEFINITE
+        if any(row.amount_clp > 0 for row in matches)
+        else EmploymentContractKind.FIXED_TERM
+    )
+
+
+def _resolve_payment_date(
+    period_year: int | None, period_month: int | None
+) -> date | None:
+    """Best-effort payment_date: the default last-Chilean-business-day rule.
+
+    Same default `resolve_payment_date()` already falls back to elsewhere in
+    the system (see docs/api.md's /payroll/period-range) when an employer's
+    actual payment rule isn't known -- the PDF-preview flow has no database
+    access at all (see PreviewPdfImport's docstring), so it can never look up
+    a real per-employer override here. A caller confirming this preview
+    through POST /payroll/import/rows can still override payment_date by
+    hand if the employer's real payday differs.
+    """
+    if period_year is None or period_month is None:
+        return None
+    return resolve_payment_date(period_year, period_month)
 
 
 def _build_row(
@@ -134,8 +193,10 @@ def _empty_preview() -> PdfImportPreviewDTO:
         employer=None,
         period_year=None,
         period_month=None,
+        payment_date=None,
         worked_days=None,
         declared_net_pay_clp=None,
+        employment_contract_kind=None,
         template_id=None,
         rows=[],
     )

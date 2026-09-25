@@ -204,8 +204,10 @@ class PdfImportPreviewDTO:
     employer: str | None
     period_year: int | None
     period_month: int | None
+    payment_date: date | None
     worked_days: int | None
     declared_net_pay_clp: Decimal | None
+    employment_contract_kind: EmploymentContractKind | None
     template_id: str | None
     rows: list[PdfImportPreviewRowDTO] = field(default_factory=list)
 

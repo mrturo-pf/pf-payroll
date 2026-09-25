@@ -1,10 +1,12 @@
 """Tests for TemplatePdfPayrollExtractor."""
 
 import json
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
+from payroll.domain.contributions import EmploymentContractKind
 from payroll.infrastructure.pdf_import.extractor import TemplatePdfPayrollExtractor
 
 SYNTHETIC_TEXT = (
@@ -61,6 +63,67 @@ def _write_acme_template(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _write_unemployment_template(tmp_path: Path) -> Path:
+    """Write a template mapping UNEMPLOYMENT_INSURANCE plus 2 filler fields.
+
+    select_template() requires MIN_TEMPLATE_MATCH_SCORE (3) distinct fields
+    to actually match a detail label before picking a template at all -- a
+    template with only the one field under test would never be selected.
+    """
+    template = {
+        "template_id": "acme-v1",
+        "employer_name": "ACME",
+        "version": 1,
+        "employer_match": {"name_pattern": "(?i)acme"},
+        "fields": [
+            {
+                "pdf_label_pattern": "(?i)^SUELDO$",
+                "concept_code": "SALARY_BASE",
+                "kind": "income",
+                "confidence": 0.9,
+            },
+            {
+                "pdf_label_pattern": "(?i)GRATIFICACION",
+                "concept_code": "LEGAL_GRATUITY",
+                "kind": "income",
+                "confidence": 0.9,
+            },
+            {
+                "pdf_label_pattern": "(?i)CESANTIA",
+                "concept_code": "UNEMPLOYMENT_INSURANCE",
+                "kind": "discount",
+                "confidence": 0.9,
+            },
+        ],
+    }
+    templates_dir = tmp_path / "acme"
+    templates_dir.mkdir(parents=True, exist_ok=True)
+    (templates_dir / "v1.json").write_text(json.dumps(template), encoding="utf-8")
+    return tmp_path
+
+
+def _unemployment_insurance_text(amount: str) -> str:
+    """Build a synthetic payslip with one UNEMPLOYMENT_INSURANCE discount row.
+
+    Includes 2 filler income rows purely so the template clears
+    MIN_TEMPLATE_MATCH_SCORE and actually gets selected (see
+    _write_unemployment_template).
+    """
+    return (
+        "ACME Corp S.A\n"
+        "R.U.T. NOMBRE MES AÑO\n"
+        "11.111.111-1 DOE JANE Marzo 2026\n"
+        "\n"
+        "DETALLE HABERES Y DESCUENTOS   CODIGO  CUOTAS   HABERES   DESCUENTOS\n"
+        "SUELDO 1000                                   100,000\n"
+        "GRATIFICACION LEGAL 1050                       20,000\n"
+        f"SEGURO CESANTIA 1E89                                       {amount}\n"
+        "\n"
+        f"TOTALES 120,000 {amount}\n"
+        "LIQUIDO  A PAGAR 900,000\n"
+    )
+
+
 def _extract_with_mocked_text(extractor: TemplatePdfPayrollExtractor, text: str | None):
     """Run extract_preview with extract_raw_text mocked to return `text`."""
     with patch(
@@ -81,6 +144,7 @@ class TestTemplatePdfPayrollExtractor:
         preview = _extract_with_mocked_text(extractor, None)
         assert preview.employer is None
         assert preview.template_id is None
+        assert preview.payment_date is None
         assert preview.rows == []
 
     def test_matches_template_and_resolves_known_concepts(self, tmp_path: Path) -> None:
@@ -92,6 +156,7 @@ class TestTemplatePdfPayrollExtractor:
         assert preview.template_id == "acme-v1"
         assert preview.period_year == 2026
         assert preview.period_month == 3
+        assert preview.payment_date == date(2026, 3, 31)
         assert preview.worked_days == 25
         assert preview.declared_net_pay_clp == Decimal("1170000")
         assert len(preview.rows) == 4
@@ -149,6 +214,57 @@ class TestTemplatePdfPayrollExtractor:
         by_label = {row.raw_label: row for row in preview.rows}
         assert by_label["SUELDO"].kind == "income"
         assert by_label["IMPUESTO"].kind == "discount"
+
+    def test_payment_date_is_none_when_period_could_not_be_parsed(
+        self, tmp_path: Path
+    ) -> None:
+        """payment_date stays None when the period header itself is unknown.
+
+        Unlike the fully-empty-preview case (no text at all), this covers a
+        PDF that extracted fine but simply has no Spanish month+year pair to
+        match -- resolve_payment_date() needs both period_year and
+        period_month, so it must never be called with either missing.
+        """
+        no_period_text = SYNTHETIC_TEXT.replace("Marzo 2026", "UNKNOWN PERIOD")
+        extractor = TemplatePdfPayrollExtractor(_write_acme_template(tmp_path))
+        preview = _extract_with_mocked_text(extractor, no_period_text)
+
+        assert preview.period_year is None
+        assert preview.period_month is None
+        assert preview.payment_date is None
+
+    def test_positive_unemployment_insurance_discount_infers_indefinite(
+        self, tmp_path: Path
+    ) -> None:
+        """A nonzero employee-side UNEMPLOYMENT_INSURANCE discount => indefinite.
+
+        Chilean law: this discount only applies to the employee at all on an
+        indefinite contract (see contribution_calculator.py) -- a positive
+        amount is therefore self-contained evidence.
+        """
+        extractor = TemplatePdfPayrollExtractor(_write_unemployment_template(tmp_path))
+        preview = _extract_with_mocked_text(
+            extractor, _unemployment_insurance_text("5,000")
+        )
+        assert preview.employment_contract_kind == EmploymentContractKind.INDEFINITE
+
+    def test_zero_unemployment_insurance_discount_infers_fixed_term(
+        self, tmp_path: Path
+    ) -> None:
+        """A present-but-zero UNEMPLOYMENT_INSURANCE discount => fixed_term."""
+        extractor = TemplatePdfPayrollExtractor(_write_unemployment_template(tmp_path))
+        preview = _extract_with_mocked_text(
+            extractor, _unemployment_insurance_text("0,000")
+        )
+        assert preview.employment_contract_kind == EmploymentContractKind.FIXED_TERM
+
+    def test_no_unemployment_insurance_row_stays_unresolved(
+        self, tmp_path: Path
+    ) -> None:
+        """No matching row at all leaves employment_contract_kind unresolved."""
+        extractor = TemplatePdfPayrollExtractor(_write_acme_template(tmp_path))
+        preview = _extract_with_mocked_text(extractor, SYNTHETIC_TEXT)
+        assert preview.employment_contract_kind is None
 
     def test_no_templates_loaded_returns_unresolved_rows(self, tmp_path: Path) -> None:
         """Test no templates loaded returns unresolved rows."""

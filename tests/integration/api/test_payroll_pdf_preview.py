@@ -1,6 +1,7 @@
 """Tests for the POST /payroll/import/pdf-preview endpoint."""
 
 from decimal import Decimal
+from datetime import date
 from io import BytesIO
 
 import pytest
@@ -10,6 +11,7 @@ from starlette.datastructures import UploadFile
 
 from payroll.application.dto import PdfImportPreviewDTO, PdfImportPreviewRowDTO
 from payroll.application.errors import PayrollValidationError
+from payroll.domain.contributions import EmploymentContractKind
 from payroll.interfaces.api.dependencies import get_preview_pdf_import_use_case
 from payroll.interfaces.api.main import app
 from payroll.interfaces.api.routes.payroll import preview_pdf_import
@@ -26,8 +28,10 @@ class FakePreviewPdfImport:
             employer="ACME",
             period_year=2026,
             period_month=1,
+            payment_date=date(2026, 1, 31),
             worked_days=30,
             declared_net_pay_clp=Decimal("950000"),
+            employment_contract_kind=EmploymentContractKind.INDEFINITE,
             template_id="acme-v1",
             rows=[
                 PdfImportPreviewRowDTO(
@@ -78,8 +82,10 @@ def test_preview_pdf_import_endpoint_returns_preview() -> None:
         "employer": "ACME",
         "period_year": 2026,
         "period_month": 1,
+        "payment_date": "2026-01-31",
         "worked_days": 30,
         "declared_net_pay_clp": "950000",
+        "employment_contract_kind": "indefinite",
         "template_id": "acme-v1",
         "rows": [
             {

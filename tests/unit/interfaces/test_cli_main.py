@@ -539,21 +539,34 @@ def test_report_pdf_uses_default_output_path(
     assert json.loads(result.stdout)["output_path"] == "payroll-period-9.pdf"
 
 
+def _sample_pdf_preview(
+    rows: list[PdfImportPreviewRowDTO] | None = None,
+) -> PdfImportPreviewDTO:
+    """Build a PdfImportPreviewDTO with a shared ACME_CL header, given rows.
+
+    The two template-test tests below need this identical header with only
+    their `rows` differing -- a shared factory avoids repeating it twice.
+    """
+    return PdfImportPreviewDTO(
+        employer="ACME_CL",
+        period_year=2026,
+        period_month=8,
+        payment_date=date(2026, 8, 31),
+        worked_days=30,
+        declared_net_pay_clp=Decimal("1000000"),
+        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+        template_id="acme-v1",
+        rows=rows or [],
+    )
+
+
 def test_template_test_async_delegates_to_preview_use_case(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Test _template_test_async wires PreviewPdfImport + the template extractor."""
     pdf_path = tmp_path / "liquidacion.pdf"
     pdf_path.write_bytes(b"%PDF-fake")
-    preview = PdfImportPreviewDTO(
-        employer="ACME_CL",
-        period_year=2026,
-        period_month=8,
-        worked_days=30,
-        declared_net_pay_clp=Decimal("1000000"),
-        template_id="acme-v1",
-        rows=[],
-    )
+    preview = _sample_pdf_preview()
 
     class FakePreviewPdfImport:
         """Test double for PreviewPdfImport."""
@@ -579,13 +592,7 @@ def test_template_test_command_reports_unresolved_rows(
     """Test template-test prints a summary of unresolved rows plus full JSON."""
     pdf_path = tmp_path / "liquidacion.pdf"
     pdf_path.write_bytes(b"%PDF-fake")
-    preview = PdfImportPreviewDTO(
-        employer="ACME_CL",
-        period_year=2026,
-        period_month=8,
-        worked_days=30,
-        declared_net_pay_clp=Decimal("1000000"),
-        template_id="acme-v1",
+    preview = _sample_pdf_preview(
         rows=[
             PdfImportPreviewRowDTO(
                 raw_label="SUELDO",
@@ -601,7 +608,7 @@ def test_template_test_command_reports_unresolved_rows(
                 concept_code=None,
                 confidence=0.0,
             ),
-        ],
+        ]
     )
 
     async def fake_template_test_async(file_path: Path) -> PdfImportPreviewDTO:
@@ -631,8 +638,10 @@ def test_template_test_command_reports_no_template_matched(
         employer=None,
         period_year=None,
         period_month=None,
+        payment_date=None,
         worked_days=None,
         declared_net_pay_clp=None,
+        employment_contract_kind=None,
         template_id=None,
         rows=[],
     )

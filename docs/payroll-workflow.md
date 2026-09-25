@@ -49,6 +49,15 @@ python -m payroll.interfaces.cli.main template-test payslip.pdf
 
 **Step B -- confirm the (possibly hand-edited) rows from the preview:**
 
+This is meant to be a copy/paste from Step A's own JSON response: take the full
+`PdfImportPreviewResponse` body, add `"mode"`, and POST it here as-is -- extra fields
+the preview includes that this endpoint doesn't need (`template_id`, and each row's
+`raw_label`/`kind`/`confidence`) are silently ignored, not rejected. Double-check
+`employment_contract_kind` before sending: the preview infers it best-effort from the
+payslip's own unemployment-insurance discount (see
+TemplatePdfPayrollExtractor's `_infer_employment_contract_kind`), so it can come back
+`null` if that concept wasn't resolved -- fill it in by hand in that case.
+
 ```bash
 curl -X POST http://127.0.0.1:8000/payroll/import/rows \
   -H "X-API-Key: your-api-key-here" \
@@ -59,7 +68,6 @@ curl -X POST http://127.0.0.1:8000/payroll/import/rows \
     "period_year": 2026,
     "period_month": 1,
     "payment_date": "2026-01-31",
-    "status": "actual",
     "employment_contract_kind": "indefinite",
     "rows": [
       {
@@ -71,10 +79,13 @@ curl -X POST http://127.0.0.1:8000/payroll/import/rows \
 ```
 
 Notice the header fields (`employer`, `period_year`, `period_month`, `payment_date`,
-`status`, `employment_contract_kind`, plus the optional `worked_days`/
-`declared_net_pay_clp`) are declared **once**, not per row -- every row submitted here
-comes from the same single payslip, mirroring `PdfImportPreviewResponse`'s own shape
-(one set of header fields, `rows` carrying only `concept_code`/`amount_clp` each).
+`employment_contract_kind`, plus the optional `worked_days`/`declared_net_pay_clp`) are
+declared **once**, not per row -- every row submitted here comes from the same single
+payslip, mirroring `PdfImportPreviewResponse`'s own shape (one set of header fields,
+`rows` carrying only `concept_code`/`amount_clp` each). There is deliberately no
+`status` field here either -- it is inferred exactly like the CSV/XLSX importer already
+does ("actual" once `declared_net_pay_clp` is known, "projected" otherwise), so it is
+never something a caller needs to figure out or pass in.
 
 `mode="validate"` (shown above) runs the exact same pipeline as `mode="commit"` --
 contributions, taxes, and net-pay warnings are genuinely computed -- but every write is

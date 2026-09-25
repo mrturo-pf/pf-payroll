@@ -2,6 +2,8 @@
 
 import pytest
 
+from datetime import date
+
 from payroll.application.dto import PdfImportPreviewDTO
 from payroll.application.errors import PayrollValidationError
 from payroll.application.use_cases.preview_pdf_import import PreviewPdfImport
@@ -21,8 +23,10 @@ class FakePdfPayrollExtractor:
             employer="ACME",
             period_year=2026,
             period_month=1,
+            payment_date=date(2026, 1, 30),
             worked_days=30,
             declared_net_pay_clp=None,
+            employment_contract_kind=None,
             template_id="acme-v1",
             rows=[],
         )

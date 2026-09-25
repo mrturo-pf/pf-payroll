@@ -11,11 +11,12 @@ from fastapi.responses import Response
 from dataclasses import dataclass
 from pydantic import BaseModel
 
-from payroll.application.errors import PayrollError
+from payroll.application.errors import PayrollError, PayrollValidationError
 from payroll.application.dto import (
     AssignPlansCommandDTO,
     GeneratedPayrollReportDTO,
     ImportedPayrollPeriodDTO,
+    ImportPayrollResultDTO,
     ImportPayrollRowDTO,
     PdfImportPreviewDTO,
     ReviewPayrollPeriodCommandDTO,
@@ -67,12 +68,27 @@ if TYPE_CHECKING:
 router = APIRouter(prefix="/payroll", tags=["payroll"])
 
 
+class UnresolvedRowWarning(BaseModel):
+    """Represent one submitted row whose concept_code could not be resolved.
+
+    Surfaced by POST /payroll/import/rows in mode="validate" so a caller can
+    fix these specific rows (identified by their position in the submitted
+    `rows` list) before resending with mode="commit".
+    """
+
+    row_index: int
+    amount_clp: str
+    period_year: int
+    period_month: int
+
+
 class ImportPayrollResponse(BaseModel):
     """Represent Import Payroll Response."""
 
     imported_periods: int
     imported_items: int
     periods: list[ImportedPayrollPeriodDTO]
+    unresolved_rows: list[UnresolvedRowWarning] = []
 
 
 class ImportPayrollRowRequest(BaseModel):
@@ -80,7 +96,10 @@ class ImportPayrollRowRequest(BaseModel):
 
     Mirrors ImportPayrollRowDTO's shape (minus the output-only
     expected_net_pay_clp/net_pay_difference_clp fields, which the repository
-    computes -- callers never send those in).
+    computes -- callers never send those in). concept_code is optional here
+    (unlike ImportPayrollRowDTO, where it is required) so that a row a human
+    hasn't finished resolving yet can still be submitted with mode="validate"
+    -- see ImportPayrollRowsRequest below.
     """
 
     employer: str
@@ -89,7 +108,7 @@ class ImportPayrollRowRequest(BaseModel):
     payment_date: date
     status: PayrollStatusKind
     employment_contract_kind: EmploymentContractKind
-    concept_code: str
+    concept_code: str | None
     amount_clp: Decimal
     worked_days: int = 30
     declared_net_pay_clp: Decimal | None = None
@@ -98,10 +117,21 @@ class ImportPayrollRowRequest(BaseModel):
 class ImportPayrollRowsRequest(BaseModel):
     """Represent the request body for POST /payroll/import/rows.
 
-    mode="commit" persists everything, exactly like POST /payroll/import.
-    mode="validate" runs the exact same pipeline -- so contributions, taxes
-    and net-pay warnings are genuinely computed -- but discards every write
-    at the end via TransactionalSessionScope.resolve("validate").
+    mode="commit" persists everything, exactly like POST /payroll/import --
+    and requires every row to already have a resolved concept_code; any row
+    with concept_code=null makes the whole request fail with 400, nothing is
+    written. mode="validate" runs the exact same pipeline on the rows that
+    *do* have a resolved concept_code -- so contributions, taxes and net-pay
+    warnings are genuinely computed -- while rows still missing a
+    concept_code are reported back via `unresolved_rows` instead of failing
+    the request, then everything is discarded via
+    TransactionalSessionScope.resolve("validate").
+
+    Known side effect, in both modes: ProcessImportedPayrollPeriods calls
+    pf-rates to resolve missing market data (exchange rates/UTM), and that
+    call may cache data in pf-rates' own database. A pf-payroll rollback
+    never undoes that -- harmless (public, non-sensitive reference data), but
+    mode="validate" is not 100% free of side effects end-to-end.
     """
 
     mode: Literal["commit", "validate"] = "commit"
@@ -458,30 +488,68 @@ async def import_payroll_rows(
     TransactionalSessionScope: mode="commit" makes every write durable,
     mode="validate" runs the same computations then discards all of them.
 
+    Rows with an unresolved concept_code are split out before either use
+    case runs: mode="commit" rejects the whole request outright (400) if any
+    remain, while mode="validate" simply excludes them from the computed
+    pipeline and reports them back via `unresolved_rows` -- letting a caller
+    iterate (fix a few rows, validate again) without a hard failure each
+    time. See ImportPayrollRowsRequest's docstring for the full contract.
+
     One try/except around both steps (unlike /payroll/import's two separate
     blocks) on purpose: any failure here must resolve the scope to
     "validate" before re-raising, regardless of the requested mode -- a
     half-applied import must never be left committed.
     """
-    rows = [
-        ImportPayrollRowDTO(
-            employer=row.employer,
+    unresolved = [
+        UnresolvedRowWarning(
+            row_index=index,
+            amount_clp=str(row.amount_clp),
             period_year=row.period_year,
             period_month=row.period_month,
-            payment_date=row.payment_date,
-            status=row.status,
-            employment_contract_kind=row.employment_contract_kind,
-            concept_code=row.concept_code,
-            amount_clp=row.amount_clp,
-            worked_days=row.worked_days,
-            declared_net_pay_clp=row.declared_net_pay_clp,
         )
-        for row in payload.rows
+        for index, row in enumerate(payload.rows)
+        if row.concept_code is None
     ]
 
     try:
-        result = await use_case.from_rows(rows)
-        result = await process_use_case.execute(result)
+        if unresolved and payload.mode == "commit":
+            raise PayrollValidationError(
+                "Cannot commit: row(s) at index "
+                f"{[item.row_index for item in unresolved]} have no resolved "
+                'concept_code. Resend with mode="validate" to preview the '
+                "rest, or resolve them first."
+            )
+
+        rows = [
+            ImportPayrollRowDTO(
+                employer=row.employer,
+                period_year=row.period_year,
+                period_month=row.period_month,
+                payment_date=row.payment_date,
+                status=row.status,
+                employment_contract_kind=row.employment_contract_kind,
+                concept_code=row.concept_code,
+                amount_clp=row.amount_clp,
+                worked_days=row.worked_days,
+                declared_net_pay_clp=row.declared_net_pay_clp,
+            )
+            for row in payload.rows
+            if row.concept_code is not None
+        ]
+
+        if payload.rows and not rows:
+            # Every submitted row lacks a concept_code (commit already
+            # raised above, so we can only get here in mode="validate"):
+            # nothing to persist yet, but this is not an error.
+            result = ImportPayrollResultDTO(
+                imported_periods=0, imported_items=0, periods=[]
+            )
+        else:
+            # Either every row is resolved, or payload.rows was empty to
+            # begin with -- in which case from_rows([])'s own "must not be
+            # empty" guard raises, unchanged from before this feature.
+            result = await use_case.from_rows(rows)
+            result = await process_use_case.execute(result)
     except PayrollError as exc:
         await scope.resolve("validate")
         raise to_http_exception(exc, default_status=400) from exc
@@ -492,6 +560,7 @@ async def import_payroll_rows(
         imported_periods=result.imported_periods,
         imported_items=result.imported_items,
         periods=list(result.periods),
+        unresolved_rows=unresolved,
     )
 
 

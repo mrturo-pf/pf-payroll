@@ -46,8 +46,13 @@ class FakeTransactionalSessionScope:
 class FakeImportPayrollFromRows:
     """Test double for ImportPayroll.from_rows()."""
 
+    def __init__(self) -> None:
+        """Initialize the instance."""
+        self.called_with: list[object] | None = None
+
     async def from_rows(self, rows: list[object]) -> ImportPayrollResultDTO:
         """Return a canned successful import result."""
+        self.called_with = rows
         assert rows[0].employer == "ACME"
         assert rows[0].concept_code == "SALARY_BASE"
         return ImportPayrollResultDTO(
@@ -80,15 +85,19 @@ class FakeProcessImportedPayrollPeriods:
         return result
 
 
-def _override_happy_path(scope: FakeTransactionalSessionScope) -> None:
+def _override_happy_path(
+    scope: FakeTransactionalSessionScope,
+) -> FakeImportPayrollFromRows:
     """Wire the fake use cases + a given fake scope into the app."""
+    fake_import = FakeImportPayrollFromRows()
     app.dependency_overrides[get_transactional_session] = lambda: scope
     app.dependency_overrides[get_import_payroll_use_case_for_rows_import] = lambda: (
-        FakeImportPayrollFromRows()
+        fake_import
     )
     app.dependency_overrides[
         get_process_imported_payroll_periods_use_case_for_rows_import
     ] = lambda: FakeProcessImportedPayrollPeriods()
+    return fake_import
 
 
 def test_import_payroll_rows_endpoint_defaults_to_commit_mode() -> None:
@@ -148,20 +157,17 @@ def test_import_payroll_rows_endpoint_validate_mode_never_commits() -> None:
     assert scope.resolved_with == ["validate"]
 
 
-def test_import_payroll_rows_endpoint_rejects_unresolved_concept_code() -> None:
-    """A row with concept_code=null (unresolved) fails schema validation.
+def test_import_payroll_rows_endpoint_commit_rejects_unresolved_concept_code() -> None:
+    """mode="commit" fails outright (400) if any row has no concept_code.
 
-    This is how the design's "commit must reject unresolved concepts"
-    requirement is enforced -- ImportPayrollRowRequest.concept_code is a
-    required str, so FastAPI/pydantic reject a null value before any
-    application code runs. Dependencies are still overridden: FastAPI
-    resolves every Depends() while building the request (including
-    get_transactional_session, which opens a real DB connection) before it
-    inspects body-validation errors, so a real database would otherwise be
-    required even for a request that never reaches the route body.
+    Per the design recommendation (section 3), commit must reject explicitly
+    -- unlike validate (see the tests below), which reports these rows back
+    instead of failing. concept_code is nullable at the schema level (so a
+    caller can submit a still-unresolved row at all), but the route itself
+    enforces the business rule before calling any use case.
     """
     scope = FakeTransactionalSessionScope()
-    _override_happy_path(scope)
+    fake_import = _override_happy_path(scope)
     client = TestClient(app, headers={"X-API-Key": "test-key"})
     row = {**SAMPLE_ROW, "concept_code": None}
 
@@ -170,8 +176,89 @@ def test_import_payroll_rows_endpoint_rejects_unresolved_concept_code() -> None:
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 422
-    assert scope.resolved_with == []
+    assert response.status_code == 400
+    assert "index [0]" in response.json()["detail"]
+    assert fake_import.called_with is None
+    assert scope.resolved_with == ["validate"]
+
+
+def test_import_payroll_rows_endpoint_validate_reports_unresolved_rows() -> None:
+    """mode="validate" never fails on unresolved concept_code -- it warns.
+
+    Resolved rows still run through the exact same pipeline (so their
+    computed contributions/warnings are genuine), while unresolved rows are
+    excluded from that pipeline and reported back via `unresolved_rows`
+    instead, identified by their index in the submitted list.
+    """
+    scope = FakeTransactionalSessionScope()
+    fake_import = _override_happy_path(scope)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
+    unresolved_row = {
+        **SAMPLE_ROW,
+        "concept_code": None,
+        "amount_clp": "5000",
+    }
+
+    try:
+        response = client.post(
+            "/payroll/import/rows",
+            json={"mode": "validate", "rows": [SAMPLE_ROW, unresolved_row]},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["imported_periods"] == 1
+    assert body["unresolved_rows"] == [
+        {
+            "row_index": 1,
+            "amount_clp": "5000",
+            "period_year": 2026,
+            "period_month": 1,
+        }
+    ]
+    assert fake_import.called_with is not None
+    assert len(fake_import.called_with) == 1
+    assert scope.resolved_with == ["validate"]
+
+
+def test_import_payroll_rows_endpoint_validate_all_unresolved_skips_pipeline() -> None:
+    """Validate with zero resolved rows never calls from_rows() at all.
+
+    from_rows([]) would otherwise raise "rows must not be empty" -- a
+    confusing error for what is really "nothing was resolved yet". The route
+    short-circuits to an explicit empty result instead.
+    """
+    scope = FakeTransactionalSessionScope()
+    fake_import = _override_happy_path(scope)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
+    row = {**SAMPLE_ROW, "concept_code": None}
+
+    try:
+        response = client.post(
+            "/payroll/import/rows", json={"mode": "validate", "rows": [row]}
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "imported_periods": 0,
+        "imported_items": 0,
+        "periods": [],
+        "unresolved_rows": [
+            {
+                "row_index": 0,
+                "amount_clp": "1000000",
+                "period_year": 2026,
+                "period_month": 1,
+            }
+        ],
+    }
+    assert fake_import.called_with is None
+    assert scope.resolved_with == ["validate"]
 
 
 def test_import_payroll_rows_endpoint_rejects_unknown_mode() -> None:

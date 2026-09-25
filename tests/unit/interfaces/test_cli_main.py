@@ -20,6 +20,8 @@ from payroll.application.dto import (
     ImportedPayrollPeriodDTO,
     PayrollPeriodDetailDTO,
     PayrollSummaryDTO,
+    PdfImportPreviewDTO,
+    PdfImportPreviewRowDTO,
 )
 from payroll.domain.contributions import EmploymentContractKind
 from helpers.interface_stubs import sample_health_plan, sample_pension_plan
@@ -535,3 +537,113 @@ def test_report_pdf_uses_default_output_path(
     assert result.exit_code == 0
     assert (tmp_path / "payroll-period-9.pdf").read_bytes() == b"%PDF"
     assert json.loads(result.stdout)["output_path"] == "payroll-period-9.pdf"
+
+
+def test_template_test_async_delegates_to_preview_use_case(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Test _template_test_async wires PreviewPdfImport + the template extractor."""
+    pdf_path = tmp_path / "liquidacion.pdf"
+    pdf_path.write_bytes(b"%PDF-fake")
+    preview = PdfImportPreviewDTO(
+        employer="ACME_CL",
+        period_year=2026,
+        period_month=8,
+        worked_days=30,
+        declared_net_pay_clp=Decimal("1000000"),
+        template_id="acme-v1",
+        rows=[],
+    )
+
+    class FakePreviewPdfImport:
+        """Test double for PreviewPdfImport."""
+
+        def __init__(self, extractor: object) -> None:
+            """Initialize the instance."""
+            assert isinstance(extractor, cli_main.TemplatePdfPayrollExtractor)
+
+        async def execute(self, filename: str, content: bytes) -> PdfImportPreviewDTO:
+            """Handle execute."""
+            assert filename == "liquidacion.pdf"
+            assert content == b"%PDF-fake"
+            return preview
+
+    monkeypatch.setattr(cli_main, "PreviewPdfImport", FakePreviewPdfImport)
+
+    assert asyncio.run(cli_main._template_test_async(pdf_path)) is preview
+
+
+def test_template_test_command_reports_unresolved_rows(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Test template-test prints a summary of unresolved rows plus full JSON."""
+    pdf_path = tmp_path / "liquidacion.pdf"
+    pdf_path.write_bytes(b"%PDF-fake")
+    preview = PdfImportPreviewDTO(
+        employer="ACME_CL",
+        period_year=2026,
+        period_month=8,
+        worked_days=30,
+        declared_net_pay_clp=Decimal("1000000"),
+        template_id="acme-v1",
+        rows=[
+            PdfImportPreviewRowDTO(
+                raw_label="SUELDO",
+                extracted_amount_clp=Decimal("1200000"),
+                kind="income",
+                concept_code="SALARY_BASE",
+                confidence=0.9,
+            ),
+            PdfImportPreviewRowDTO(
+                raw_label="BONO RARO",
+                extracted_amount_clp=Decimal("5000"),
+                kind="income",
+                concept_code=None,
+                confidence=0.0,
+            ),
+        ],
+    )
+
+    async def fake_template_test_async(file_path: Path) -> PdfImportPreviewDTO:
+        """Handle fake template test async."""
+        assert file_path == pdf_path
+        return preview
+
+    monkeypatch.setattr(cli_main, "_template_test_async", fake_template_test_async)
+
+    result = CliRunner().invoke(cli_main.app, ["template-test", str(pdf_path)])
+
+    assert result.exit_code == 0
+    assert "template_id=acme-v1 rows=2 unresolved=1" in result.stderr
+    assert "unresolved: 'BONO RARO' (5000)" in result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["template_id"] == "acme-v1"
+    assert len(payload["rows"]) == 2
+
+
+def test_template_test_command_reports_no_template_matched(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Test template-test's summary line when no template matched at all."""
+    pdf_path = tmp_path / "liquidacion.pdf"
+    pdf_path.write_bytes(b"%PDF-fake")
+    preview = PdfImportPreviewDTO(
+        employer=None,
+        period_year=None,
+        period_month=None,
+        worked_days=None,
+        declared_net_pay_clp=None,
+        template_id=None,
+        rows=[],
+    )
+
+    async def fake_template_test_async(file_path: Path) -> PdfImportPreviewDTO:
+        """Handle fake template test async."""
+        return preview
+
+    monkeypatch.setattr(cli_main, "_template_test_async", fake_template_test_async)
+
+    result = CliRunner().invoke(cli_main.app, ["template-test", str(pdf_path)])
+
+    assert result.exit_code == 0
+    assert "template_id=(none matched) rows=0 unresolved=0" in result.stderr

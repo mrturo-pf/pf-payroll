@@ -19,6 +19,7 @@ from payroll.application.dto import (
     ComputeContributionsCommandDTO,
     ComputeIncomeTaxCommandDTO,
     GeneratedPayrollReportDTO,
+    PdfImportPreviewDTO,
     ReviewPayrollPeriodCommandDTO,
 )
 from payroll.application.use_cases.assign_plans import AssignPlans
@@ -27,6 +28,7 @@ from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
+from payroll.application.use_cases.preview_pdf_import import PreviewPdfImport
 from payroll.application.use_cases.process_imported_payroll_periods import (
     ProcessImportedPayrollPeriods,
 )
@@ -36,6 +38,7 @@ from payroll.config import settings
 from payroll.infrastructure.http.pf_rates_client import PfRatesClient
 from payroll.infrastructure.http.income_tax_bracket_client import IncomeTaxBracketClient
 from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
+from payroll.infrastructure.pdf_import.extractor import TemplatePdfPayrollExtractor
 from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import (
     WeasyPrintPayrollReportRenderer,
 )
@@ -223,6 +226,12 @@ async def _generate_payroll_report_async(period_id: int) -> GeneratedPayrollRepo
         return await use_case.execute(period_id)
 
 
+async def _template_test_async(file_path: Path) -> PdfImportPreviewDTO:
+    """Preview a PDF against the current templates -- no DB, no persistence."""
+    use_case = PreviewPdfImport(TemplatePdfPayrollExtractor())
+    return await use_case.execute(file_path.name, file_path.read_bytes())
+
+
 @app.callback()
 def main() -> None:
     """Payroll CLI."""
@@ -332,6 +341,35 @@ def report_pdf(
             "bytes_written": len(report.content),
         }
     )
+
+
+@app.command("template-test")
+def template_test(
+    file_path: Annotated[
+        Path, typer.Argument(exists=True, dir_okay=False, readable=True)
+    ],
+) -> None:
+    """Preview a payroll PDF against the current templates without persisting.
+
+    Helper for building/adjusting infrastructure/pdf_import/templates/*.json
+    by hand (see pdf-import-design-recommendation.md section 5): prints a
+    one-line summary of which template matched (if any) and how many rows
+    are still unresolved, followed by the full preview JSON. Iterate on a
+    template's `pdf_label_pattern`s and rerun until this reports zero
+    unresolved rows -- no code change or DB access required.
+    """
+    preview = _run_command(_template_test_async(file_path))
+    unresolved = [row for row in preview.rows if row.concept_code is None]
+    typer.echo(
+        f"template_id={preview.template_id or '(none matched)'} "
+        f"rows={len(preview.rows)} unresolved={len(unresolved)}",
+        err=True,
+    )
+    for row in unresolved:
+        typer.echo(
+            f"  unresolved: {row.raw_label!r} ({row.extracted_amount_clp})", err=True
+        )
+    _emit_json(preview)
 
 
 if __name__ == "__main__":

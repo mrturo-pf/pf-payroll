@@ -306,6 +306,7 @@ def test_payroll_import_endpoint() -> None:
                 "complementary_insurance_validation": None,
             }
         ],
+        "unresolved_rows": [],
     }
 
 

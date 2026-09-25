@@ -290,8 +290,66 @@ honestamente: que varios `session.commit()` internos de verdad desaparecen con
   al 100% desde antes de este feature). Si se quiere ese smoke test completo algún día,
   ya queda toda la infraestructura de testcontainers lista para reusar.
 
+## Cierre de gaps vs. el diseño original (2026-09-25)
+
+Tras el deploy de la Etapa 3, se revisó `pdf-import-design-recommendation.md` de punta a
+punta contra el código real (no solo contra lo que decía la tabla de "Estado general" de
+este documento) y aparecieron tres divergencias reales frente al diseño aprobado. Las
+tres se cerraron en la misma sesión:
+
+1. **`validate` ya no rechaza `concept_code` sin resolver — solo `commit` lo hace.**
+   La sección 3 del diseño es explícita: *"`commit` debe fallar; `validate` no falla —
+   devuelve warning con el detalle"*. La Etapa 3 original hacía `concept_code: str`
+   obligatorio a nivel de schema, rechazando con 422 en **ambos** modos por igual — más
+   simple, pero no lo que pedía el diseño, y un problema real el día que un empleador
+   nuevo (sin plantilla completa) necesite iterar con `validate` antes de tener todo
+   resuelto.
+   - `ImportPayrollRowRequest.concept_code` pasó a `str | None` (sigue siendo un campo
+     requerido en el JSON — debe estar presente — pero ahora puede ser `null`).
+   - La ruta separa las filas resueltas de las no resueltas **antes** de llamar a
+     ningún use case: `mode="commit"` con alguna fila sin resolver lanza
+     `PayrollValidationError` (400) explícito, mencionando los índices afectados, sin
+     tocar `from_rows()`. `mode="validate"` corre el pipeline real solo sobre las filas
+     resueltas (si hay alguna) y reporta las demás en el nuevo campo
+     `ImportPayrollResponse.unresolved_rows` (índice + monto + período), sin fallar.
+   - Caso borde cubierto explícitamente: si `validate` recibe filas pero **ninguna**
+     tiene `concept_code` resuelto, la ruta nunca llama a `from_rows()` (que rechazaría
+     con "rows must not be empty", un error confuso para este caso) — devuelve
+     `imported_periods=0` directo más el warning. Si en cambio la lista de `rows` viene
+     literalmente vacía (`[]`), sí se deja que `from_rows([])` dispare su guardia
+     existente sin cambios, para no alterar ese comportamiento previo.
+   - Tests nuevos en `test_payroll_import_rows.py`: rechazo explícito en `commit`
+     (400, no 422), `validate` con mezcla resuelto/no-resuelto (reporta y sigue),
+     `validate` con todo sin resolver (pipeline nunca se llama).
+2. **Nuevo comando CLI `payroll template-test <pdf>`.** La sección 5 punto 4 del
+   diseño pedía un comando para iterar una plantilla sin programar
+   (`payroll template test <pdf> --employer ...`). No existía. Se agregó
+   `template-test` en `interfaces/cli/main.py` (sin el flag `--employer`: el
+   auto-detect de plantilla ya existe y es exactamente lo que hay que probar, forzar
+   un empleador de antemano sería probar otra cosa) — corre `PreviewPdfImport` con el
+   extractor real (sin DB, sin persistencia), imprime un resumen de una línea
+   (`template_id=... rows=N unresolved=M`) más el detalle de cada fila sin resolver
+   por `stderr`, y el preview completo en JSON por `stdout`. Probado a mano contra
+   `secrets/Liquidación_202608.PDF`: `template_id=walmart-chile-v1 rows=13
+   unresolved=0`, confirma que la plantilla real sigue resolviendo el 100%.
+3. **El caveat de pf-rates ahora está en el docstring público del endpoint.** El
+   brief pedía decirlo explícito para quien consuma la API (no solo en los `.md`
+   internos). Se agregó al docstring de `ImportPayrollRowsRequest` en
+   `interfaces/api/routes/payroll.py` (visible en el OpenAPI/Swagger del servicio):
+   ni `commit` ni `validate` deshacen el cacheo de market data que pf-rates pueda
+   hacer en su propia base al resolver tipo de cambio/UTM faltante.
+
+**Verificación:** 359 tests (+5 vs. el cierre de la Etapa 3), 100% cobertura,
+lint/typecheck/vulture limpios.
+
 ## Historial de cambios
 
+- **2026-09-25 (cont. 7)** — Cierre de 3 gaps vs. el diseño original detectados en una
+  revisión punta a punta (ver sección "Cierre de gaps" arriba): `validate` ya no
+  rechaza `concept_code` sin resolver (solo `commit` lo hace, con 400 explícito y
+  `unresolved_rows` en la respuesta), nuevo comando CLI `payroll template-test <pdf>`,
+  y el caveat de pf-rates ahora vive en el docstring público del endpoint. 359 tests,
+  100% cobertura, lint/typecheck/vulture limpios.
 - **2026-09-25 (cont. 6)** — Fix post-push: el push de la Etapa 3 rompió CI (`gh run list`
   mostró el run en `failure`). Causa: dos tests de `test_payroll_import_rows.py`
   (los que esperaban 422 por body inválido) no tenían overrides de dependencias,

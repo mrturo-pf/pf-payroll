@@ -97,14 +97,14 @@ def _build_row(
     if field is not None:
         return PdfImportPreviewRowDTO(
             raw_label=label,
-            extracted_amount_clp=amount,
+            amount_clp=amount,
             kind=field.kind,
             concept_code=field.concept_code,
             confidence=field.confidence,
         )
     return PdfImportPreviewRowDTO(
         raw_label=label,
-        extracted_amount_clp=amount,
+        amount_clp=amount,
         kind=_infer_unmatched_kind(original_line, column_boundary),
         concept_code=None,
         confidence=_UNMATCHED_CONFIDENCE,

@@ -55,20 +55,26 @@ curl -X POST http://127.0.0.1:8000/payroll/import/rows \
   -H "Content-Type: application/json" \
   -d '{
     "mode": "validate",
+    "employer": "ACME",
+    "period_year": 2026,
+    "period_month": 1,
+    "payment_date": "2026-01-31",
+    "status": "actual",
+    "employment_contract_kind": "indefinite",
     "rows": [
       {
-        "employer": "ACME",
-        "period_year": 2026,
-        "period_month": 1,
-        "payment_date": "2026-01-31",
-        "status": "actual",
-        "employment_contract_kind": "indefinite",
         "concept_code": "SALARY_BASE",
         "amount_clp": "1000000"
       }
     ]
   }'
 ```
+
+Notice the header fields (`employer`, `period_year`, `period_month`, `payment_date`,
+`status`, `employment_contract_kind`, plus the optional `worked_days`/
+`declared_net_pay_clp`) are declared **once**, not per row -- every row submitted here
+comes from the same single payslip, mirroring `PdfImportPreviewResponse`'s own shape
+(one set of header fields, `rows` carrying only `concept_code`/`amount_clp` each).
 
 `mode="validate"` (shown above) runs the exact same pipeline as `mode="commit"` --
 contributions, taxes, and net-pay warnings are genuinely computed -- but every write is

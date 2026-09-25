@@ -32,14 +32,14 @@ class FakePreviewPdfImport:
             rows=[
                 PdfImportPreviewRowDTO(
                     raw_label="SUELDO",
-                    extracted_amount_clp=Decimal("1000000"),
+                    amount_clp=Decimal("1000000"),
                     kind="income",
                     concept_code="SALARY_BASE",
                     confidence=0.9,
                 ),
                 PdfImportPreviewRowDTO(
                     raw_label="BONO RARO",
-                    extracted_amount_clp=Decimal("5000"),
+                    amount_clp=Decimal("5000"),
                     kind="income",
                     concept_code=None,
                     confidence=0.0,
@@ -84,14 +84,14 @@ def test_preview_pdf_import_endpoint_returns_preview() -> None:
         "rows": [
             {
                 "raw_label": "SUELDO",
-                "extracted_amount_clp": "1000000",
+                "amount_clp": "1000000",
                 "kind": "income",
                 "concept_code": "SALARY_BASE",
                 "confidence": 0.9,
             },
             {
                 "raw_label": "BONO RARO",
-                "extracted_amount_clp": "5000",
+                "amount_clp": "5000",
                 "kind": "income",
                 "concept_code": None,
                 "confidence": 0.0,

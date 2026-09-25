@@ -366,9 +366,7 @@ def template_test(
         err=True,
     )
     for row in unresolved:
-        typer.echo(
-            f"  unresolved: {row.raw_label!r} ({row.extracted_amount_clp})", err=True
-        )
+        typer.echo(f"  unresolved: {row.raw_label!r} ({row.amount_clp})", err=True)
     _emit_json(preview)
 
 

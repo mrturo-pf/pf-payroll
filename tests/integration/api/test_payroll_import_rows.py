@@ -16,18 +16,36 @@ from payroll.interfaces.api.dependencies import (
 )
 from payroll.interfaces.api.main import app
 
-SAMPLE_ROW = {
+SAMPLE_HEADER = {
     "employer": "ACME",
     "period_year": 2026,
     "period_month": 1,
     "payment_date": "2026-01-31",
     "status": "actual",
     "employment_contract_kind": "indefinite",
-    "concept_code": "SALARY_BASE",
-    "amount_clp": "1000000",
     "worked_days": 30,
     "declared_net_pay_clp": "950000",
 }
+
+SAMPLE_ROW = {
+    "concept_code": "SALARY_BASE",
+    "amount_clp": "1000000",
+}
+
+
+def _payload(
+    rows: list[dict[str, object]], mode: str | None = None
+) -> dict[str, object]:
+    """Build a full request body: shared header once + the given rows.
+
+    Mirrors the real request shape: employer/period/payment/contract-kind
+    live once at the top level (same as PdfImportPreviewResponse's own
+    header), never repeated per row.
+    """
+    payload: dict[str, object] = {**SAMPLE_HEADER, "rows": rows}
+    if mode is not None:
+        payload["mode"] = mode
+    return payload
 
 
 class FakeTransactionalSessionScope:
@@ -107,7 +125,7 @@ def test_import_payroll_rows_endpoint_defaults_to_commit_mode() -> None:
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
-        response = client.post("/payroll/import/rows", json={"rows": [SAMPLE_ROW]})
+        response = client.post("/payroll/import/rows", json=_payload([SAMPLE_ROW]))
     finally:
         app.dependency_overrides.clear()
 
@@ -128,7 +146,7 @@ def test_import_payroll_rows_endpoint_accepts_explicit_commit_mode() -> None:
     try:
         response = client.post(
             "/payroll/import/rows",
-            json={"mode": "commit", "rows": [SAMPLE_ROW]},
+            json=_payload([SAMPLE_ROW], mode="commit"),
         )
     finally:
         app.dependency_overrides.clear()
@@ -146,7 +164,7 @@ def test_import_payroll_rows_endpoint_validate_mode_never_commits() -> None:
     try:
         response = client.post(
             "/payroll/import/rows",
-            json={"mode": "validate", "rows": [SAMPLE_ROW]},
+            json=_payload([SAMPLE_ROW], mode="validate"),
         )
     finally:
         app.dependency_overrides.clear()
@@ -172,7 +190,7 @@ def test_import_payroll_rows_endpoint_commit_rejects_unresolved_concept_code() -
     row = {**SAMPLE_ROW, "concept_code": None}
 
     try:
-        response = client.post("/payroll/import/rows", json={"rows": [row]})
+        response = client.post("/payroll/import/rows", json=_payload([row]))
     finally:
         app.dependency_overrides.clear()
 
@@ -193,16 +211,12 @@ def test_import_payroll_rows_endpoint_validate_reports_unresolved_rows() -> None
     scope = FakeTransactionalSessionScope()
     fake_import = _override_happy_path(scope)
     client = TestClient(app, headers={"X-API-Key": "test-key"})
-    unresolved_row = {
-        **SAMPLE_ROW,
-        "concept_code": None,
-        "amount_clp": "5000",
-    }
+    unresolved_row = {"concept_code": None, "amount_clp": "5000"}
 
     try:
         response = client.post(
             "/payroll/import/rows",
-            json={"mode": "validate", "rows": [SAMPLE_ROW, unresolved_row]},
+            json=_payload([SAMPLE_ROW, unresolved_row], mode="validate"),
         )
     finally:
         app.dependency_overrides.clear()
@@ -210,14 +224,7 @@ def test_import_payroll_rows_endpoint_validate_reports_unresolved_rows() -> None
     assert response.status_code == 200
     body = response.json()
     assert body["imported_periods"] == 1
-    assert body["unresolved_rows"] == [
-        {
-            "row_index": 1,
-            "amount_clp": "5000",
-            "period_year": 2026,
-            "period_month": 1,
-        }
-    ]
+    assert body["unresolved_rows"] == [{"row_index": 1, "amount_clp": "5000"}]
     assert fake_import.called_with is not None
     assert len(fake_import.called_with) == 1
     assert scope.resolved_with == ["validate"]
@@ -237,7 +244,7 @@ def test_import_payroll_rows_endpoint_validate_all_unresolved_skips_pipeline() -
 
     try:
         response = client.post(
-            "/payroll/import/rows", json={"mode": "validate", "rows": [row]}
+            "/payroll/import/rows", json=_payload([row], mode="validate")
         )
     finally:
         app.dependency_overrides.clear()
@@ -248,14 +255,7 @@ def test_import_payroll_rows_endpoint_validate_all_unresolved_skips_pipeline() -
         "imported_periods": 0,
         "imported_items": 0,
         "periods": [],
-        "unresolved_rows": [
-            {
-                "row_index": 0,
-                "amount_clp": "1000000",
-                "period_year": 2026,
-                "period_month": 1,
-            }
-        ],
+        "unresolved_rows": [{"row_index": 0, "amount_clp": "1000000"}],
     }
     assert fake_import.called_with is None
     assert scope.resolved_with == ["validate"]
@@ -274,7 +274,7 @@ def test_import_payroll_rows_endpoint_rejects_unknown_mode() -> None:
     try:
         response = client.post(
             "/payroll/import/rows",
-            json={"mode": "dry-run", "rows": [SAMPLE_ROW]},
+            json=_payload([SAMPLE_ROW], mode="dry-run"),
         )
     finally:
         app.dependency_overrides.clear()
@@ -311,9 +311,7 @@ def test_import_payroll_rows_endpoint_rolls_back_on_validation_error() -> None:
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
-        response = client.post(
-            "/payroll/import/rows", json={"mode": "commit", "rows": []}
-        )
+        response = client.post("/payroll/import/rows", json=_payload([], mode="commit"))
     finally:
         app.dependency_overrides.clear()
 
@@ -349,7 +347,7 @@ def test_import_payroll_rows_endpoint_returns_502_when_processing_raises() -> No
     )
 
     try:
-        response = client.post("/payroll/import/rows", json={"rows": [SAMPLE_ROW]})
+        response = client.post("/payroll/import/rows", json=_payload([SAMPLE_ROW]))
     finally:
         app.dependency_overrides.clear()
 

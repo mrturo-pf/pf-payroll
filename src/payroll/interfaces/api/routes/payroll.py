@@ -73,13 +73,14 @@ class UnresolvedRowWarning(BaseModel):
 
     Surfaced by POST /payroll/import/rows in mode="validate" so a caller can
     fix these specific rows (identified by their position in the submitted
-    `rows` list) before resending with mode="commit".
+    `rows` list) before resending with mode="commit". No period/employer
+    fields here -- those now live once at ImportPayrollRowsRequest's top
+    level, so repeating them per warning would just be duplicate
+    information the caller already sent.
     """
 
     row_index: int
     amount_clp: str
-    period_year: int
-    period_month: int
 
 
 class ImportPayrollResponse(BaseModel):
@@ -92,30 +93,33 @@ class ImportPayrollResponse(BaseModel):
 
 
 class ImportPayrollRowRequest(BaseModel):
-    """Represent a single already-structured payroll row to persist.
+    """Represent a single already-structured payroll concept to persist.
 
-    Mirrors ImportPayrollRowDTO's shape (minus the output-only
-    expected_net_pay_clp/net_pay_difference_clp fields, which the repository
-    computes -- callers never send those in). concept_code is optional here
-    (unlike ImportPayrollRowDTO, where it is required) so that a row a human
-    hasn't finished resolving yet can still be submitted with mode="validate"
-    -- see ImportPayrollRowsRequest below.
+    Deliberately just concept_code + amount_clp: employer, period_year,
+    period_month, payment_date, status, employment_contract_kind,
+    worked_days, and declared_net_pay_clp all live once at
+    ImportPayrollRowsRequest's top level instead of being repeated per row --
+    every row submitted through this endpoint comes from the same single
+    payslip (see PdfImportPreviewResponse, which has the identical shape:
+    one set of header fields, N rows each carrying only their own
+    concept-level data). concept_code is optional here (unlike
+    ImportPayrollRowDTO, where it is required) so that a row a human hasn't
+    finished resolving yet can still be submitted with mode="validate" --
+    see ImportPayrollRowsRequest below.
     """
 
-    employer: str
-    period_year: int
-    period_month: int
-    payment_date: date
-    status: PayrollStatusKind
-    employment_contract_kind: EmploymentContractKind
     concept_code: str | None
     amount_clp: Decimal
-    worked_days: int = 30
-    declared_net_pay_clp: Decimal | None = None
 
 
 class ImportPayrollRowsRequest(BaseModel):
     """Represent the request body for POST /payroll/import/rows.
+
+    All rows come from one payslip (e.g. one PdfImportPreviewResponse
+    confirmed by a human), so employer/period/payment/contract-kind fields
+    are declared once here instead of once per row -- mirroring
+    PdfImportPreviewResponse's own header-fields-once, rows-carry-only-
+    their-own-data shape.
 
     mode="commit" persists everything, exactly like POST /payroll/import --
     and requires every row to already have a resolved concept_code; any row
@@ -135,6 +139,14 @@ class ImportPayrollRowsRequest(BaseModel):
     """
 
     mode: Literal["commit", "validate"] = "commit"
+    employer: str
+    period_year: int
+    period_month: int
+    payment_date: date
+    status: PayrollStatusKind
+    employment_contract_kind: EmploymentContractKind
+    worked_days: int = 30
+    declared_net_pay_clp: Decimal | None = None
     rows: list[ImportPayrollRowRequest]
 
 
@@ -142,7 +154,7 @@ class PdfImportPreviewRowRead(BaseModel):
     """Represent a single candidate row in a PDF import preview response."""
 
     raw_label: str
-    extracted_amount_clp: str
+    amount_clp: str
     kind: str
     concept_code: str | None
     confidence: float
@@ -504,8 +516,6 @@ async def import_payroll_rows(
         UnresolvedRowWarning(
             row_index=index,
             amount_clp=str(row.amount_clp),
-            period_year=row.period_year,
-            period_month=row.period_month,
         )
         for index, row in enumerate(payload.rows)
         if row.concept_code is None
@@ -522,16 +532,16 @@ async def import_payroll_rows(
 
         rows = [
             ImportPayrollRowDTO(
-                employer=row.employer,
-                period_year=row.period_year,
-                period_month=row.period_month,
-                payment_date=row.payment_date,
-                status=row.status,
-                employment_contract_kind=row.employment_contract_kind,
+                employer=payload.employer,
+                period_year=payload.period_year,
+                period_month=payload.period_month,
+                payment_date=payload.payment_date,
+                status=payload.status,
+                employment_contract_kind=payload.employment_contract_kind,
                 concept_code=row.concept_code,
                 amount_clp=row.amount_clp,
-                worked_days=row.worked_days,
-                declared_net_pay_clp=row.declared_net_pay_clp,
+                worked_days=payload.worked_days,
+                declared_net_pay_clp=payload.declared_net_pay_clp,
             )
             for row in payload.rows
             if row.concept_code is not None
@@ -582,7 +592,7 @@ def to_pdf_import_preview_response(
         rows=[
             PdfImportPreviewRowRead(
                 raw_label=row.raw_label,
-                extracted_amount_clp=str(row.extracted_amount_clp),
+                amount_clp=str(row.amount_clp),
                 kind=row.kind,
                 concept_code=row.concept_code,
                 confidence=row.confidence,

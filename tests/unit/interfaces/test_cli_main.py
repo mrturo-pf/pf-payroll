@@ -589,14 +589,14 @@ def test_template_test_command_reports_unresolved_rows(
         rows=[
             PdfImportPreviewRowDTO(
                 raw_label="SUELDO",
-                extracted_amount_clp=Decimal("1200000"),
+                amount_clp=Decimal("1200000"),
                 kind="income",
                 concept_code="SALARY_BASE",
                 confidence=0.9,
             ),
             PdfImportPreviewRowDTO(
                 raw_label="BONO RARO",
-                extracted_amount_clp=Decimal("5000"),
+                amount_clp=Decimal("5000"),
                 kind="income",
                 concept_code=None,
                 confidence=0.0,

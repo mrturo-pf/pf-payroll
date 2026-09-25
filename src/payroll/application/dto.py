@@ -186,7 +186,7 @@ class PdfImportPreviewRowDTO:
     """
 
     raw_label: str
-    extracted_amount_clp: Decimal
+    amount_clp: Decimal
     kind: PayrollConceptKind
     concept_code: str | None
     confidence: float

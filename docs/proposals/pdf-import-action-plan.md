@@ -13,7 +13,7 @@
 | --- | --- | --- |
 | 0 | Semántica de período (código + datos históricos) | **Completa** — código, datos locales, Neon (corregido por el usuario) y el CSV fuente ya alineados |
 | 1 | Endpoint 1 — preview PDF (MVP) | **Completa** — extractor por plantilla, template real de WALMART-CHILE, ruta `POST /payroll/import/pdf-preview` |
-| 2 | Endpoint 2 — confirmar, modo `commit` | No iniciada |
+| 2 | Endpoint 2 — confirmar, modo `commit` | **Completa** — `ImportPayroll.from_rows()`, ruta `POST /payroll/import/rows` |
 | 3 | Endpoint 2 — modo `validate` (rollback) | No iniciada |
 
 ## Etapa 0 — Semántica del período
@@ -151,16 +151,72 @@ construcción (`PreviewPdfImport.__init__` solo recibe el puerto `PdfPayrollExtr
 
 ## Etapa 2 — Endpoint 2, modo `commit`
 
-No iniciada. Depende de: `ImportPayroll.from_rows()` (nuevo método hermano de
-`from_bytes()`) + ruta `POST /payroll/import/rows`.
+**Completa (2026-09-25).** Reusa el 100% del pipeline existente — cero cambios en
+`SqlAlchemyPayrollImportRepository.import_rows()`, que ya era agnóstico de la fuente de
+las filas.
+
+### Qué se construyó
+
+- **Use case** (`application/use_cases/import_payroll.py`): `ImportPayroll.from_rows()`,
+  método hermano de `from_bytes()`. Salta el paso de parseo (`PayrollImporter`) y llama
+  directo a `self._repository.import_rows(rows)`. Rechaza (`PayrollValidationError`)
+  una lista vacía, igual que `from_bytes()` rechaza un archivo sin filas.
+- **Modelos de request** (`interfaces/api/routes/payroll.py`): `ImportPayrollRowRequest`
+  (espejo de `ImportPayrollRowDTO`, sin los campos de solo-salida
+  `expected_net_pay_clp`/`net_pay_difference_clp`) y `ImportPayrollRowsRequest`
+  (`mode` + `rows`). `mode` es un `Literal["commit"]` a propósito — todavía no existe
+  `"validate"`, así que mandar ese valor da 422 por schema, no por lógica de negocio
+  escrita a mano (nada de branches muertos esperando la Etapa 3).
+- **Ruta**: `POST /payroll/import/rows`, misma secuencia exacta que `/payroll/import`
+  (`ImportPayroll.from_rows()` → `ProcessImportedPayrollPeriods.execute()`), reusando
+  la respuesta `ImportPayrollResponse` ya existente.
+
+### Cómo se resuelve "rechazar concept_code sin resolver" (sección 3 del diseño)
+
+Sin código defensivo extra: `ImportPayrollRowRequest.concept_code` es `str` (no
+`str | None`), así que un row con `concept_code: null` en el body nunca llega al
+handler — FastAPI/pydantic lo rechazan con 422 antes. El tipo hace campamento donde
+antes hubiera hecho falta un `if`.
+
+### Testing
+
+- `tests/unit/application/test_import_payroll.py`: 2 tests nuevos para `from_rows()`
+  (delega bien a la fake repository / rechaza lista vacía).
+- `tests/integration/api/test_payroll_import_rows.py` (nuevo archivo): happy path
+  (modo por default y explícito), 422 en modo `validate`, 422 en `concept_code` nulo,
+  400 en lista vacía (propagado desde el use case), 502 cuando
+  `ProcessImportedPayrollPeriods` falla por una dependencia caída (mismo patrón que
+  el test equivalente de `/payroll/import`).
+- 345 tests totales, 100% cobertura (`--cov-fail-under=100`), lint/typecheck/vulture
+  limpios.
+
+### Pendiente / fuera de alcance de esta etapa
+
+- No hay smoke test manual contra una base Postgres real corriendo (no había una
+  instancia local levantada en esta sesión) — la confianza viene de que
+  `import_rows()` no se tocó (ya estaba 100% cubierto por `/payroll/import`) y de que
+  `from_rows()` es un passthrough trivial, verificado con fakes.
+- El mecanismo de transacción real (`session.commit()` vs `session.rollback()`) queda
+  para la Etapa 3 — como `import_rows()` ya hace *múltiples* `commit()` internos por
+  período (no uno solo al final), un `validate` correcto necesita replantear el scope
+  de la sesión, no solo agregar un `if mode == "commit"` al final.
 
 ## Etapa 3 — Endpoint 2, modo `validate`
 
-No iniciada. Depende de Etapa 2. Mecanismo: misma secuencia, `session.rollback()` en vez
-de `session.commit()` al final.
+No iniciada. Depende de Etapa 2 (lista). Mecanismo: NO alcanza con envolver la llamada
+actual en `session.rollback()` — `import_rows()` ya hace commits parciales por período
+dentro de sí mismo (ver `payroll_repository_shared.py`), así que hace falta revisar el
+scope de sesión/transacción antes de poder ofrecer un `validate` que realmente no deje
+residuos. Buen candidato para `testcontainers[postgres]` (ya es dependencia dev) en vez
+de fakes, tal como sugiere `pdf-import-design-recommendation.md` sección 6 — ahí sí hace
+falta una base real para verificar que el rollback no dejó nada escrito.
 
 ## Historial de cambios
 
+- **2026-09-25 (cont. 4)** — Etapa 2 completa: `ImportPayroll.from_rows()`, ruta
+  `POST /payroll/import/rows` (modo `commit` únicamente), reusando 100% del pipeline
+  existente. 345 tests, 100% cobertura, lint/typecheck/vulture limpios. Ver detalle en
+  la sección de la Etapa 2 arriba.
 - **2026-09-25 (cont. 3)** — Etapa 1 completa: extractor por plantilla, plantilla real
   de WALMART-CHILE, endpoint `POST /payroll/import/pdf-preview` sin persistencia.
   337 tests, 100% cobertura, lint/typecheck/vulture limpios. Ver detalle en la sección

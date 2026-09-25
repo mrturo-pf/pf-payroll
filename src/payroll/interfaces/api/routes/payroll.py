@@ -16,6 +16,7 @@ from payroll.application.dto import (
     AssignPlansCommandDTO,
     GeneratedPayrollReportDTO,
     ImportedPayrollPeriodDTO,
+    ImportPayrollRowDTO,
     PdfImportPreviewDTO,
     ReviewPayrollPeriodCommandDTO,
     ComputeContributionsCommandDTO,
@@ -25,8 +26,10 @@ from payroll.application.dto import (
     PayrollPeriodDetailFields,
     PayrollPeriodRangeFields,
     PayrollPeriodRangeDTO,
+    PayrollStatusKind,
     PayrollSummaryDTO,
 )
+from payroll.domain.contributions import EmploymentContractKind
 from payroll.interfaces.api.errors import to_http_exception
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.interfaces.api.dependencies import (
@@ -66,6 +69,38 @@ class ImportPayrollResponse(BaseModel):
     imported_periods: int
     imported_items: int
     periods: list[ImportedPayrollPeriodDTO]
+
+
+class ImportPayrollRowRequest(BaseModel):
+    """Represent a single already-structured payroll row to persist.
+
+    Mirrors ImportPayrollRowDTO's shape (minus the output-only
+    expected_net_pay_clp/net_pay_difference_clp fields, which the repository
+    computes -- callers never send those in).
+    """
+
+    employer: str
+    period_year: int
+    period_month: int
+    payment_date: date
+    status: PayrollStatusKind
+    employment_contract_kind: EmploymentContractKind
+    concept_code: str
+    amount_clp: Decimal
+    worked_days: int = 30
+    declared_net_pay_clp: Decimal | None = None
+
+
+class ImportPayrollRowsRequest(BaseModel):
+    """Represent the request body for POST /payroll/import/rows.
+
+    `mode` is constrained to "commit" for now on purpose -- stage 2 only
+    implements the commit path. Widening this to include "validate" (with
+    its rollback semantics) is stage 3's job, not scaffolded here.
+    """
+
+    mode: Literal["commit"] = "commit"
+    rows: list[ImportPayrollRowRequest]
 
 
 class PdfImportPreviewRowRead(BaseModel):
@@ -388,6 +423,53 @@ async def import_payroll(
 
     try:
         result = await use_case.from_bytes(file.filename, await file.read())
+    except PayrollError as exc:
+        raise to_http_exception(exc, default_status=400) from exc
+    try:
+        result = await process_use_case.execute(result)
+    except PayrollError as exc:
+        raise to_http_exception(exc) from exc
+
+    return ImportPayrollResponse(
+        imported_periods=result.imported_periods,
+        imported_items=result.imported_items,
+        periods=list(result.periods),
+    )
+
+
+@router.post("/import/rows", response_model=ImportPayrollResponse)
+async def import_payroll_rows(
+    payload: ImportPayrollRowsRequest,
+    use_case: ImportPayroll = Depends(get_import_payroll_use_case),
+    process_use_case: ProcessImportedPayrollPeriods = Depends(
+        get_process_imported_payroll_periods_use_case
+    ),
+) -> ImportPayrollResponse:
+    """Confirm already-structured payroll rows (e.g. from a PDF preview).
+
+    Reuses the exact same pipeline as POST /payroll/import
+    (ImportPayroll.from_rows() + ProcessImportedPayrollPeriods) -- the only
+    difference is the source of rows (JSON body instead of a parsed
+    CSV/XLSX file). Stage 2: commit only, no validate/rollback yet.
+    """
+    rows = [
+        ImportPayrollRowDTO(
+            employer=row.employer,
+            period_year=row.period_year,
+            period_month=row.period_month,
+            payment_date=row.payment_date,
+            status=row.status,
+            employment_contract_kind=row.employment_contract_kind,
+            concept_code=row.concept_code,
+            amount_clp=row.amount_clp,
+            worked_days=row.worked_days,
+            declared_net_pay_clp=row.declared_net_pay_clp,
+        )
+        for row in payload.rows
+    ]
+
+    try:
+        result = await use_case.from_rows(rows)
     except PayrollError as exc:
         raise to_http_exception(exc, default_status=400) from exc
     try:

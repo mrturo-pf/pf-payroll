@@ -154,3 +154,27 @@ async def test_import_payroll_adds_net_pay_warning_without_rejecting_import() ->
         "Declared net_pay does not match the imported concept "
         "totals. Difference: 50000 CLP."
     )
+
+
+@pytest.mark.asyncio
+async def test_import_payroll_from_rows_delegates_to_repository() -> None:
+    """from_rows() skips parsing entirely and hands rows straight to the repo."""
+    repository = StubPayrollRepository()
+    use_case = ImportPayroll(repository, StubPayrollImporter([]))
+
+    result = await use_case.from_rows(sample_rows())
+
+    assert result.imported_periods == 1
+    assert result.imported_items == 2
+    assert repository.rows[0].employer == "ACME"
+    assert repository.rows[0].concept_code == "SALARY_BASE"
+
+
+@pytest.mark.asyncio
+async def test_import_payroll_from_rows_rejects_empty_list() -> None:
+    """An empty rows list is rejected before ever reaching the repository."""
+    repository = StubPayrollRepository()
+    use_case = ImportPayroll(repository, StubPayrollImporter([]))
+
+    with pytest.raises(ValueError, match="must not be empty"):
+        await use_case.from_rows([])

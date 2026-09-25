@@ -1,6 +1,7 @@
 """Shared test doubles for SQLAlchemy async session and API DI wiring."""
 
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from types import ModuleType
 
 import pytest
@@ -70,3 +71,38 @@ async def assert_get_session_lifecycle(
     assert exited[0] is True
 
     return fake_session
+
+
+async def assert_get_transactional_session_lifecycle(
+    monkeypatch: pytest.MonkeyPatch,
+    dependencies_mod: ModuleType,
+) -> object:
+    """Verify get_transactional_session() manages the async context.
+
+    Mirrors assert_get_session_lifecycle() above, but patches
+    open_transactional_session (an @asynccontextmanager, not a session
+    factory) since that is what get_transactional_session() delegates to.
+    """
+    fake_scope = object()
+    exited: list[bool] = [False]
+
+    @asynccontextmanager
+    async def _fake_open_transactional_session() -> AsyncIterator[object]:
+        try:
+            yield fake_scope
+        finally:
+            exited[0] = True
+
+    monkeypatch.setattr(
+        dependencies_mod,
+        "open_transactional_session",
+        _fake_open_transactional_session,
+    )
+
+    iterator = dependencies_mod.get_transactional_session()
+    assert await anext(iterator) is fake_scope
+    with pytest.raises(StopAsyncIteration):
+        await anext(iterator)
+    assert exited[0] is True
+
+    return fake_scope

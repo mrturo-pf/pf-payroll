@@ -31,6 +31,7 @@ from payroll.application.dto import (
 )
 from payroll.domain.contributions import EmploymentContractKind
 from payroll.interfaces.api.errors import to_http_exception
+from payroll.interfaces.session import TransactionalSessionScope
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.interfaces.api.dependencies import (
     get_assign_plans_use_case,
@@ -38,11 +39,14 @@ from payroll.interfaces.api.dependencies import (
     get_deflate_amounts_use_case,
     get_compute_income_tax_use_case,
     get_import_payroll_use_case,
+    get_import_payroll_use_case_for_rows_import,
     get_generate_payroll_report_use_case,
     get_payroll_queries,
     get_preview_pdf_import_use_case,
     get_process_imported_payroll_periods_use_case,
+    get_process_imported_payroll_periods_use_case_for_rows_import,
     get_review_payroll_period_use_case,
+    get_transactional_session,
 )
 
 if TYPE_CHECKING:
@@ -94,12 +98,13 @@ class ImportPayrollRowRequest(BaseModel):
 class ImportPayrollRowsRequest(BaseModel):
     """Represent the request body for POST /payroll/import/rows.
 
-    `mode` is constrained to "commit" for now on purpose -- stage 2 only
-    implements the commit path. Widening this to include "validate" (with
-    its rollback semantics) is stage 3's job, not scaffolded here.
+    mode="commit" persists everything, exactly like POST /payroll/import.
+    mode="validate" runs the exact same pipeline -- so contributions, taxes
+    and net-pay warnings are genuinely computed -- but discards every write
+    at the end via TransactionalSessionScope.resolve("validate").
     """
 
-    mode: Literal["commit"] = "commit"
+    mode: Literal["commit", "validate"] = "commit"
     rows: list[ImportPayrollRowRequest]
 
 
@@ -440,17 +445,23 @@ async def import_payroll(
 @router.post("/import/rows", response_model=ImportPayrollResponse)
 async def import_payroll_rows(
     payload: ImportPayrollRowsRequest,
-    use_case: ImportPayroll = Depends(get_import_payroll_use_case),
+    scope: TransactionalSessionScope = Depends(get_transactional_session),
+    use_case: ImportPayroll = Depends(get_import_payroll_use_case_for_rows_import),
     process_use_case: ProcessImportedPayrollPeriods = Depends(
-        get_process_imported_payroll_periods_use_case
+        get_process_imported_payroll_periods_use_case_for_rows_import
     ),
 ) -> ImportPayrollResponse:
     """Confirm already-structured payroll rows (e.g. from a PDF preview).
 
     Reuses the exact same pipeline as POST /payroll/import
-    (ImportPayroll.from_rows() + ProcessImportedPayrollPeriods) -- the only
-    difference is the source of rows (JSON body instead of a parsed
-    CSV/XLSX file). Stage 2: commit only, no validate/rollback yet.
+    (ImportPayroll.from_rows() + ProcessImportedPayrollPeriods) against a
+    TransactionalSessionScope: mode="commit" makes every write durable,
+    mode="validate" runs the same computations then discards all of them.
+
+    One try/except around both steps (unlike /payroll/import's two separate
+    blocks) on purpose: any failure here must resolve the scope to
+    "validate" before re-raising, regardless of the requested mode -- a
+    half-applied import must never be left committed.
     """
     rows = [
         ImportPayrollRowDTO(
@@ -470,12 +481,12 @@ async def import_payroll_rows(
 
     try:
         result = await use_case.from_rows(rows)
-    except PayrollError as exc:
-        raise to_http_exception(exc, default_status=400) from exc
-    try:
         result = await process_use_case.execute(result)
     except PayrollError as exc:
-        raise to_http_exception(exc) from exc
+        await scope.resolve("validate")
+        raise to_http_exception(exc, default_status=400) from exc
+
+    await scope.resolve(payload.mode)
 
     return ImportPayrollResponse(
         imported_periods=result.imported_periods,

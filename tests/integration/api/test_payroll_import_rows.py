@@ -1,7 +1,8 @@
-"""Tests for the POST /payroll/import/rows endpoint (stage 2: commit only)."""
+"""Tests for POST /payroll/import/rows (stage 3: commit + validate modes)."""
 
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 
 from fastapi.testclient import TestClient
 
@@ -9,8 +10,9 @@ from payroll.application.dto import ImportPayrollResultDTO, ImportedPayrollPerio
 from payroll.application.errors import PayrollDependencyError, PayrollValidationError
 from payroll.domain.contributions import EmploymentContractKind
 from payroll.interfaces.api.dependencies import (
-    get_import_payroll_use_case,
-    get_process_imported_payroll_periods_use_case,
+    get_import_payroll_use_case_for_rows_import,
+    get_process_imported_payroll_periods_use_case_for_rows_import,
+    get_transactional_session,
 )
 from payroll.interfaces.api.main import app
 
@@ -26,6 +28,19 @@ SAMPLE_ROW = {
     "worked_days": 30,
     "declared_net_pay_clp": "950000",
 }
+
+
+class FakeTransactionalSessionScope:
+    """Test double for TransactionalSessionScope -- records resolve() calls."""
+
+    def __init__(self) -> None:
+        """Initialize the instance."""
+        self.resolved_with: list[str] = []
+        self.session = object()
+
+    async def resolve(self, mode: Literal["commit", "validate"]) -> None:
+        """Record the resolution instead of touching a real transaction."""
+        self.resolved_with.append(mode)
 
 
 class FakeImportPayrollFromRows:
@@ -65,14 +80,21 @@ class FakeProcessImportedPayrollPeriods:
         return result
 
 
-def test_import_payroll_rows_endpoint_defaults_to_commit_mode() -> None:
-    """Happy path: posting rows without `mode` commits via from_rows()."""
-    app.dependency_overrides[get_import_payroll_use_case] = lambda: (
+def _override_happy_path(scope: FakeTransactionalSessionScope) -> None:
+    """Wire the fake use cases + a given fake scope into the app."""
+    app.dependency_overrides[get_transactional_session] = lambda: scope
+    app.dependency_overrides[get_import_payroll_use_case_for_rows_import] = lambda: (
         FakeImportPayrollFromRows()
     )
-    app.dependency_overrides[get_process_imported_payroll_periods_use_case] = lambda: (
-        FakeProcessImportedPayrollPeriods()
-    )
+    app.dependency_overrides[
+        get_process_imported_payroll_periods_use_case_for_rows_import
+    ] = lambda: FakeProcessImportedPayrollPeriods()
+
+
+def test_import_payroll_rows_endpoint_defaults_to_commit_mode() -> None:
+    """Happy path: posting rows without `mode` resolves the scope as commit."""
+    scope = FakeTransactionalSessionScope()
+    _override_happy_path(scope)
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
@@ -85,16 +107,13 @@ def test_import_payroll_rows_endpoint_defaults_to_commit_mode() -> None:
     assert body["imported_periods"] == 1
     assert body["imported_items"] == 1
     assert body["periods"][0]["employer"] == "ACME"
+    assert scope.resolved_with == ["commit"]
 
 
 def test_import_payroll_rows_endpoint_accepts_explicit_commit_mode() -> None:
     """mode="commit" is accepted explicitly (same behavior as the default)."""
-    app.dependency_overrides[get_import_payroll_use_case] = lambda: (
-        FakeImportPayrollFromRows()
-    )
-    app.dependency_overrides[get_process_imported_payroll_periods_use_case] = lambda: (
-        FakeProcessImportedPayrollPeriods()
-    )
+    scope = FakeTransactionalSessionScope()
+    _override_happy_path(scope)
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
@@ -106,27 +125,36 @@ def test_import_payroll_rows_endpoint_accepts_explicit_commit_mode() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
+    assert scope.resolved_with == ["commit"]
 
 
-def test_import_payroll_rows_endpoint_rejects_validate_mode_stage_2() -> None:
-    """Validate doesn't exist yet (stage 3) -- rejected at the schema level."""
+def test_import_payroll_rows_endpoint_validate_mode_never_commits() -> None:
+    """mode="validate" runs the full pipeline but resolves the scope as validate."""
+    scope = FakeTransactionalSessionScope()
+    _override_happy_path(scope)
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
-    response = client.post(
-        "/payroll/import/rows",
-        json={"mode": "validate", "rows": [SAMPLE_ROW]},
-    )
+    try:
+        response = client.post(
+            "/payroll/import/rows",
+            json={"mode": "validate", "rows": [SAMPLE_ROW]},
+        )
+    finally:
+        app.dependency_overrides.clear()
 
-    assert response.status_code == 422
+    assert response.status_code == 200
+    body = response.json()
+    assert body["imported_periods"] == 1
+    assert scope.resolved_with == ["validate"]
 
 
 def test_import_payroll_rows_endpoint_rejects_unresolved_concept_code() -> None:
     """A row with concept_code=null (unresolved) fails schema validation.
 
-    This is how the design's "commit must fail on unresolved concepts"
+    This is how the design's "commit must reject unresolved concepts"
     requirement is enforced -- ImportPayrollRowRequest.concept_code is a
     required str, so FastAPI/pydantic reject a null value before any
-    application code runs.
+    application code (or the transactional scope) ever runs.
     """
     client = TestClient(app, headers={"X-API-Key": "test-key"})
     row = {**SAMPLE_ROW, "concept_code": None}
@@ -136,8 +164,25 @@ def test_import_payroll_rows_endpoint_rejects_unresolved_concept_code() -> None:
     assert response.status_code == 422
 
 
-def test_import_payroll_rows_endpoint_rejects_empty_rows_list() -> None:
-    """An empty rows list surfaces the use case's PayrollValidationError as 400."""
+def test_import_payroll_rows_endpoint_rejects_unknown_mode() -> None:
+    """A mode outside {commit, validate} is a 422 from the schema itself."""
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
+
+    response = client.post(
+        "/payroll/import/rows",
+        json={"mode": "dry-run", "rows": [SAMPLE_ROW]},
+    )
+
+    assert response.status_code == 422
+
+
+def test_import_payroll_rows_endpoint_rolls_back_on_validation_error() -> None:
+    """A failure from from_rows() resolves the scope as validate, not commit.
+
+    Even though mode="commit" was requested, a half-applied import must
+    never be left committed -- the route always forces a rollback before
+    re-raising any PayrollError.
+    """
 
     class ErrorImportPayroll:
         """Test double whose from_rows() always raises."""
@@ -148,23 +193,30 @@ def test_import_payroll_rows_endpoint_rejects_empty_rows_list() -> None:
                 "The provided payroll rows list must not be empty."
             )
 
-    app.dependency_overrides[get_import_payroll_use_case] = lambda: ErrorImportPayroll()
-    app.dependency_overrides[get_process_imported_payroll_periods_use_case] = lambda: (
-        FakeProcessImportedPayrollPeriods()
+    scope = FakeTransactionalSessionScope()
+    app.dependency_overrides[get_transactional_session] = lambda: scope
+    app.dependency_overrides[get_import_payroll_use_case_for_rows_import] = lambda: (
+        ErrorImportPayroll()
     )
+    app.dependency_overrides[
+        get_process_imported_payroll_periods_use_case_for_rows_import
+    ] = lambda: FakeProcessImportedPayrollPeriods()
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
-        response = client.post("/payroll/import/rows", json={"rows": []})
+        response = client.post(
+            "/payroll/import/rows", json={"mode": "commit", "rows": []}
+        )
     finally:
         app.dependency_overrides.clear()
 
     assert response.status_code == 400
     assert "must not be empty" in response.json()["detail"]
+    assert scope.resolved_with == ["validate"]
 
 
 def test_import_payroll_rows_endpoint_returns_502_when_processing_raises() -> None:
-    """A dependency failure during post-processing surfaces as 502."""
+    """A dependency failure during post-processing surfaces as 502 and rolls back."""
 
     class FakeProcessRaisesDependencyError:
         """Test double whose execute() always raises a dependency error."""
@@ -177,12 +229,14 @@ def test_import_payroll_rows_endpoint_returns_502_when_processing_raises() -> No
                 "Network error fetching exchange rate from pf-rates: missing protocol"
             )
 
-    app.dependency_overrides[get_import_payroll_use_case] = lambda: (
+    scope = FakeTransactionalSessionScope()
+    app.dependency_overrides[get_transactional_session] = lambda: scope
+    app.dependency_overrides[get_import_payroll_use_case_for_rows_import] = lambda: (
         FakeImportPayrollFromRows()
     )
-    app.dependency_overrides[get_process_imported_payroll_periods_use_case] = lambda: (
-        FakeProcessRaisesDependencyError()
-    )
+    app.dependency_overrides[
+        get_process_imported_payroll_periods_use_case_for_rows_import
+    ] = lambda: FakeProcessRaisesDependencyError()
     client = TestClient(
         app, headers={"X-API-Key": "test-key"}, raise_server_exceptions=False
     )
@@ -194,3 +248,4 @@ def test_import_payroll_rows_endpoint_returns_502_when_processing_raises() -> No
 
     assert response.status_code == 502
     assert "pf-rates" in response.json()["detail"]
+    assert scope.resolved_with == ["validate"]

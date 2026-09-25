@@ -14,7 +14,7 @@
 | 0 | Semántica de período (código + datos históricos) | **Completa** — código, datos locales, Neon (corregido por el usuario) y el CSV fuente ya alineados |
 | 1 | Endpoint 1 — preview PDF (MVP) | **Completa** — extractor por plantilla, template real de WALMART-CHILE, ruta `POST /payroll/import/pdf-preview` |
 | 2 | Endpoint 2 — confirmar, modo `commit` | **Completa** — `ImportPayroll.from_rows()`, ruta `POST /payroll/import/rows` |
-| 3 | Endpoint 2 — modo `validate` (rollback) | No iniciada |
+| 3 | Endpoint 2 — modo `validate` (rollback) | **Completa** — `TransactionalSessionScope` con SAVEPOINT real |
 
 ## Etapa 0 — Semántica del período
 
@@ -203,16 +203,101 @@ antes hubiera hecho falta un `if`.
 
 ## Etapa 3 — Endpoint 2, modo `validate`
 
-No iniciada. Depende de Etapa 2 (lista). Mecanismo: NO alcanza con envolver la llamada
-actual en `session.rollback()` — `import_rows()` ya hace commits parciales por período
-dentro de sí mismo (ver `payroll_repository_shared.py`), así que hace falta revisar el
-scope de sesión/transacción antes de poder ofrecer un `validate` que realmente no deje
-residuos. Buen candidato para `testcontainers[postgres]` (ya es dependencia dev) en vez
-de fakes, tal como sugiere `pdf-import-design-recommendation.md` sección 6 — ahí sí hace
-falta una base real para verificar que el rollback no dejó nada escrito.
+**Completa (2026-09-25).** El hallazgo documentado al cerrar la Etapa 2 se confirmó
+correcto: `import_rows()` (y varios pasos de `ProcessImportedPayrollPeriods`, ver
+`_refresh_summary_view()`/`_reconcile_period_net_pay()` en
+`payroll_repository_shared.py`, y `payroll_repository_commands.py`) hacen **varios**
+`session.commit()` internos durante un solo request. Envolver la llamada final en un
+`session.rollback()` no hubiera deshecho nada de eso — cada `commit()` interno ya
+había hecho su propia transacción durable.
+
+### Cómo se resolvió: SAVEPOINT real, no un flag manual
+
+En vez de tocar los `session.commit()` existentes esparcidos por medio codebase (docenas
+de métodos en `payroll_repository_commands.py`, `payroll_repository_shared.py`, y varios
+use cases), se usa el soporte nativo de SQLAlchemy 2.0 para "unirse" una sesión a una
+transacción externa con semántica de SAVEPOINT:
+`AsyncSession(bind=connection, join_transaction_mode="create_savepoint")`. Con esto,
+cada `session.commit()` que hace el código de aplicación **solo libera el SAVEPOINT
+actual** (SQLAlchemy abre uno nuevo automáticamente) — la transacción real de la
+conexión nunca se toca hasta que alguien llama explícitamente `resolve()`. Cero cambios
+en el código existente que ya llamaba `session.commit()` libremente.
+
+- **`interfaces/session.py`**: `TransactionalSessionScope` (envuelve `session` +
+  `_transaction`, expone `resolve(mode)` que hace `transaction.commit()` o
+  `transaction.rollback()`) y `open_transactional_session()` (abre la conexión, arranca
+  la transacción real, construye la sesión con `join_transaction_mode="create_savepoint"`
+  y `expire_on_commit=False` — igual que `SessionLocal` — y hace rollback defensivo en
+  el `finally` si `resolve()` nunca se llegó a llamar).
+- **`interfaces/api/dependencies.py`**: `get_transactional_session()` (dependencia
+  FastAPI, cacheada por request) + 4 dependencias hermanas
+  (`get_payroll_repository_for_rows_import`,
+  `get_complementary_insurance_repository_for_rows_import`,
+  `get_import_payroll_use_case_for_rows_import`,
+  `get_process_imported_payroll_periods_use_case_for_rows_import`) que construyen los
+  mismos use cases de la Etapa 2 pero atados a la sesión transaccional en vez de la
+  sesión "plana" de siempre — necesarias porque FastAPI cachea dependencias por
+  callable, no hay forma de "parametrizar" `get_session()` según el `mode` del body.
+- **Ruta**: ahora un solo `try/except` alrededor de `from_rows()` +
+  `ProcessImportedPayrollPeriods.execute()` (antes eran dos, como en `/payroll/import`)
+  — divergencia deliberada: cualquier excepción fuerza `scope.resolve("validate")`
+  **antes** de re-lanzar el error, sin importar qué `mode` había pedido el cliente. Un
+  import a medio aplicar nunca puede quedar comiteado.
+- `ImportPayrollRowsRequest.mode` pasó de `Literal["commit"]` a
+  `Literal["commit", "validate"]`.
+
+### Testing — el primer test contra Postgres real de todo pf-payroll
+
+Toda la suite existente usa fakes (`FakeSession`, `FakeResultsQueueBase`, etc.) y eso
+sigue siendo correcto para el 99% del dominio. Pero el mecanismo de SAVEPOINT hace una
+afirmación sobre semántica **real** de transacciones que ningún fake puede verificar
+honestamente: que varios `session.commit()` internos de verdad desaparecen con
+`resolve("validate")`. Para eso:
+
+- `tests/integration/infrastructure/test_transactional_session.py` (nuevo): usa
+  `testcontainers[postgres]` (dependencia dev ya declarada, nunca antes usada en este
+  repo) contra una tabla `probe` desechable, sin tocar el esquema de pf-db. Tres casos:
+  `commit` persiste los dos `commit()` internos, `validate` los descarta a ambos, y un
+  scope nunca resuelto (bug/early-return) hace rollback defensivo solo. Contenedor
+  `postgres:16-alpine` reusado a nivel de módulo (ya estaba cacheado localmente); motor
+  async fresco por test para evitar cruzar el connection pool de asyncpg entre distintos
+  event loops de pytest-asyncio (`asyncio_mode = "strict"`, sin loop compartido).
+  - Nota de entorno: Ryuk (el "reaper" de testcontainers) falla al arrancar en Rancher
+    Desktop/macOS con un error de mount del socket de Docker — problema conocido, ya
+    resuelto en este monorepo: `pf-common/make/common.mk` detecta el socket de Rancher y
+    exporta `TESTCONTAINERS_RYUK_DISABLED=true` automáticamente para `make test`/
+    `make test-cov`. No hizo falta tocar nada ahí, solo usarlo.
+- `tests/unit/interfaces/test_api_dependencies.py`: 5 tests nuevos para las
+  dependencias `_for_rows_import` + el ciclo de vida de `get_transactional_session()`
+  (mismo patrón de `assert_get_session_lifecycle` ya existente, ahora también
+  `assert_get_transactional_session_lifecycle` en `tests/helpers/db_fakes.py`).
+- `tests/integration/api/test_payroll_import_rows.py`: reescrito con
+  `FakeTransactionalSessionScope` (graba con qué `mode` se llamó `resolve()`). Casos:
+  commit por default y explícito, `validate` (pipeline completo corre, pero
+  `resolve("validate")`), 422 en `concept_code` nulo, 422 en `mode` desconocido, rollback
+  forzado cuando `from_rows()` falla (aunque se pidió `commit`), rollback forzado cuando
+  `ProcessImportedPayrollPeriods` falla por dependencia caída (502).
+- 354 tests totales, 100% cobertura (`--cov-fail-under=100`), lint/typecheck/vulture
+  limpios.
+
+### Pendiente / fuera de alcance de esta etapa
+
+- No hay un smoke test end-to-end contra el esquema real de pf-db (migraciones +
+  seeds de `PAY_CONCEPT`/planes) ejecutando la ruta HTTP real sin fakes. La confianza
+  viene de tres capas independientes ya cubiertas: el mecanismo SAVEPOINT en sí
+  (Postgres real), la orquestación de la ruta (qué `resolve()` se llama y cuándo,
+  fakes), y `import_rows()`/`ProcessImportedPayrollPeriods` sin cambios (ya cubiertos
+  al 100% desde antes de este feature). Si se quiere ese smoke test completo algún día,
+  ya queda toda la infraestructura de testcontainers lista para reusar.
 
 ## Historial de cambios
 
+- **2026-09-25 (cont. 5)** — Etapa 3 completa: `TransactionalSessionScope` con
+  `join_transaction_mode="create_savepoint"` de SQLAlchemy, ruta `POST
+  /payroll/import/rows` ahora soporta `mode="validate"` de verdad (pipeline completo,
+  cero escritura persistida). Primer test contra Postgres real de todo pf-payroll
+  (`testcontainers[postgres]`). 354 tests, 100% cobertura, lint/typecheck/vulture
+  limpios. Ver detalle en la sección de la Etapa 3 arriba.
 - **2026-09-25 (cont. 4)** — Etapa 2 completa: `ImportPayroll.from_rows()`, ruta
   `POST /payroll/import/rows` (modo `commit` únicamente), reusando 100% del pipeline
   existente. 345 tests, 100% cobertura, lint/typecheck/vulture limpios. Ver detalle en

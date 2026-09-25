@@ -40,7 +40,12 @@ from payroll.interfaces.repositories import (
 )
 from payroll.infrastructure.pdf_import.extractor import TemplatePdfPayrollExtractor
 from payroll.config import settings
-from payroll.interfaces.session import SessionLocal, open_session
+from payroll.interfaces.session import (
+    SessionLocal,
+    TransactionalSessionScope,
+    open_session,
+    open_transactional_session,
+)
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
@@ -100,6 +105,56 @@ def get_import_payroll_use_case(
 ) -> ImportPayroll:
     """Get import payroll use case."""
     return ImportPayroll(repository, XlsxPayrollImporter())
+
+
+async def get_transactional_session() -> AsyncIterator[TransactionalSessionScope]:
+    """Get a transactional session scope for POST /payroll/import/rows.
+
+    Every dependency below that depends on this one shares the *same*
+    instance within a single request (FastAPI caches by dependency callable),
+    so both ImportPayroll.from_rows() and ProcessImportedPayrollPeriods run
+    against one connection/transaction that the route resolves exactly once,
+    at the very end -- see TransactionalSessionScope's docstring for why a
+    plain session.rollback() would not be enough here.
+    """
+    async with open_transactional_session() as scope:
+        yield scope
+
+
+def get_payroll_repository_for_rows_import(
+    scope: TransactionalSessionScope = Depends(get_transactional_session),
+) -> PayrollRepository:
+    """Get a payroll repository bound to the transactional session scope."""
+    return SqlAlchemyPayrollRepository(scope.session)
+
+
+def get_complementary_insurance_repository_for_rows_import(
+    scope: TransactionalSessionScope = Depends(get_transactional_session),
+) -> ComplementaryInsuranceRepository:
+    """Get a complementary insurance repository bound to the same scope."""
+    return SqlAlchemyComplementaryInsuranceRepository(scope.session)
+
+
+def get_import_payroll_use_case_for_rows_import(
+    repository: PayrollRepository = Depends(get_payroll_repository_for_rows_import),
+) -> ImportPayroll:
+    """Get the import-rows use case bound to the transactional session scope."""
+    return ImportPayroll(repository, XlsxPayrollImporter())
+
+
+def get_process_imported_payroll_periods_use_case_for_rows_import(
+    repository: PayrollRepository = Depends(get_payroll_repository_for_rows_import),
+    complementary_insurance_repository: ComplementaryInsuranceRepository = Depends(
+        get_complementary_insurance_repository_for_rows_import
+    ),
+) -> ProcessImportedPayrollPeriods:
+    """Get the post-processing use case bound to the transactional scope."""
+    return ProcessImportedPayrollPeriods(
+        repository,
+        get_market_data_repository(),
+        complementary_insurance_repository,
+        get_income_tax_bracket_client(),
+    )
 
 
 def get_preview_pdf_import_use_case() -> PreviewPdfImport:

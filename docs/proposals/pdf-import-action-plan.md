@@ -292,6 +292,23 @@ honestamente: que varios `session.commit()` internos de verdad desaparecen con
 
 ## Historial de cambios
 
+- **2026-09-25 (cont. 6)** — Fix post-push: el push de la Etapa 3 rompió CI (`gh run list`
+  mostró el run en `failure`). Causa: dos tests de `test_payroll_import_rows.py`
+  (los que esperaban 422 por body inválido) no tenían overrides de dependencias,
+  asumiendo que FastAPI corta la resolución de `Depends()` antes de validar el body.
+  **Eso es falso** — FastAPI resuelve todo el árbol de dependencias (incluyendo
+  `get_transactional_session()`, que abre una conexión real vía `engine.connect()`)
+  antes de mirar los errores de validación del body. Localmente los tests igual
+  pasaban porque había un túnel SSH viejo escuchando en el puerto 5432 de la máquina
+  apuntando a una base real; en el runner de GitHub Actions no hay nada ahí y explota
+  con `OSError: Connect call failed`. Fix: los dos tests ahora también mockean
+  `get_transactional_session` (como el resto), y se agregó `scope.resolved_with == []`
+  como assertion explícita de que la dependencia transaccional real nunca se toca en
+  esos casos. Verificado apuntando `PF_DATABASE_URL` a un puerto que de verdad no
+  responde (simulando CI) antes de repushear — 354 tests, 100% cobertura.
+  **Lección para próximas rutas con dependencias que hacen I/O eager:** nunca asumir
+  que un test de "422 por body inválido" puede saltarse los overrides de dependencias
+  solo porque el handler nunca las va a usar — FastAPI las instancia igual.
 - **2026-09-25 (cont. 5)** — Etapa 3 completa: `TransactionalSessionScope` con
   `join_transaction_mode="create_savepoint"` de SQLAlchemy, ruta `POST
   /payroll/import/rows` ahora soporta `mode="validate"` de verdad (pipeline completo,

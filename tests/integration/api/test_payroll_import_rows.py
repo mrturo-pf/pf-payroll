@@ -154,26 +154,46 @@ def test_import_payroll_rows_endpoint_rejects_unresolved_concept_code() -> None:
     This is how the design's "commit must reject unresolved concepts"
     requirement is enforced -- ImportPayrollRowRequest.concept_code is a
     required str, so FastAPI/pydantic reject a null value before any
-    application code (or the transactional scope) ever runs.
+    application code runs. Dependencies are still overridden: FastAPI
+    resolves every Depends() while building the request (including
+    get_transactional_session, which opens a real DB connection) before it
+    inspects body-validation errors, so a real database would otherwise be
+    required even for a request that never reaches the route body.
     """
+    scope = FakeTransactionalSessionScope()
+    _override_happy_path(scope)
     client = TestClient(app, headers={"X-API-Key": "test-key"})
     row = {**SAMPLE_ROW, "concept_code": None}
 
-    response = client.post("/payroll/import/rows", json={"rows": [row]})
+    try:
+        response = client.post("/payroll/import/rows", json={"rows": [row]})
+    finally:
+        app.dependency_overrides.clear()
 
     assert response.status_code == 422
+    assert scope.resolved_with == []
 
 
 def test_import_payroll_rows_endpoint_rejects_unknown_mode() -> None:
-    """A mode outside {commit, validate} is a 422 from the schema itself."""
+    """A mode outside {commit, validate} is a 422 from the schema itself.
+
+    Dependencies are overridden for the same reason as the test above: body
+    validation does not short-circuit FastAPI's Depends() resolution.
+    """
+    scope = FakeTransactionalSessionScope()
+    _override_happy_path(scope)
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
-    response = client.post(
-        "/payroll/import/rows",
-        json={"mode": "dry-run", "rows": [SAMPLE_ROW]},
-    )
+    try:
+        response = client.post(
+            "/payroll/import/rows",
+            json={"mode": "dry-run", "rows": [SAMPLE_ROW]},
+        )
+    finally:
+        app.dependency_overrides.clear()
 
     assert response.status_code == 422
+    assert scope.resolved_with == []
 
 
 def test_import_payroll_rows_endpoint_rolls_back_on_validation_error() -> None:

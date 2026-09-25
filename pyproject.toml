@@ -88,3 +88,14 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# By default setuptools only bundles .py files belonging to discovered
+# packages -- non-code data files under a package directory (here, the
+# versioned payroll-PDF-template JSON files loaded by
+# infrastructure/pdf_import/templates.py) are silently dropped from a
+# regular `pip install .` build unless declared here. This bit everyone
+# during local dev, since `pip install -e .` (editable) keeps files in
+# place on disk and never exhibited the bug -- only the Docker image's
+# non-editable `pip install .` did, in production, on Cloud Run.
+[tool.setuptools.package-data]
+"payroll.infrastructure.pdf_import" = ["templates/**/*.json"]

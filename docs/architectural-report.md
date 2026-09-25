@@ -26,8 +26,9 @@ Se utiliza una arquitectura de puertos y adaptadores (Hexagonal) para aislar la 
                            │
 ┌──────────────────────────▼─────────────────────────────────────┐
 │                     Application Layer                          │
-│  Use Cases: ImportPayroll, ComputeContributions, AssignPlans,  │
-│             DeflateAmounts, RefreshRates                       │
+│  Use Cases: ImportPayroll, PreviewPdfImport,                   │
+│  ComputeContributions, AssignPlans, DeflateAmounts,            │
+│  RefreshRates                                                  │
 └──────────────────────────┬─────────────────────────────────────┘
                            │
 ┌──────────────────────────▼─────────────────────────────────────┐
@@ -39,8 +40,8 @@ Se utiliza una arquitectura de puertos y adaptadores (Hexagonal) para aislar la 
                            │
 ┌──────────────────────────▼─────────────────────────────────────┐
 │                Infrastructure (Adapters Out)                   │
-│ PostgreSQL (SQLAlchemy) │ Excel/CSV Importer │ Rate Providers  │
-│ Alembic Migrations      │ WeasyPrint Reports │ structlog       │
+│   PostgreSQL (SQLAlchemy) │ Excel/CSV │ PDF │ Rate Providers   │
+│    Alembic Migrations      │ WeasyPrint Reports │ structlog    │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -334,6 +335,36 @@ def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:
                 })
                 
     return pd.DataFrame(long_rows)
+```
+
+### 5.1 Ingesta alternativa: PDF de liquidación de sueldo
+
+Alternativa a Excel/CSV para un único payslip: extracción basada en plantillas JSON
+versionadas (`infrastructure/pdf_import/templates/`), nunca OCR/LLM. Dos rutas HTTP
+nuevas (`POST /payroll/import/pdf-preview`, `POST /payroll/import/rows`) más el use
+case `PreviewPdfImport`, que deliberadamente no recibe ningún repositorio -- es la
+garantía arquitectónica de que el preview nunca puede escribir en la base de datos.
+Detalle completo de diseño e implementación en
+[`docs/proposals/pdf-import-action-plan.md`](proposals/pdf-import-action-plan.md).
+
+```python
+# src/payroll/infrastructure/pdf_import/extractor.py
+class TemplatePdfPayrollExtractor(PdfPayrollExtractor):
+    """Extracts a payroll PDF preview using versioned JSON templates.
+
+    Never raises: any failure (unparsable PDF, no template match, no detail
+    rows found) degrades to an emptier PdfImportPreviewDTO rather than an
+    exception.
+    """
+
+    def extract_preview(self, filename: str, content: bytes) -> PdfImportPreviewDTO:
+        raw_text = extract_raw_text(content)
+        detail_lines = find_detail_lines(raw_text)
+        template = select_template(self._templates, raw_text, labels)
+        # Cada fila detectada se resuelve contra el template (concept_code +
+        # confidence) o queda marcada concept_code=None, confidence=0.0 --
+        # nunca lanza, el preview siempre responde 200.
+        ...
 ```
 
 ---

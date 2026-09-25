@@ -131,16 +131,19 @@ SQLAlchemy models live in `infrastructure/db/models/`:
 ### Example: Employer model
 
 ```python
-from sqlalchemy import String, Integer
+from datetime import date
+
+from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
 from payroll.infrastructure.db.models.base import Base
 
-class Employer(Base):
+class EmployerModel(Base):
     __tablename__ = "PAY_EMPLOYER"
-    
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    rut: Mapped[str] = mapped_column(String(12), unique=True, nullable=False)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True)
+    tax_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    started_at: Mapped[date]
 ```
 
 ## Repositories

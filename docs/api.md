@@ -31,8 +31,10 @@ optional BCCh credentials) and the startup background sync — see
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/payroll/import` | Imports a CSV or XLSX payroll file and persists employers, periods, and items. If related market data is missing, it first fetches the exact dates/periods needed for the imported payroll so calculations can continue immediately; when the imported payroll already includes the pension and health contribution rows, the import flow also computes `UNEMPLOYMENT_INSURANCE` and `INCOME_TAX` automatically. Any unresolved market-data remainder can still be retried in the background sync flow. |
+| `POST` | `/payroll/import/pdf-preview` | Read-only: extracts a preview of the payroll rows found in an uploaded PDF payslip, using versioned templates (see `infrastructure/pdf_import/templates/`). Never persists anything and never fails outright -- a PDF matching no known template still returns 200 with every row marked unresolved (`concept_code: null`). |
+| `POST` | `/payroll/import/rows` | Confirms already-structured payroll rows (typically edited from a `/payroll/import/pdf-preview` response) through the same pipeline as `POST /payroll/import`. `mode="commit"` (default) persists everything and fails with 400 if any row still has an unresolved `concept_code`. `mode="validate"` runs the identical computation pipeline against a SAVEPOINT that is always rolled back at the end -- rows with an unresolved `concept_code` are excluded from that pipeline and reported back via the response's `unresolved_rows` field instead of failing the request. Note: pf-rates may still cache market data it resolves during either mode; that cache is not rolled back. |
 | `GET` | `/payroll/period-range` | Returns the current payroll period plus 12 previous and 12 next period date ranges. Each item exposes `net_pay_clp` and a single `position` field with `previous`, `current`, or `future`. The current period is the latest payroll with `declared_net_pay_clp` present and `payment_date <= today`. When none exists, the endpoint falls back to the current calendar month and infers missing periods from the configured employer payment rule or the default last Chilean business day of month. |
-| `GET` | `/payroll/summary` | Lists payroll period totals from `mv_payroll_summary`. |
+| `GET` | `/payroll/summary` | Lists payroll period totals from `PAY_MV_SUMARY`. |
 | `GET` | `/payroll/{period_id}` | Returns a payroll period with employer, items, selected plans, and summary. |
 | `POST` | `/payroll/{period_id}/assign-plans` | Assigns pension and health plan snapshot ids to a payroll period. |
 | `POST` | `/payroll/{period_id}/compute-contributions` | Computes pension, health, and unemployment insurance discounts. |
@@ -76,6 +78,7 @@ Available commands:
 | --- | --- |
 | `health` | Basic healthcheck. |
 | `import-payroll <file>` | Imports a CSV/XLSX payroll file. |
+| `template-test <pdf>` | Previews a payroll PDF against the current templates without persisting anything (no DB access) -- prints which template matched (if any) and which rows are still unresolved. Helper for building/adjusting `infrastructure/pdf_import/templates/*.json` by hand. |
 | `summary` | Lists payroll period summaries. |
 | `period-detail <period_id>` | Returns one payroll period with detail. |
 | `plan-snapshots` | Lists available pension and health plans. |

@@ -91,11 +91,11 @@ http://localhost:8000/docs
 # Health check (no auth required)
 curl http://localhost:8000/health
 
-# List payroll periods (requires API key)
-curl -H "X-API-Key: your-api-key-here" http://localhost:8000/payroll/periods
+# List payroll period summaries (requires API key)
+curl -H "X-API-Key: your-api-key-here" http://localhost:8000/payroll/summary
 
-# Get employer info
-curl -H "X-API-Key: your-api-key-here" http://localhost:8000/employers/1
+# Get one payroll period, with its employer, items, and plans
+curl -H "X-API-Key: your-api-key-here" http://localhost:8000/payroll/1
 ```
 
 Expected response for `/health`:

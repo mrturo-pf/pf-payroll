@@ -23,6 +23,63 @@ CLI:
 python -m payroll.interfaces.cli.main import-payroll tests/fixtures/sample_payroll.csv
 ```
 
+### Alternative: import from a PDF payslip
+
+Instead of a CSV/XLSX file, a single payslip PDF can be turned into a payroll period
+through a two-step preview/confirm flow. Extraction is template-based (versioned JSON
+templates in `infrastructure/pdf_import/templates/`), never OCR/LLM -- a PDF matching no
+known template, or containing rows a template doesn't recognize, still returns a usable
+preview with those rows flagged as unresolved (`concept_code: null`) instead of failing.
+
+**Step A -- preview (read-only, never persists anything):**
+
+```bash
+curl -X POST http://127.0.0.1:8000/payroll/import/pdf-preview \
+  -H "X-API-Key: your-api-key-here" \
+  -F "file=@payslip.pdf"
+```
+
+Before wiring a new employer's template, iterate on it locally with the CLI helper
+(no DB, no persistence, no API key needed) -- it prints which template matched (if any)
+and exactly which rows are still unresolved:
+
+```bash
+python -m payroll.interfaces.cli.main template-test payslip.pdf
+```
+
+**Step B -- confirm the (possibly hand-edited) rows from the preview:**
+
+```bash
+curl -X POST http://127.0.0.1:8000/payroll/import/rows \
+  -H "X-API-Key: your-api-key-here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "validate",
+    "rows": [
+      {
+        "employer": "ACME",
+        "period_year": 2026,
+        "period_month": 1,
+        "payment_date": "2026-01-31",
+        "status": "actual",
+        "employment_contract_kind": "indefinite",
+        "concept_code": "SALARY_BASE",
+        "amount_clp": "1000000"
+      }
+    ]
+  }'
+```
+
+`mode="validate"` (shown above) runs the exact same pipeline as `mode="commit"` --
+contributions, taxes, and net-pay warnings are genuinely computed -- but every write is
+rolled back at the end, and rows without a resolved `concept_code` are reported back via
+`unresolved_rows` instead of failing the request. Resend the same request with
+`"mode": "commit"` once every row is resolved and the preview looks right; `commit`
+fails outright (400) if any row still has `concept_code: null`. See
+[the PDF import action plan](proposals/pdf-import-action-plan.md) for the full
+design/implementation history of this flow, including the pf-rates market-data caching
+caveat that applies to both modes.
+
 ## 2. Assign plan snapshots
 
 API:

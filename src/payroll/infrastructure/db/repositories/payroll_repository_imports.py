@@ -31,6 +31,7 @@ from payroll.infrastructure.db.repositories.payroll_repository_shared import (
     SqlAlchemyPayrollRepositoryBase,
     build_net_pay_warning,
 )
+from payroll.shared.dates import add_months
 
 
 class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
@@ -111,6 +112,35 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
         if not values:
             return None
         return next(iter(values))
+
+    def _validate_payment_month_matches_period(
+        self,
+        *,
+        employer: EmployerModel,
+        period_year: int,
+        period_month: int,
+        payment_date: date,
+    ) -> None:
+        """Reject an import whose payment_date does not match the period.
+
+        The convention is that period_year/period_month represents the worked
+        month, shifted by the employer's payment_month_offset (0 means "period
+        == payment month", the default for every employer created today). A
+        mismatch here is exactly the old, now-abandoned convention where a
+        payment landing at month-end was filed under the following month.
+        """
+        offset = employer.payment_month_offset or 0
+        expected_month = add_months(date(period_year, period_month, 1), offset)
+        if (payment_date.year, payment_date.month) != (
+            expected_month.year,
+            expected_month.month,
+        ):
+            raise PayrollValidationError(
+                f"payment_date {payment_date.isoformat()} does not match period "
+                f"{period_year}-{period_month:02d} for employer '{employer.name}' "
+                f"(payment_month_offset={offset}). Expected a payment_date in "
+                f"{expected_month.year}-{expected_month.month:02d}."
+            )
 
     async def _sync_period_health_plans(
         self, period: PayrollPeriodModel, health_plan_ids: tuple[int, ...]
@@ -223,6 +253,13 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
             elif first_row.payment_date < employer.started_at:
                 employer.started_at = first_row.payment_date
                 await self._close_overlapping_open_ended_employers(employer)
+
+            self._validate_payment_month_matches_period(
+                employer=employer,
+                period_year=year,
+                period_month=month,
+                payment_date=first_row.payment_date,
+            )
 
             period_result = await self._session.execute(
                 select(PayrollPeriodModel).where(

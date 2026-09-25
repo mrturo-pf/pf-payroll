@@ -724,6 +724,34 @@ async def test_sa_payroll_repository_rejects_inconsistent_period_health_plan_ids
 
 
 @pytest.mark.asyncio
+async def test_sa_payroll_repository_rejects_payment_date_period_mismatch() -> None:
+    """Test import rows reject a payment_date that does not match the period.
+
+    This is the guardrail for the old, abandoned convention where a
+    month-end payment was filed under the following month's period.
+    """
+    employer = EmployerModel(
+        id=9,
+        name="WALMART-CHILE",
+        started_at=date(2024, 11, 18),
+        payment_month_offset=0,
+    )
+    session = _afp_test_import_session([FakeResult(scalar_one=employer)])
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="does not match period"):
+        await repository.import_rows(
+            [
+                build_import_row(
+                    period_year=2026,
+                    period_month=2,
+                    payment_date=date(2026, 1, 31),
+                )
+            ]
+        )
+
+
+@pytest.mark.asyncio
 async def test_sa_payroll_repository_rejects_partial_period_plan_assignment() -> None:
     """Test import rows require both plan ids together for the same period."""
     session = FakeSession(

@@ -1,0 +1,76 @@
+{
+  "template_id": "walmart-chile-v1",
+  "employer_name": "WALMART-CHILE",
+  "version": 1,
+  "employer_match": {
+    "name_pattern": "(?i)walmart-chile|walmart\\s+chile"
+  },
+  "fields": [
+    {
+      "pdf_label_pattern": "(?i)^SUELDO$",
+      "concept_code": "SALARY_BASE",
+      "kind": "income",
+      "confidence": 0.9
+    },
+    {
+      "pdf_label_pattern": "(?i)GRATIFICACION\\s+LEGAL",
+      "concept_code": "LEGAL_GRATUITY",
+      "kind": "income",
+      "confidence": 0.9
+    },
+    {
+      "pdf_label_pattern": "(?i)ASIGNACI[OÓ]N\\s+TRAB\\.?\\s+H[IÍ]BRIDO",
+      "concept_code": "TELEWORK_REFUND",
+      "kind": "income",
+      "confidence": 0.6
+    },
+    {
+      "pdf_label_pattern": "(?i)APORTE\\s+SEGURO\\s+DE\\s+SALUD",
+      "concept_code": "HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION",
+      "kind": "income",
+      "confidence": 0.75
+    },
+    {
+      "pdf_label_pattern": "(?i)^IMPUESTO$",
+      "concept_code": "INCOME_TAX",
+      "kind": "discount",
+      "confidence": 0.9
+    },
+    {
+      "pdf_label_pattern": "(?i)COT\\.\\s*SEG\\.\\s*CES\\.",
+      "concept_code": "UNEMPLOYMENT_INSURANCE",
+      "kind": "discount",
+      "confidence": 0.9
+    },
+    {
+      "pdf_label_pattern": "(?i)ESENCIAL\\s+LEGAL",
+      "concept_code": "HEALTH_BASE",
+      "kind": "discount",
+      "confidence": 0.6
+    },
+    {
+      "pdf_label_pattern": "(?i)COMISI[OÓ]N\\s+AFP",
+      "concept_code": "HEALTH_ADDITIONAL_UF",
+      "kind": "discount",
+      "confidence": 0.9
+    },
+    {
+      "pdf_label_pattern": "(?i)FONDO\\s+RETIRO\\s+AFP",
+      "concept_code": "PENSION_BASE",
+      "kind": "discount",
+      "confidence": 0.6
+    },
+    {
+      "pdf_label_pattern": "(?i)ESENCIAL\\s+ADICIONAL",
+      "concept_code": "HEALTH_ADDITIONAL_UF",
+      "kind": "discount",
+      "confidence": 0.6
+    },
+    {
+      "pdf_label_pattern": "(?i)SEGURO\\s+(DENTAL|DE\\s+SALUD|CATASTR[OÓ]FICO)",
+      "concept_code": "HEALTH_INSURANCE",
+      "kind": "discount",
+      "confidence": 0.9
+    }
+  ]
+}

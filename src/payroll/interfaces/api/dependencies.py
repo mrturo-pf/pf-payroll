@@ -27,6 +27,7 @@ from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
+from payroll.application.use_cases.preview_pdf_import import PreviewPdfImport
 from payroll.application.use_cases.process_imported_payroll_periods import (
     ProcessImportedPayrollPeriods,
 )
@@ -37,6 +38,7 @@ from payroll.interfaces.repositories import (
     SqlAlchemyPayrollRepository,
     SqlAlchemyReferenceDataRepository,
 )
+from payroll.infrastructure.pdf_import.extractor import TemplatePdfPayrollExtractor
 from payroll.config import settings
 from payroll.interfaces.session import SessionLocal, open_session
 
@@ -98,6 +100,15 @@ def get_import_payroll_use_case(
 ) -> ImportPayroll:
     """Get import payroll use case."""
     return ImportPayroll(repository, XlsxPayrollImporter())
+
+
+def get_preview_pdf_import_use_case() -> PreviewPdfImport:
+    """Get preview pdf import use case.
+
+    Deliberately takes no repository dependency -- the preview endpoint must
+    never be able to touch persistence, by construction.
+    """
+    return PreviewPdfImport(TemplatePdfPayrollExtractor())
 
 
 def get_process_imported_payroll_periods_use_case(

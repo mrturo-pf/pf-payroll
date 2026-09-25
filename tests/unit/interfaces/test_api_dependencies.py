@@ -3,12 +3,14 @@
 from unittest.mock import MagicMock
 
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
+from payroll.application.use_cases.preview_pdf_import import PreviewPdfImport
 from payroll.application.use_cases.process_imported_payroll_periods import (
     ProcessImportedPayrollPeriods,
 )
 from payroll.interfaces.api.dependencies import (
     get_complementary_insurance_repository,
     get_deflate_amounts_use_case,
+    get_preview_pdf_import_use_case,
     get_process_imported_payroll_periods_use_case,
 )
 
@@ -36,3 +38,9 @@ def test_get_deflate_amounts_use_case_is_instantiable() -> None:
     repository = MagicMock()
     use_case = get_deflate_amounts_use_case(repository=repository)
     assert isinstance(use_case, DeflateAmounts)
+
+
+def test_get_preview_pdf_import_use_case_is_instantiable() -> None:
+    """Test that the preview pdf import use case can be created (no repo)."""
+    use_case = get_preview_pdf_import_use_case()
+    assert isinstance(use_case, PreviewPdfImport)

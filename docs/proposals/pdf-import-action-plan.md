@@ -12,7 +12,7 @@
 | Etapa | Descripción | Estado |
 | --- | --- | --- |
 | 0 | Semántica de período (código + datos históricos) | **Completa** — código, datos locales, Neon (corregido por el usuario) y el CSV fuente ya alineados |
-| 1 | Endpoint 1 — preview PDF (MVP) | No iniciada |
+| 1 | Endpoint 1 — preview PDF (MVP) | **Completa** — extractor por plantilla, template real de WALMART-CHILE, ruta `POST /payroll/import/pdf-preview` |
 | 2 | Endpoint 2 — confirmar, modo `commit` | No iniciada |
 | 3 | Endpoint 2 — modo `validate` (rollback) | No iniciada |
 
@@ -83,11 +83,71 @@ hoy, pasa limpio por la validación nueva de la sección "Qué se hizo" sin disp
 
 ## Etapa 1 — Endpoint 1 (preview PDF)
 
-No iniciada. Próximo paso cuando arranque: crear
-`payroll/infrastructure/pdf_import/` (extractor por plantilla + carga de plantillas
-JSON), el DTO de preview enriquecido, y la ruta
-`POST /payroll/import/pdf-preview`. Ver sección 2 y 5 de
-`pdf-import-design-recommendation.md` para el diseño ya acordado.
+**Completa (2026-09-25).** Sin persistencia: ni `PayrollRepository` ni
+`ProcessImportedPayrollPeriods` están en el grafo de dependencias de este endpoint, por
+construcción (`PreviewPdfImport.__init__` solo recibe el puerto `PdfPayrollExtractor`).
+
+### Qué se construyó
+
+- **DTOs** (`application/dto.py`): `PdfImportPreviewRowDTO` (raw_label,
+  extracted_amount_clp, kind, concept_code opcional, confidence) y
+  `PdfImportPreviewDTO` (employer/period/worked_days/declared_net_pay_clp, todos
+  opcionales, + template_id + rows). Todo opcional a propósito: el contrato es "nunca
+  falla ruidosamente", en el peor caso se devuelve un preview casi vacío con 200 OK.
+- **Puerto** (`application/ports/pdf_extractors.py`): `PdfPayrollExtractor.extract_preview()`.
+- **Use case** (`application/use_cases/preview_pdf_import.py`): `PreviewPdfImport` —
+  deliberadamente sin repositorio, solo delega al extractor.
+- **Infraestructura nueva** (`infrastructure/pdf_import/`):
+  - `text_extraction.py`: helpers genéricos (agnósticos de empleador) para leer texto
+    de un PDF con `pypdf` (`extraction_mode="layout"`), parsear header (mes/año en
+    español, días trabajados, líquido a pagar) y separar el detalle en líneas
+    `(label, monto)`, con un heurístico posicional (columna HABERES vs DESCUENTOS) como
+    señal de respaldo cuando ninguna plantilla resuelve una línea.
+  - `templates.py`: carga y matching de plantillas JSON versionadas. Selección en dos
+    pasos: filtro por `employer_match.name_pattern` contra el texto completo, luego
+    score = cantidad de `fields` cuyo patrón matchea al menos un label del detalle;
+    umbral mínimo `MIN_TEMPLATE_MATCH_SCORE = 3` (si no se alcanza, no se asume nada).
+  - `extractor.py`: `TemplatePdfPayrollExtractor`, la implementación del puerto.
+    Envuelve todo en un `try/except Exception` — un PDF corrupto, escaneado sin capa de
+    texto, o cualquier fallo interno inesperado degrada a un preview vacío en vez de
+    romper el endpoint.
+  - `templates/walmart-chile/v1.json`: **plantilla real**, construida y validada contra
+    la liquidación real del usuario (`secrets/Liquidación_202608.PDF`, nunca commiteada
+    — solo se usó localmente para diseñar/probar la plantilla). Mapea los 13 conceptos
+    reales de WALMART-CHILE a sus `concept_code` de `PAY_CONCEPT`, con la confianza que
+    ya se había acordado en `pdf-import-design-recommendation.md` (Alta=0.9,
+    Media-Alta=0.75, Media=0.6). Verificado extremo a extremo contra el PDF real:
+    empleador, período (2026-8, ya con la convención nueva), días trabajados (30) y
+    líquido a pagar (3.133.182) — los 13 conceptos resuelven a un `concept_code`, cero
+    filas sin resolver.
+- **Ruta** (`interfaces/api/routes/payroll.py`): `POST /payroll/import/pdf-preview`,
+  wireada en `interfaces/api/dependencies.py::get_preview_pdf_import_use_case` (sin
+  `Depends` de repositorio, a propósito).
+
+### Decisiones/ajustes durante la implementación
+
+- El heurístico de columna (HABERES vs DESCUENTOS) para filas no resueltas por ninguna
+  plantilla se calcula **siempre** sobre el texto del documento (no solo cuando no hay
+  plantilla), para que también sirva de respaldo en una fila puntual sin match dentro
+  de un documento cuya plantilla sí matcheó en general.
+- Un token corto (3-6 caracteres) inmediatamente antes del monto solo se trata como
+  "código de concepto" (y se recorta del label) si contiene al menos un dígito — todos
+  los códigos reales observados mezclan letras y números (`1E89`, `/370`, `3C30`).
+  Sin esto, una palabra corta en mayúsculas al final de un label sin código real (ej.
+  "LABEL") se recortaba por error.
+- Cobertura: 100% en los 4 archivos nuevos de `infrastructure/pdf_import/` + use case +
+  wiring de dependencias/ruta (337 tests totales, suite completa). Dos líneas
+  defensivas genuinamente inalcanzables (dado que las regex que las preceden ya
+  garantizan la condición) quedaron marcadas `# pragma: no cover` en vez de forzar un
+  test artificial.
+
+### Pendiente / fuera de alcance de esta etapa
+
+- Solo hay plantilla para WALMART-CHILE. Cualquier otro empleador/formato hoy cae en
+  "sin plantilla" (preview con filas sin resolver, pero header parseado igual).
+- No hay OCR ni LLM — PDFs escaneados sin capa de texto seleccionable devuelven un
+  preview vacío. Fuera de alcance del MVP, tal como está en
+  `pdf-import-design-recommendation.md`.
 
 ## Etapa 2 — Endpoint 2, modo `commit`
 
@@ -101,6 +161,10 @@ de `session.commit()` al final.
 
 ## Historial de cambios
 
+- **2026-09-25 (cont. 3)** — Etapa 1 completa: extractor por plantilla, plantilla real
+  de WALMART-CHILE, endpoint `POST /payroll/import/pdf-preview` sin persistencia.
+  337 tests, 100% cobertura, lint/typecheck/vulture limpios. Ver detalle en la sección
+  de la Etapa 1 arriba.
 - **2026-09-25 (cont. 2)** — A pedido explícito del usuario, se eliminó del repo
   `scripts/data-fixes/2026-09-fix-period-semantics-walmart-chile.sql` (ya no hacía
   falta: local, Neon y el CSV fuente ya estaban alineados). El SQL quedó documentado

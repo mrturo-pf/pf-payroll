@@ -176,6 +176,41 @@ class ImportPayrollRowDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class PdfImportPreviewRowDTO:
+    """Represent a single candidate row extracted from a payroll PDF.
+
+    Unlike ImportPayrollRowDTO, this never persists anything and may carry an
+    unresolved concept_code -- confidence and raw_label exist precisely so a
+    human can review and correct low-confidence or unmatched rows before
+    resubmitting them through the confirm endpoint.
+    """
+
+    raw_label: str
+    extracted_amount_clp: Decimal
+    kind: PayrollConceptKind
+    concept_code: str | None
+    confidence: float
+
+
+@dataclass(frozen=True, slots=True)
+class PdfImportPreviewDTO:
+    """Represent the full result of previewing a payroll PDF.
+
+    All header fields are optional because extraction must never fail loudly
+    -- a PDF that matches no known template still returns a 200 with mostly
+    empty/unresolved fields instead of raising.
+    """
+
+    employer: str | None
+    period_year: int | None
+    period_month: int | None
+    worked_days: int | None
+    declared_net_pay_clp: Decimal | None
+    template_id: str | None
+    rows: list[PdfImportPreviewRowDTO] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
 class ImportedContributionValidationDTO:
     """Represent imported contribution validation results."""
 

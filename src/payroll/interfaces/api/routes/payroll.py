@@ -16,6 +16,7 @@ from payroll.application.dto import (
     AssignPlansCommandDTO,
     GeneratedPayrollReportDTO,
     ImportedPayrollPeriodDTO,
+    PdfImportPreviewDTO,
     ReviewPayrollPeriodCommandDTO,
     ComputeContributionsCommandDTO,
     DeflateAmountsCommandDTO,
@@ -36,6 +37,7 @@ from payroll.interfaces.api.dependencies import (
     get_import_payroll_use_case,
     get_generate_payroll_report_use_case,
     get_payroll_queries,
+    get_preview_pdf_import_use_case,
     get_process_imported_payroll_periods_use_case,
     get_review_payroll_period_use_case,
 )
@@ -43,6 +45,7 @@ from payroll.interfaces.api.dependencies import (
 if TYPE_CHECKING:
     from payroll.application.use_cases.assign_plans import AssignPlans
     from payroll.application.use_cases.compute_contributions import ComputeContributions
+    from payroll.application.use_cases.preview_pdf_import import PreviewPdfImport
     from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
     from payroll.application.use_cases.deflate_amounts import DeflateAmounts
     from payroll.application.use_cases.generate_payroll_report import (
@@ -63,6 +66,31 @@ class ImportPayrollResponse(BaseModel):
     imported_periods: int
     imported_items: int
     periods: list[ImportedPayrollPeriodDTO]
+
+
+class PdfImportPreviewRowRead(BaseModel):
+    """Represent a single candidate row in a PDF import preview response."""
+
+    raw_label: str
+    extracted_amount_clp: str
+    kind: str
+    concept_code: str | None
+    confidence: float
+
+
+class PdfImportPreviewResponse(BaseModel):
+    """Represent Pdf Import Preview Response.
+
+    Never persists anything -- see PreviewPdfImport / TemplatePdfPayrollExtractor.
+    """
+
+    employer: str | None
+    period_year: int | None
+    period_month: int | None
+    worked_days: int | None
+    declared_net_pay_clp: str | None
+    template_id: str | None
+    rows: list[PdfImportPreviewRowRead]
 
 
 class ComputeContributionsRequest(BaseModel):
@@ -372,6 +400,57 @@ async def import_payroll(
         imported_items=result.imported_items,
         periods=list(result.periods),
     )
+
+
+def to_pdf_import_preview_response(
+    preview: PdfImportPreviewDTO,
+) -> PdfImportPreviewResponse:
+    """Convert a PdfImportPreviewDTO to its API response shape."""
+    return PdfImportPreviewResponse(
+        employer=preview.employer,
+        period_year=preview.period_year,
+        period_month=preview.period_month,
+        worked_days=preview.worked_days,
+        declared_net_pay_clp=(
+            str(preview.declared_net_pay_clp)
+            if preview.declared_net_pay_clp is not None
+            else None
+        ),
+        template_id=preview.template_id,
+        rows=[
+            PdfImportPreviewRowRead(
+                raw_label=row.raw_label,
+                extracted_amount_clp=str(row.extracted_amount_clp),
+                kind=row.kind,
+                concept_code=row.concept_code,
+                confidence=row.confidence,
+            )
+            for row in preview.rows
+        ],
+    )
+
+
+@router.post("/import/pdf-preview", response_model=PdfImportPreviewResponse)
+async def preview_pdf_import(
+    file: UploadFile = File(...),
+    use_case: PreviewPdfImport = Depends(get_preview_pdf_import_use_case),
+) -> PdfImportPreviewResponse:
+    """Preview payroll data extracted from a PDF.
+
+    Read-only: never touches PayrollRepository nor
+    ProcessImportedPayrollPeriods, and never persists anything. A PDF that
+    matches no known template still returns 200 with unresolved rows instead
+    of failing -- see PreviewPdfImport / TemplatePdfPayrollExtractor.
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="A PDF file name is required.")
+
+    try:
+        preview = await use_case.execute(file.filename, await file.read())
+    except PayrollError as exc:
+        raise to_http_exception(exc, default_status=400) from exc
+
+    return to_pdf_import_preview_response(preview)
 
 
 @router.get("/summary", response_model=list[PayrollSummaryRead])

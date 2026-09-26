@@ -50,8 +50,9 @@ def test_get_deflate_amounts_use_case_is_instantiable() -> None:
 
 
 def test_get_preview_pdf_import_use_case_is_instantiable() -> None:
-    """Test that the preview pdf import use case can be created (no repo)."""
-    use_case = get_preview_pdf_import_use_case()
+    """Test that the preview pdf import use case can be created."""
+    reference_data = MagicMock()
+    use_case = get_preview_pdf_import_use_case(reference_data=reference_data)
     assert isinstance(use_case, PreviewPdfImport)
 
 

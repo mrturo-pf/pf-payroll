@@ -129,15 +129,18 @@ def _infer_employment_contract_kind(
 def _resolve_payment_date(
     period_year: int | None, period_month: int | None
 ) -> date | None:
-    """Best-effort payment_date: the default last-Chilean-business-day rule.
+    """Best-effort payment_date: the generic last-Chilean-business-day rule.
 
     Same default `resolve_payment_date()` already falls back to elsewhere in
     the system (see docs/api.md's /payroll/period-range) when an employer's
-    actual payment rule isn't known -- the PDF-preview flow has no database
-    access at all (see PreviewPdfImport's docstring), so it can never look up
-    a real per-employer override here. A caller confirming this preview
-    through POST /payroll/import/rows can still override payment_date by
-    hand if the employer's real payday differs.
+    actual payment rule isn't known. This extractor has no database access
+    itself (see `templates.py`'s module docstring -- template matching is
+    pure static-file config), so it can never resolve a real per-employer
+    override on its own; `PreviewPdfImport` is the one that may recompute
+    this into the real employer rule afterwards, once the template match
+    here has revealed which employer produced the PDF. A caller confirming
+    this preview through POST /payroll/import/rows can still override
+    payment_date by hand if either guess turns out wrong.
     """
     if period_year is None or period_month is None:
         return None

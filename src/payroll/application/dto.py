@@ -193,6 +193,25 @@ class PdfImportPreviewRowDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class EmployerPaymentRuleDTO:
+    """Represent an employer's configured payment-date rule.
+
+    Mirrors `EmployerModel`'s payment-rule columns and `resolve_payment_date`
+    's keyword parameters exactly, so a caller can forward this DTO's fields
+    straight into that function without any translation step.
+    """
+
+    country_code: str
+    payment_date_rule: str
+    payment_month_offset: int
+    payment_day_of_month: int | None
+    payment_business_day_offset: int
+    payment_calendar_day_offset: int
+    payment_effective_on_processing_next_day: bool
+    payment_fixed_day_roll: str
+
+
+@dataclass(frozen=True, slots=True)
 class PdfImportPreviewDTO:
     """Represent the full result of previewing a payroll PDF.
 

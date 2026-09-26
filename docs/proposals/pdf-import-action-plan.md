@@ -435,6 +435,37 @@ lint/typecheck/vulture clean.
   moved to the new module's own test file plus 1 new CLI rollback test),
   100% coverage, ruff/mypy/vulture/jscpd clean.
 
+- **2026-09-26 (cont.)** — Fixed a real accuracy bug in `payment_date` found
+  by manual verification against `secrets/Liquidación_202608.PDF`: the
+  preview showed `2026-08-31` (the generic "last business day of the
+  month" guess, no employer-specific offsets) when the real WALMART-CHILE
+  payday for that period is `2026-08-28` (its configured
+  `payment_business_day_offset=1` +
+  `payment_effective_on_processing_next_day=TRUE`, see `pf-db`'s
+  `04_seed_real.sql`). Root cause: `TemplatePdfPayrollExtractor` never had
+  any way to reach the employer's real rule, because `PreviewPdfImport`'s
+  "never persists anything" guarantee had been over-read as "no database
+  access of any kind" -- it only ever needed to mean no writes; a read
+  cannot corrupt state. Fix: added a narrow `EmployerPaymentRuleReader`
+  port (new, deliberately not tacked onto the broader
+  `ReferenceDataRepository` -- interface segregation, since
+  `PreviewPdfImport` only needs this one lookup) plus
+  `EmployerPaymentRuleDTO`, implemented by
+  `SqlAlchemyReferenceDataRepository.get_employer_payment_rule()` (reused,
+  not a new repository class, since employer config is reference data and
+  the class already exists). `PreviewPdfImport` now takes this reader as an
+  optional constructor argument and, after the extractor resolves an
+  employer name via template match, looks up the real rule and recomputes
+  `payment_date` with it -- falling back to the extractor's generic guess
+  whenever no reader was given, the PDF matched no template, or the
+  employer isn't registered yet. `POST /payroll/import/pdf-preview` is
+  wired with a real (read-only) session; the CLI's `template-test <pdf>`
+  deliberately keeps `reference_data=None` (it has no DB access at all, by
+  design, so it can build templates for a brand-new employer before one
+  is ever registered) and keeps returning the generic guess. Verified
+  end-to-end against the real PDF: now returns `2026-08-28`. 393 tests
+  (+6), 100% coverage, ruff/mypy/vulture/jscpd clean.
+
 - **2026-09-25 (cont. 7)** — Closed 3 gaps vs. the original design found during an
   end-to-end review (see "Closing gaps" above): `validate` no longer rejects an
   unresolved `concept_code` (only `commit` does, with an explicit 400 and

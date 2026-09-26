@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from payroll.application.ports.income_tax_bracket import IncomeTaxBracketPort
 from payroll.application.ports.repositories import (
     ComplementaryInsuranceRepository,
+    EmployerPaymentRuleReader,
     MarketDataRepository,
     PayrollRepository,
     ReferenceDataRepository,
@@ -161,13 +162,18 @@ def get_transactional_process_imported_payroll_periods_use_case(
     )
 
 
-def get_preview_pdf_import_use_case() -> PreviewPdfImport:
+def get_preview_pdf_import_use_case(
+    reference_data: EmployerPaymentRuleReader = Depends(get_reference_data_repository),
+) -> PreviewPdfImport:
     """Get preview pdf import use case.
 
-    Deliberately takes no repository dependency -- the preview endpoint must
-    never be able to touch persistence, by construction.
+    Takes a read-only ReferenceDataRepository so it can resolve the real
+    employer payment-date rule once template matching reveals which
+    employer produced the PDF -- reads only, never writes. PreviewPdfImport
+    still takes no PayrollRepository at all, so it can never persist
+    anything nor trigger ProcessImportedPayrollPeriods.
     """
-    return PreviewPdfImport(TemplatePdfPayrollExtractor())
+    return PreviewPdfImport(TemplatePdfPayrollExtractor(), reference_data)
 
 
 def get_process_imported_payroll_periods_use_case(

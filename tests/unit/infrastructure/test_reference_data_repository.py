@@ -39,14 +39,20 @@ class FakeResult(FakeAllMixin):
         self,
         scalar_rows: list[object] | None = None,
         joined_rows: list[tuple[object, object]] | None = None,
+        scalar_one_row: object | None = None,
     ) -> None:
         """Initialize the instance."""
         self._scalar_rows = scalar_rows or []
         self._joined_rows = joined_rows or []
+        self._scalar_one_row = scalar_one_row
 
     def scalars(self) -> FakeScalarResult:
         """Handle scalars."""
         return FakeScalarResult(self._scalar_rows)
+
+    def scalar_one_or_none(self) -> object | None:
+        """Handle scalar_one_or_none."""
+        return self._scalar_one_row
 
 
 class FakeSession(FakeResultsQueueBase):
@@ -230,6 +236,43 @@ async def test_reference_data_repo_returns_none_when_no_pension_plan_for_date() 
     result = await repository.get_valid_pension_plan_for_date(date(2026, 1, 1))
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_employer_payment_rule_returns_none_when_employer_unknown() -> None:
+    """Test returning None when no employer with that exact name is registered."""
+    session = FakeSession([FakeResult(scalar_one_row=None)])
+    repository = SqlAlchemyReferenceDataRepository(session)
+
+    result = await repository.get_employer_payment_rule("UNKNOWN-EMPLOYER")
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_employer_payment_rule_maps_configured_employer() -> None:
+    """Test mapping an EmployerModel row into an EmployerPaymentRuleDTO."""
+    employer = SimpleNamespace(
+        country_code="CL",
+        payment_date_rule=SimpleNamespace(value="last_business_day_of_month"),
+        payment_month_offset=0,
+        payment_day_of_month=None,
+        payment_business_day_offset=1,
+        payment_calendar_day_offset=0,
+        payment_effective_on_processing_next_day=True,
+        payment_fixed_day_roll=SimpleNamespace(value="previous_business_day"),
+    )
+    session = FakeSession([FakeResult(scalar_one_row=employer)])
+    repository = SqlAlchemyReferenceDataRepository(session)
+
+    rule = await repository.get_employer_payment_rule("WALMART-CHILE")
+
+    assert rule is not None
+    assert rule.country_code == "CL"
+    assert rule.payment_date_rule == "last_business_day_of_month"
+    assert rule.payment_business_day_offset == 1
+    assert rule.payment_effective_on_processing_next_day is True
+    assert rule.payment_fixed_day_roll == "previous_business_day"
 
 
 def test_reference_data_models_and_enums_are_declared() -> None:

@@ -15,6 +15,7 @@ from payroll.application.dto import (
     ComputeUnemploymentInsuranceResultDTO,
     ContributionCapDTO,
     ContributionComputationContextDTO,
+    EmployerPaymentRuleDTO,
     HealthInstitutionDTO,
     HealthPlanDTO,
     ImportPayrollResultDTO,
@@ -62,6 +63,31 @@ class ReferenceDataRepository(Protocol):
 
     async def list_payroll_concepts(self) -> list[PayrollConceptDTO]:
         """List payroll concepts."""
+        ...
+
+
+class EmployerPaymentRuleReader(Protocol):
+    """Narrow read-only port for resolving an employer's payment-date rule.
+
+    Deliberately its own Protocol rather than a method tacked onto
+    ReferenceDataRepository -- PreviewPdfImport (the only current consumer)
+    only ever needs this one lookup, not the whole reference-catalogs
+    surface, so depending on the narrower port keeps it honest about what it
+    actually uses (interface segregation). SqlAlchemyReferenceDataRepository
+    still implements this method too -- one concrete class can satisfy
+    multiple Protocols, and reusing its existing session avoids standing up
+    a whole separate repository class for a single query.
+    """
+
+    async def get_employer_payment_rule(
+        self, employer_name: str
+    ) -> EmployerPaymentRuleDTO | None:
+        """Get an employer's configured payment-date rule by exact name.
+
+        Returns None when no employer with that exact name is registered
+        yet -- the caller (PreviewPdfImport) treats that the same as "no
+        override available" and keeps its own generic default.
+        """
         ...
 
 

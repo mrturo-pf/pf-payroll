@@ -9,12 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from payroll.application.dto import (
     ContributionCapDTO,
+    EmployerPaymentRuleDTO,
     HealthInstitutionDTO,
     HealthPlanDTO,
     PayrollConceptDTO,
     PensionInstitutionDTO,
     PensionPlanDTO,
 )
+from payroll.infrastructure.db.models import EmployerModel
 from payroll.infrastructure.db.models.reference_data import (
     ContributionCapModel,
     HealthInstitutionModel,
@@ -155,6 +157,29 @@ class SqlAlchemyReferenceDataRepository:
             )
             for row in result.scalars().all()
         ]
+
+    async def get_employer_payment_rule(
+        self, employer_name: str
+    ) -> EmployerPaymentRuleDTO | None:
+        """Get an employer's configured payment-date rule by exact name."""
+        result = await self._session.execute(
+            select(EmployerModel).where(EmployerModel.name == employer_name)
+        )
+        employer = result.scalar_one_or_none()
+        if employer is None:
+            return None
+        return EmployerPaymentRuleDTO(
+            country_code=employer.country_code,
+            payment_date_rule=employer.payment_date_rule.value,
+            payment_month_offset=employer.payment_month_offset,
+            payment_day_of_month=employer.payment_day_of_month,
+            payment_business_day_offset=employer.payment_business_day_offset,
+            payment_calendar_day_offset=employer.payment_calendar_day_offset,
+            payment_effective_on_processing_next_day=(
+                employer.payment_effective_on_processing_next_day
+            ),
+            payment_fixed_day_roll=employer.payment_fixed_day_roll.value,
+        )
 
     async def get_valid_pension_plan_for_date(
         self, reference_date: date

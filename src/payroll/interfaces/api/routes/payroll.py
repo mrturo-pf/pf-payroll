@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile
 from fastapi.responses import Response
 from dataclasses import dataclass
-from pydantic import BaseModel
+from pydantic import BaseModel, PlainSerializer
 
 from payroll.application.errors import PayrollError, PayrollValidationError
 from payroll.application.dto import (
@@ -70,6 +70,29 @@ if TYPE_CHECKING:
 
 router = APIRouter(prefix="/payroll", tags=["payroll"])
 
+# MoneyCLP renders as a genuine JSON number (not a quoted string) for the
+# handful of fields below, at the caller's explicit request. Everywhere else
+# in this API, money/rate fields are deliberately plain `str` (see the many
+# `str(result.foo_clp)` conversions throughout this file and
+# reference_data.py): pydantic serializes bare `Decimal` fields as JSON
+# strings by default specifically to avoid float64 precision loss on the
+# wire, matching AGENTS.md's "never float" rule. That precision concern does
+# not apply here at all, not even in theory: the Chilean peso (CLP) has no
+# subunit/decimal denomination, so every value is already an exact whole
+# number -- `to_integral_value()` rounds defensively (ROUND_HALF_EVEN) in
+# case a NUMERIC column's cosmetic `.00` scale ever hid a stray fractional
+# artifact, then converts to a real `int`, which JSON represents exactly.
+# Scoped narrowly to ImportedPeriodRead/ImportedContributionValidationRead
+# rather than applied API-wide -- see AGENTS.md on cross-cutting changes.
+# Internal computation is untouched: every value here is still a real
+# `Decimal` right up until this last-mile JSON serialization step.
+MoneyCLP = Annotated[
+    Decimal,
+    PlainSerializer(
+        lambda v: int(v.to_integral_value()), return_type=int, when_used="json"
+    ),
+]
+
 
 class UnresolvedRowWarning(BaseModel):
     """Represent one submitted row whose concept_code could not be resolved.
@@ -84,6 +107,64 @@ class UnresolvedRowWarning(BaseModel):
 
     row_index: int
     amount_clp: str
+
+
+class ImportedContributionValidationRead(BaseModel):
+    """Represent imported contribution validation results in an API response.
+
+    A deliberate, jscpd-exempted mirror of ImportedContributionValidationDTO
+    (same reasoning as ImportedPeriodRead's own docstring) -- with one
+    intentional difference: every *_clp field uses MoneyCLP here instead of
+    the DTO's bare Decimal, so these amounts render as real JSON numbers
+    instead of the quoted strings pydantic emits for Decimal by default.
+    """
+
+    # jscpd:ignore-start
+    declared_pension_base_clp: MoneyCLP | None = None
+    expected_pension_base_clp: MoneyCLP | None = None
+    pension_base_difference_clp: MoneyCLP | None = None
+    declared_pension_additional_clp: MoneyCLP | None = None
+    expected_pension_additional_clp: MoneyCLP | None = None
+    pension_additional_difference_clp: MoneyCLP | None = None
+    declared_health_base_clp: MoneyCLP | None = None
+    expected_health_base_clp: MoneyCLP | None = None
+    health_base_difference_clp: MoneyCLP | None = None
+    declared_health_plan_additional_clp: MoneyCLP | None = None
+    expected_health_plan_additional_clp: MoneyCLP | None = None
+    health_plan_additional_difference_clp: MoneyCLP | None = None
+    warning: str | None = None
+    # jscpd:ignore-end
+
+
+def to_imported_contribution_validation_read(
+    validation: ImportedContributionValidationDTO | None,
+) -> ImportedContributionValidationRead | None:
+    """Convert an ImportedContributionValidationDTO to its API response shape."""
+    if validation is None:
+        return None
+    return ImportedContributionValidationRead(
+        declared_pension_base_clp=validation.declared_pension_base_clp,
+        expected_pension_base_clp=validation.expected_pension_base_clp,
+        pension_base_difference_clp=validation.pension_base_difference_clp,
+        declared_pension_additional_clp=validation.declared_pension_additional_clp,
+        expected_pension_additional_clp=validation.expected_pension_additional_clp,
+        pension_additional_difference_clp=(
+            validation.pension_additional_difference_clp
+        ),
+        declared_health_base_clp=validation.declared_health_base_clp,
+        expected_health_base_clp=validation.expected_health_base_clp,
+        health_base_difference_clp=validation.health_base_difference_clp,
+        declared_health_plan_additional_clp=(
+            validation.declared_health_plan_additional_clp
+        ),
+        expected_health_plan_additional_clp=(
+            validation.expected_health_plan_additional_clp
+        ),
+        health_plan_additional_difference_clp=(
+            validation.health_plan_additional_difference_clp
+        ),
+        warning=validation.warning,
+    )
 
 
 class ImportedPeriodRead(BaseModel):
@@ -121,11 +202,11 @@ class ImportedPeriodRead(BaseModel):
     employment_contract_kind: EmploymentContractKind
     item_count: int
     worked_days: int = 30
-    declared_net_pay_clp: Decimal | None = None
-    expected_net_pay_clp: Decimal | None = None
-    net_pay_difference_clp: Decimal | None = None
+    declared_net_pay_clp: MoneyCLP | None = None
+    expected_net_pay_clp: MoneyCLP | None = None
+    net_pay_difference_clp: MoneyCLP | None = None
     net_pay_warning: str | None = None
-    contribution_validation: ImportedContributionValidationDTO | None = None
+    contribution_validation: ImportedContributionValidationRead | None = None
     complementary_insurance_validation: (
         ImportedComplementaryInsuranceValidationDTO | None
     ) = None
@@ -154,7 +235,9 @@ def to_imported_period_read(
         expected_net_pay_clp=period.expected_net_pay_clp,
         net_pay_difference_clp=period.net_pay_difference_clp,
         net_pay_warning=period.net_pay_warning,
-        contribution_validation=period.contribution_validation,
+        contribution_validation=to_imported_contribution_validation_read(
+            period.contribution_validation
+        ),
         complementary_insurance_validation=period.complementary_insurance_validation,
     )
 

@@ -295,7 +295,7 @@ def test_payroll_import_endpoint() -> None:
                 "status": "projected",
                 "employment_contract_kind": "indefinite",
                 "item_count": 1,
-                "declared_net_pay_clp": "950000",
+                "declared_net_pay_clp": 950000,
                 "expected_net_pay_clp": None,
                 "net_pay_difference_clp": None,
                 "net_pay_warning": (

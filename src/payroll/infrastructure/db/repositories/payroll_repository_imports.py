@@ -190,6 +190,7 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
 
         imported_periods: list[ImportedPayrollPeriodDTO] = []
         imported_items = 0
+        periods_pending_reconciliation: list[tuple[PayrollPeriodModel, str, int]] = []
 
         for (employer_name, year, month), period_rows in sorted(grouped_rows.items()):
             first_row = period_rows[0]
@@ -315,16 +316,22 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
             self._session.add_all(items)
             imported_items += len(items)
 
+            periods_pending_reconciliation.append((period, employer.name, len(items)))
+
+        await self._refresh_summary_view()
+
+        for period, employer_display_name, item_count in periods_pending_reconciliation:
+            await self._reconcile_period_net_pay(period, refresh_summary_view=False)
             imported_periods.append(
                 ImportedPayrollPeriodDTO(
                     id=period.id,
-                    employer=employer.name,
-                    period_year=year,
-                    period_month=month,
+                    employer=employer_display_name,
+                    period_year=period.period_year,
+                    period_month=period.period_month,
                     payment_date=period.payment_date,
                     status=period.status.value,
                     employment_contract_kind=period.employment_contract_kind,
-                    item_count=len(items),
+                    item_count=item_count,
                     worked_days=period.worked_days,
                     declared_net_pay_clp=period.declared_net_pay_clp,
                     expected_net_pay_clp=period.expected_net_pay_clp,
@@ -336,8 +343,6 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                     ),
                 )
             )
-
-        await self._refresh_summary_view()
 
         return ImportPayrollResultDTO(
             imported_periods=len(imported_periods),

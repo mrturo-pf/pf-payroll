@@ -231,6 +231,25 @@ def build_health_pair(
     return plan, institution
 
 
+def build_plan_deduction_and_validation_results(
+    pension_plan: PensionPlanModel,
+    pension_institution: PensionInstitutionModel,
+    health_plan: HealthPlanModel,
+    health_institution: HealthInstitutionModel,
+) -> list[FakeResult]:
+    """Build the 4 FakeResults import_rows() needs when no plan_id is given.
+
+    Two "deduce from date" lookups, then two "validate it exists and is
+    valid for payment_date" lookups, in this exact call order.
+    """
+    return [
+        FakeResult(joined_rows=[(pension_plan, pension_institution)]),
+        FakeResult(joined_rows=[(health_plan, health_institution)]),
+        FakeResult(first_row=(pension_plan, pension_institution)),
+        FakeResult(first_row=(health_plan, health_institution)),
+    ]
+
+
 def build_contribution_cap(
     *,
     cap_id: int,
@@ -552,14 +571,9 @@ async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
                     SimpleNamespace(id=2, code="PENSION_BASE"),
                 ]
             ),
-            # Pension plan deduction
-            FakeResult(joined_rows=[(pension_plan, pension_institution)]),
-            # Health plan deduction
-            FakeResult(joined_rows=[(health_plan, health_institution)]),
-            # Pension plan validation
-            FakeResult(first_row=(pension_plan, pension_institution)),
-            # Health plan validation
-            FakeResult(first_row=(health_plan, health_institution)),
+            *build_plan_deduction_and_validation_results(
+                pension_plan, pension_institution, health_plan, health_institution
+            ),
             # Employer lookup
             FakeResult(scalar_one=employer),
             # Check period exists
@@ -617,9 +631,89 @@ async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
         "and income tax are generated."
     )
     assert session.flush_count == 1
-    assert session.commit_count == 2
+    # 2 commits from _refresh_summary_view() + 1 from _reconcile_period_net_pay()
+    # bailing out early once it sees this period is missing most of the 6
+    # REVIEW_REQUIRED_CONCEPT_CODES (only SALARY_BASE/PENSION_BASE were
+    # imported here) -- see payroll_repository_shared.py.
+    assert session.commit_count == 3
     assert any(isinstance(item, PayrollPeriodModel) for item in session.added)
     assert sum(isinstance(item, PayrollItemModel) for item in session.added) == 2
+
+
+@pytest.mark.asyncio
+async def test_sqlalchemy_payroll_repository_imports_rows_reconciles_net_pay() -> None:
+    """Test import_rows computes expected_net_pay_clp once all 6 concepts land.
+
+    Regression for a bug where import_rows() never called
+    _reconcile_period_net_pay() at all -- expected_net_pay_clp stayed null
+    forever, no matter which concepts were imported, because the reconcile
+    step (already used by the per-item command endpoints) was simply never
+    wired into the bulk import path. See payroll_repository_shared.py's
+    _reconcile_period_net_pay() and REVIEW_REQUIRED_CONCEPT_CODES.
+    """
+    required_codes = [
+        "PENSION_BASE",
+        "PENSION_ADDITIONAL",
+        "HEALTH_BASE",
+        "HEALTH_ADDITIONAL_UF",
+        "UNEMPLOYMENT_INSURANCE",
+        "INCOME_TAX",
+    ]
+    employer = EmployerModel(id=10, name="ACME", started_at=date(2026, 1, 31))
+    pension_plan, pension_institution = build_pension_pair()
+    health_plan, health_institution = build_health_pair()
+    session = FakeSession(
+        [
+            # Concept codes
+            FakeResult(
+                scalar_rows=[
+                    SimpleNamespace(id=index, code=code)
+                    for index, code in enumerate(required_codes, start=1)
+                ]
+            ),
+            *build_plan_deduction_and_validation_results(
+                pension_plan, pension_institution, health_plan, health_institution
+            ),
+            # Employer lookup
+            FakeResult(scalar_one=employer),
+            # Check period exists
+            FakeResult(scalar_one=None),
+            # _sync_period_health_plans()'s delete-before-insert execute
+            FakeResult(),
+            # _refresh_summary_view()'s raw SQL execute
+            FakeResult(),
+            # _reconcile_period_net_pay(): available concept codes on the period
+            FakeResult(scalar_rows=list(required_codes)),
+            # _reconcile_period_net_pay(): PAY_MV_SUMARY.net_pay_clp
+            FakeResult(scalar_one=Decimal("900000")),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.import_rows(
+        [
+            SimpleNamespace(
+                employer="ACME",
+                period_year=2026,
+                period_month=1,
+                payment_date=date(2026, 1, 31),
+                status="actual",
+                employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                concept_code=code,
+                amount_clp=Decimal("100000"),
+                declared_net_pay_clp=Decimal("900000"),
+                expected_net_pay_clp=None,
+                net_pay_difference_clp=None,
+            )
+            for code in required_codes
+        ]
+    )
+
+    assert result.imported_periods == 1
+    assert result.imported_items == len(required_codes)
+    assert result.periods[0].expected_net_pay_clp == Decimal("900000")
+    assert result.periods[0].net_pay_difference_clp == Decimal("0")
+    assert result.periods[0].net_pay_warning is None
 
 
 @pytest.mark.asyncio

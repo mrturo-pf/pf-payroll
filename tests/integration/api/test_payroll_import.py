@@ -3,6 +3,7 @@
 from datetime import date
 from decimal import Decimal
 from io import BytesIO
+from typing import Literal
 
 import pytest
 from fastapi import HTTPException
@@ -42,9 +43,10 @@ from payroll.interfaces.api.dependencies import (
     get_deflate_amounts_use_case,
     get_compute_income_tax_use_case,
     get_generate_payroll_report_use_case,
-    get_import_payroll_use_case,
     get_review_payroll_period_use_case,
-    get_process_imported_payroll_periods_use_case,
+    get_transactional_import_payroll_use_case,
+    get_transactional_process_imported_payroll_periods_use_case,
+    get_transactional_session,
 )
 from payroll.interfaces.api.main import app
 from payroll.interfaces.api.routes.payroll import (
@@ -56,6 +58,27 @@ from payroll.interfaces.api.routes.payroll import (
     import_payroll,
     review_payroll_period,
 )
+
+
+class FakeTransactionalSessionScope:
+    """Test double for TransactionalSessionScope -- records resolve() calls.
+
+    A deliberate, jscpd-exempted mirror of the identically-shaped double in
+    test_payroll_import_rows.py -- POST /payroll/import now runs on the
+    exact same transactional-scope machinery.
+    """
+
+    # jscpd:ignore-start
+    def __init__(self) -> None:
+        """Initialize the instance."""
+        self.resolved_with: list[str] = []
+        self.session = object()
+
+    async def resolve(self, mode: Literal["commit", "validate"]) -> None:
+        """Record the resolution instead of touching a real transaction."""
+        self.resolved_with.append(mode)
+
+    # jscpd:ignore-end
 
 
 class FakeImportPayroll:
@@ -257,10 +280,14 @@ def _post_deflate_amounts(client: TestClient) -> object:
 
 def test_payroll_import_endpoint() -> None:
     """Test payroll import endpoint."""
-    app.dependency_overrides[get_import_payroll_use_case] = lambda: FakeImportPayroll()
-    app.dependency_overrides[get_process_imported_payroll_periods_use_case] = lambda: (
-        FakeProcessImportedPayrollPeriods()
+    scope = FakeTransactionalSessionScope()
+    app.dependency_overrides[get_transactional_session] = lambda: scope
+    app.dependency_overrides[get_transactional_import_payroll_use_case] = lambda: (
+        FakeImportPayroll()
     )
+    app.dependency_overrides[
+        get_transactional_process_imported_payroll_periods_use_case
+    ] = lambda: FakeProcessImportedPayrollPeriods()
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
@@ -281,9 +308,13 @@ def test_payroll_import_endpoint() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
+    assert scope.resolved_with == ["commit"]
     assert response.json() == {
-        "imported_periods": 1,
-        "imported_items": 1,
+        "mode": "commit",
+        "validated": True,
+        "saved": True,
+        "period_count": 1,
+        "item_count": 1,
         "periods": [
             {
                 "id": 1,
@@ -308,6 +339,73 @@ def test_payroll_import_endpoint() -> None:
         ],
         "unresolved_rows": [],
     }
+
+
+def test_payroll_import_endpoint_rejects_commit_on_genuine_conflict() -> None:
+    """mode="commit" refuses to persist when a period has a real conflict.
+
+    A period with a genuine declared-vs-computed net_pay mismatch (i.e.
+    expected_net_pay_clp is actually populated, unlike the "pending"
+    projected-period case exercised by test_payroll_import_endpoint) must
+    roll everything back and fail the whole request instead of persisting
+    partially-reconciled data.
+    """
+
+    class FakeImportPayrollWithConflict:
+        """Test double whose sole period has a real net_pay mismatch."""
+
+        async def from_bytes(
+            self, filename: str, content: bytes
+        ) -> ImportPayrollResultDTO:
+            """Return a period whose declared net pay does not reconcile."""
+            # jscpd:ignore-start -- deliberate mirror of the analogous fixture
+            # in test_payroll_import_rows.py's own genuine-conflict test.
+            return ImportPayrollResultDTO(
+                imported_periods=1,
+                imported_items=1,
+                periods=[
+                    ImportedPayrollPeriodDTO(
+                        id=1,
+                        employer="ACME",
+                        period_year=2026,
+                        period_month=1,
+                        payment_date=date(2026, 1, 31),
+                        status="actual",
+                        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                        item_count=1,
+                        declared_net_pay_clp=Decimal("950000"),
+                        expected_net_pay_clp=Decimal("900000"),
+                        net_pay_difference_clp=Decimal("50000"),
+                        net_pay_warning=(
+                            "Declared net_pay does not match the fully "
+                            "computed payroll totals. Difference: 50000 CLP."
+                        ),
+                    )
+                ],
+            )
+            # jscpd:ignore-end
+
+    scope = FakeTransactionalSessionScope()
+    app.dependency_overrides[get_transactional_session] = lambda: scope
+    app.dependency_overrides[get_transactional_import_payroll_use_case] = lambda: (
+        FakeImportPayrollWithConflict()
+    )
+    app.dependency_overrides[
+        get_transactional_process_imported_payroll_periods_use_case
+    ] = lambda: FakeProcessImportedPayrollPeriods()
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
+
+    try:
+        response = client.post(
+            "/payroll/import",
+            files={"file": ("sample.csv", b"data", "text/csv")},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert "Cannot commit" in response.json()["detail"]
+    assert scope.resolved_with == ["validate"]
 
 
 def test_payroll_import_returns_502_when_processing_raises_dependency_error() -> None:
@@ -335,12 +433,14 @@ def test_payroll_import_returns_502_when_processing_raises_dependency_error() ->
                 "Network error fetching exchange rate from pf-rates: missing protocol"
             )
 
-    app.dependency_overrides[get_import_payroll_use_case] = lambda: (
+    app.dependency_overrides[get_transactional_import_payroll_use_case] = lambda: (
         FakeImportPayrollOK()
     )
-    app.dependency_overrides[get_process_imported_payroll_periods_use_case] = lambda: (
-        FakeProcessRaisesDependencyError()
-    )
+    app.dependency_overrides[
+        get_transactional_process_imported_payroll_periods_use_case
+    ] = lambda: FakeProcessRaisesDependencyError()
+    scope = FakeTransactionalSessionScope()
+    app.dependency_overrides[get_transactional_session] = lambda: scope
     client = TestClient(
         app, headers={"X-API-Key": "test-key"}, raise_server_exceptions=False
     )
@@ -355,6 +455,7 @@ def test_payroll_import_returns_502_when_processing_raises_dependency_error() ->
 
     assert response.status_code == 502
     assert "pf-rates" in response.json()["detail"]
+    assert scope.resolved_with == ["validate"]
 
 
 def test_payroll_import_endpoint_requires_filename_and_surfaces_value_errors() -> None:
@@ -369,10 +470,14 @@ def test_payroll_import_endpoint_requires_filename_and_surfaces_value_errors() -
             """Create from bytes."""
             raise PayrollValidationError("bad payroll file")
 
-    app.dependency_overrides[get_import_payroll_use_case] = lambda: ErrorImportPayroll()
-    app.dependency_overrides[get_process_imported_payroll_periods_use_case] = lambda: (
-        FakeProcessImportedPayrollPeriods()
+    app.dependency_overrides[get_transactional_import_payroll_use_case] = lambda: (
+        ErrorImportPayroll()
     )
+    app.dependency_overrides[
+        get_transactional_process_imported_payroll_periods_use_case
+    ] = lambda: FakeProcessImportedPayrollPeriods()
+    scope = FakeTransactionalSessionScope()
+    app.dependency_overrides[get_transactional_session] = lambda: scope
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
@@ -388,6 +493,7 @@ def test_payroll_import_endpoint_requires_filename_and_surfaces_value_errors() -
     assert missing_name.status_code == 422
     assert invalid_file.status_code == 400
     assert invalid_file.json() == {"detail": "bad payroll file"}
+    assert scope.resolved_with == ["validate"]
 
 
 @pytest.mark.asyncio

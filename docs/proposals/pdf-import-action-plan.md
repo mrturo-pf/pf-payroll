@@ -342,6 +342,79 @@ lint/typecheck/vulture clean.
 
 ## Change log
 
+- **2026-09-26** — Added `mode` to `ImportPayrollResponse` (both
+  `POST /payroll/import` and `POST /payroll/import/rows`), echoing back
+  whichever mode actually produced the response. Found via real usage: a
+  `mode="validate"` response's `imported_periods`/`imported_items` read as
+  if something had actually been persisted, when nothing was -- confusing
+  for a caller who only looks at those two counts. With `mode` now always
+  present, the `imported_` prefix on those two counts became redundant (it
+  no longer conveys anything `mode` doesn't already say), so they were
+  renamed to `period_count`/`item_count` -- not `periods`/`items`, since
+  `periods` was already taken by the response's actual list of period
+  objects. This *is* a breaking change to `POST /payroll/import`'s
+  response shape (in production since before this feature), accepted
+  deliberately by the user rather than kept around for backwards
+  compatibility with no known consumer depending on the old names
+  (checked: nothing in `pf-sheets` or the Postman collection references
+  them). Also added two more fields describing the outcome: `validated`
+  (true when every row resolved a `concept_code` and no period has a
+  genuine net-pay/contribution/complementary-insurance conflict -- see
+  `_is_fully_validated()`) and `saved` (true once `mode="commit"` actually
+  persisted the write, `null` in `mode="validate"` since nothing was
+  persisted). `api.md` updated in the same change. **Superseded by the
+  entry below the same day:** `validated=false` together with `saved=true`
+  was initially possible (a commit could succeed while still carrying an
+  unresolved warning); this was corrected shortly after.
+
+- **2026-09-26** — Made `mode="commit"` on both `POST /payroll/import` and
+  `POST /payroll/import/rows` reject the whole request (400, nothing
+  persisted) when the reconciliation pipeline finds a genuine
+  declared-vs-computed conflict, not only when a `concept_code` is left
+  unresolved. Raised directly by the user reviewing the `validated`/`saved`
+  fields added earlier the same day: a commit could return `saved=true`
+  together with `validated=false`, which reads as "we saved something we
+  know is wrong" -- an ambiguous, unnecessary signal once the gate could
+  just as easily refuse to persist instead. `POST /payroll/import` (CSV/
+  XLSX) previously had no rollback mechanism at all -- `from_bytes()`
+  commits internally as it imports, with reconciliation only running
+  afterward -- so it was moved onto the same `TransactionalSessionScope`
+  SAVEPOINT machinery already built for `/payroll/import/rows`'s
+  `mode="validate"`: both routes now run the full import + reconciliation
+  pipeline inside one SAVEPOINT and only resolve it as `"commit"` once
+  `_is_fully_validated()` confirms no conflict, otherwise resolving as
+  `"validate"` (rollback) and raising a `PayrollValidationError`. The
+  `get_*_for_rows_import` dependency factories in `dependencies.py` were
+  renamed to `get_transactional_*` accordingly, since they now back both
+  endpoints, not just the rows one.
+
+  A genuine conflict had to be distinguished from a merely *pending*
+  reconciliation state (nothing to compare yet: a projected period awaiting
+  plan assignment, or a temporary market-data/economic-index lookup gap) --
+  both produce a non-null warning today, but blocking commits on the
+  pending case would break the legitimate "import a future/projected
+  period by CSV" workflow entirely, since it could never be committed until
+  plans are assigned. `_is_fully_validated()`/`_period_has_reconciliation_
+  conflict()` (renamed from `_period_has_warning()`) tell them apart using
+  the typed `expected_*_clp` fields the reconciliation pipeline already
+  computes (populated only once a real comparison actually ran), not by
+  matching against warning prose. The complementary-insurance "pending"
+  prefix constant was promoted from a private constant in
+  `process_imported_payroll_periods.py` to `shared/constants.py` so the
+  route layer could reuse it without reaching into another layer's private
+  state. As a direct consequence, `validated` and `saved` are now always
+  `true` together in any 200 response for `mode="commit"` -- `api.md` and
+  `ImportPayrollResponse`'s docstring updated in the same change.
+
+  **Known follow-up, explicitly not done in this change:** the `payroll
+  import <file>` CLI command calls `ImportPayroll`/
+  `ProcessImportedPayrollPeriods` directly against a plain (non-
+  transactional) session -- it has no rollback capability at all today, so
+  it still commits regardless of any reconciliation conflict. Fixing it
+  properly needs `_is_fully_validated`'s logic to live somewhere the CLI
+  can reach without depending on the HTTP interface layer (e.g. moved into
+  `application/`), which was deliberately left out of this change's scope.
+
 - **2026-09-25 (cont. 7)** — Closed 3 gaps vs. the original design found during an
   end-to-end review (see "Closing gaps" above): `validate` no longer rejects an
   unresolved `concept_code` (only `commit` does, with an explicit 400 and

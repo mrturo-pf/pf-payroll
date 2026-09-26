@@ -34,6 +34,7 @@ from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.compute_unemployment_insurance import (
     ComputeUnemploymentInsurance,
 )
+from payroll.shared.constants import COMPLEMENTARY_INSURANCE_VALIDATION_PENDING_PREFIX
 
 _REQUIRED_IMPORTED_CONTRIBUTION_CODES = frozenset(
     {
@@ -42,9 +43,6 @@ _REQUIRED_IMPORTED_CONTRIBUTION_CODES = frozenset(
         "HEALTH_BASE",
         "HEALTH_ADDITIONAL_UF",
     }
-)
-_COMPLEMENTARY_VALIDATION_PENDING_PREFIX = (
-    "Complementary insurance validation pending: "
 )
 
 
@@ -176,7 +174,7 @@ class ProcessImportedPayrollPeriods:
                 detail, computed_costs
             )
         except EconomicIndexNotFoundError as exc:
-            warnings = [f"{_COMPLEMENTARY_VALIDATION_PENDING_PREFIX}{exc}"]
+            warnings = [f"{COMPLEMENTARY_INSURANCE_VALIDATION_PENDING_PREFIX}{exc}"]
         complementary_insurance_validation = (
             ImportedComplementaryInsuranceValidationDTO(warnings=warnings)
         )

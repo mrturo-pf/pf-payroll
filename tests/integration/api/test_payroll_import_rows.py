@@ -10,8 +10,8 @@ from payroll.application.dto import ImportPayrollResultDTO, ImportedPayrollPerio
 from payroll.application.errors import PayrollDependencyError, PayrollValidationError
 from payroll.domain.contributions import EmploymentContractKind
 from payroll.interfaces.api.dependencies import (
-    get_import_payroll_use_case_for_rows_import,
-    get_process_imported_payroll_periods_use_case_for_rows_import,
+    get_transactional_import_payroll_use_case,
+    get_transactional_process_imported_payroll_periods_use_case,
     get_transactional_session,
 )
 from payroll.interfaces.api.main import app
@@ -108,11 +108,11 @@ def _override_happy_path(
     """Wire the fake use cases + a given fake scope into the app."""
     fake_import = FakeImportPayrollFromRows()
     app.dependency_overrides[get_transactional_session] = lambda: scope
-    app.dependency_overrides[get_import_payroll_use_case_for_rows_import] = lambda: (
+    app.dependency_overrides[get_transactional_import_payroll_use_case] = lambda: (
         fake_import
     )
     app.dependency_overrides[
-        get_process_imported_payroll_periods_use_case_for_rows_import
+        get_transactional_process_imported_payroll_periods_use_case
     ] = lambda: FakeProcessImportedPayrollPeriods()
     return fake_import
 
@@ -130,8 +130,11 @@ def test_import_payroll_rows_endpoint_defaults_to_commit_mode() -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert body["imported_periods"] == 1
-    assert body["imported_items"] == 1
+    assert body["mode"] == "commit"
+    assert body["validated"] is True
+    assert body["saved"] is True
+    assert body["period_count"] == 1
+    assert body["item_count"] == 1
     assert body["periods"][0]["employer"] == "ACME"
     assert body["periods"][0]["id"] == 1
     assert scope.resolved_with == ["commit"]
@@ -171,7 +174,10 @@ def test_import_payroll_rows_endpoint_validate_mode_never_commits() -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert body["imported_periods"] == 1
+    assert body["mode"] == "validate"
+    assert body["validated"] is True
+    assert body["saved"] is None
+    assert body["period_count"] == 1
     assert scope.resolved_with == ["validate"]
     # The use case's DTO carries a real id (the INSERT genuinely happened
     # inside the SAVEPOINT), but that id is nulled out here: it will never
@@ -229,10 +235,75 @@ def test_import_payroll_rows_endpoint_validate_reports_unresolved_rows() -> None
 
     assert response.status_code == 200
     body = response.json()
-    assert body["imported_periods"] == 1
+    assert body["validated"] is False
+    assert body["saved"] is None
+    assert body["period_count"] == 1
     assert body["unresolved_rows"] == [{"row_index": 1, "amount_clp": "5000"}]
     assert fake_import.called_with is not None
     assert len(fake_import.called_with) == 1
+    assert scope.resolved_with == ["validate"]
+
+
+def test_import_payroll_rows_endpoint_rejects_commit_on_genuine_conflict() -> None:
+    """mode="commit" refuses to persist when a period has a real conflict.
+
+    Every row resolved a concept_code (so the earlier, cheap
+    unresolved-rows check never fires), but the reconciliation pipeline
+    finds a genuine net_pay mismatch -- this must roll everything back and
+    fail the request instead of committing partially-reconciled data.
+    """
+
+    class ConflictingImportPayrollFromRows:
+        """Test double whose sole period has a real net_pay mismatch."""
+
+        async def from_rows(self, rows: list[object]) -> ImportPayrollResultDTO:
+            """Return a period whose declared net pay does not reconcile."""
+            # jscpd:ignore-start -- deliberate mirror of the analogous fixture
+            # in test_payroll_import.py's own genuine-conflict test.
+            return ImportPayrollResultDTO(
+                imported_periods=1,
+                imported_items=len(rows),
+                periods=[
+                    ImportedPayrollPeriodDTO(
+                        id=1,
+                        employer="ACME",
+                        period_year=2026,
+                        period_month=1,
+                        payment_date=date(2026, 1, 31),
+                        status="actual",
+                        employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                        item_count=len(rows),
+                        declared_net_pay_clp=Decimal("950000"),
+                        expected_net_pay_clp=Decimal("900000"),
+                        net_pay_difference_clp=Decimal("50000"),
+                        net_pay_warning=(
+                            "Declared net_pay does not match the fully "
+                            "computed payroll totals. Difference: 50000 CLP."
+                        ),
+                    )
+                ],
+            )
+            # jscpd:ignore-end
+
+    scope = FakeTransactionalSessionScope()
+    app.dependency_overrides[get_transactional_session] = lambda: scope
+    app.dependency_overrides[get_transactional_import_payroll_use_case] = lambda: (
+        ConflictingImportPayrollFromRows()
+    )
+    app.dependency_overrides[
+        get_transactional_process_imported_payroll_periods_use_case
+    ] = lambda: FakeProcessImportedPayrollPeriods()
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
+
+    try:
+        response = client.post(
+            "/payroll/import/rows", json=_payload([SAMPLE_ROW], mode="commit")
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert "Cannot commit" in response.json()["detail"]
     assert scope.resolved_with == ["validate"]
 
 
@@ -258,8 +329,11 @@ def test_import_payroll_rows_endpoint_validate_all_unresolved_skips_pipeline() -
     assert response.status_code == 200
     body = response.json()
     assert body == {
-        "imported_periods": 0,
-        "imported_items": 0,
+        "mode": "validate",
+        "validated": False,
+        "saved": None,
+        "period_count": 0,
+        "item_count": 0,
         "periods": [],
         "unresolved_rows": [{"row_index": 0, "amount_clp": "1000000"}],
     }
@@ -340,11 +414,11 @@ def test_import_payroll_rows_endpoint_rolls_back_on_validation_error() -> None:
 
     scope = FakeTransactionalSessionScope()
     app.dependency_overrides[get_transactional_session] = lambda: scope
-    app.dependency_overrides[get_import_payroll_use_case_for_rows_import] = lambda: (
+    app.dependency_overrides[get_transactional_import_payroll_use_case] = lambda: (
         ErrorImportPayroll()
     )
     app.dependency_overrides[
-        get_process_imported_payroll_periods_use_case_for_rows_import
+        get_transactional_process_imported_payroll_periods_use_case
     ] = lambda: FakeProcessImportedPayrollPeriods()
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
@@ -374,11 +448,11 @@ def test_import_payroll_rows_endpoint_returns_502_when_processing_raises() -> No
 
     scope = FakeTransactionalSessionScope()
     app.dependency_overrides[get_transactional_session] = lambda: scope
-    app.dependency_overrides[get_import_payroll_use_case_for_rows_import] = lambda: (
+    app.dependency_overrides[get_transactional_import_payroll_use_case] = lambda: (
         FakeImportPayrollFromRows()
     )
     app.dependency_overrides[
-        get_process_imported_payroll_periods_use_case_for_rows_import
+        get_transactional_process_imported_payroll_periods_use_case
     ] = lambda: FakeProcessRaisesDependencyError()
     client = TestClient(
         app, headers={"X-API-Key": "test-key"}, raise_server_exceptions=False

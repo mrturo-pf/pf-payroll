@@ -14,13 +14,13 @@ from payroll.application.use_cases.process_imported_payroll_periods import (
 from payroll.interfaces.api import dependencies
 from payroll.interfaces.api.dependencies import (
     get_complementary_insurance_repository,
-    get_complementary_insurance_repository_for_rows_import,
+    get_transactional_complementary_insurance_repository,
     get_deflate_amounts_use_case,
-    get_import_payroll_use_case_for_rows_import,
-    get_payroll_repository_for_rows_import,
+    get_transactional_import_payroll_use_case,
+    get_transactional_payroll_repository,
     get_preview_pdf_import_use_case,
     get_process_imported_payroll_periods_use_case,
-    get_process_imported_payroll_periods_use_case_for_rows_import,
+    get_transactional_process_imported_payroll_periods_use_case,
 )
 
 
@@ -63,32 +63,32 @@ async def test_get_transactional_session_manages_lifecycle(
     await assert_get_transactional_session_lifecycle(monkeypatch, dependencies)
 
 
-def test_get_payroll_repository_for_rows_import() -> None:
+def test_get_transactional_payroll_repository() -> None:
     """Test building a payroll repository bound to a transactional scope."""
     scope = MagicMock(session=MagicMock())
-    repository = get_payroll_repository_for_rows_import(scope)
+    repository = get_transactional_payroll_repository(scope)
     assert repository is not None
 
 
-def test_get_complementary_insurance_repository_for_rows_import() -> None:
+def test_get_transactional_complementary_insurance_repository() -> None:
     """Test building a complementary insurance repository from the scope."""
     scope = MagicMock(session=MagicMock())
-    repository = get_complementary_insurance_repository_for_rows_import(scope)
+    repository = get_transactional_complementary_insurance_repository(scope)
     assert repository is not None
 
 
-def test_get_import_payroll_use_case_for_rows_import_is_instantiable() -> None:
+def test_get_transactional_import_payroll_use_case_is_instantiable() -> None:
     """Test that the rows-import use case can be created."""
     repository = MagicMock()
-    use_case = get_import_payroll_use_case_for_rows_import(repository)
+    use_case = get_transactional_import_payroll_use_case(repository)
     assert isinstance(use_case, ImportPayroll)
 
 
-def test_get_process_imported_payroll_periods_use_case_for_rows_import() -> None:
+def test_get_transactional_process_imported_payroll_periods_use_case() -> None:
     """Test that the rows-import post-processing use case can be created."""
     repository = MagicMock()
     ci_repository = MagicMock()
-    use_case = get_process_imported_payroll_periods_use_case_for_rows_import(
+    use_case = get_transactional_process_imported_payroll_periods_use_case(
         repository=repository,
         complementary_insurance_repository=ci_repository,
     )

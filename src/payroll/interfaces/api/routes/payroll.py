@@ -103,8 +103,15 @@ class ImportedPeriodRead(BaseModel):
     the row itself never persists. Returning that id to the caller as if it
     were a real, reusable reference would be misleading, so it is nulled
     out here instead -- see to_imported_period_read().
+
+    The field list below is a deliberate, jscpd-exempted mirror of
+    ImportedPayrollPeriodDTO (not a lazy copy-paste): the interface layer
+    needs its own pydantic schema so the public API contract stays stable
+    even if the application-layer dataclass shape changes, and vice versa
+    -- see AGENTS.md, "DTOs are the only thing crossing layer boundaries".
     """
 
+    # jscpd:ignore-start
     id: int | None
     employer: str
     period_year: int
@@ -122,6 +129,7 @@ class ImportedPeriodRead(BaseModel):
     complementary_insurance_validation: (
         ImportedComplementaryInsuranceValidationDTO | None
     ) = None
+    # jscpd:ignore-end
 
 
 def to_imported_period_read(

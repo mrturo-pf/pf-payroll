@@ -50,3 +50,20 @@ def is_import_fully_validated(periods: list[ImportedPayrollPeriodDTO]) -> bool:
     property of the periods themselves.
     """
     return not any(period_has_reconciliation_conflict(period) for period in periods)
+
+
+def conflicting_reconciliation_periods(
+    periods: list[ImportedPayrollPeriodDTO],
+) -> list[ImportedPayrollPeriodDTO]:
+    """Return only the periods with a genuine declared-vs-computed conflict.
+
+    Shared by both interfaces (the HTTP 400 `detail` payload and the CLI's
+    stderr output) that need to tell a caller *which* period(s)/field(s)
+    failed instead of just "something didn't reconcile" -- a 22-period
+    import with one bad period should not force the caller to scan 21 clean
+    ones to find it. Lives here, not in either interface module, since
+    "which periods conflict" is a property of the periods themselves
+    (period_has_reconciliation_conflict()), not of how a given interface
+    chooses to render that list.
+    """
+    return [period for period in periods if period_has_reconciliation_conflict(period)]

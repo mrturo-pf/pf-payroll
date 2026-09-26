@@ -6,7 +6,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -186,6 +186,55 @@ def test_run_command_converts_os_error_into_exit(
         cli_main._run_command(coro())
 
     assert capsys.readouterr().err == "disk error\n"
+
+
+def test_run_command_prints_structured_detail_when_richer_than_message(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A PayrollError with structured detail also prints that detail as JSON.
+
+    Mirrors the reconciliation-conflict case (`payroll import`,
+    _build_conflict_detail()): the plain message alone doesn't say *which*
+    period/field failed, so the extra JSON block is what actually lets a
+    caller act on the failure instead of just knowing something went wrong.
+    """
+
+    async def coro() -> str:
+        """Handle coro."""
+        raise cli_main.PayrollValidationError(
+            "boom", detail={"message": "boom", "conflicting_periods": [1, 2]}
+        )
+
+    with pytest.raises(typer.Exit):
+        cli_main._run_command(coro())
+
+    err = capsys.readouterr().err
+    lines = err.splitlines()
+    assert lines[0] == "boom"
+    assert json.loads("\n".join(lines[1:])) == {
+        "message": "boom",
+        "conflicting_periods": [1, 2],
+    }
+
+
+def test_run_command_skips_detail_when_it_matches_the_plain_message(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A PayrollError without an explicit detail prints only the message once.
+
+    PayrollError defaults `detail` to the message itself, so this must not
+    print the same text twice -- covers every existing single-string raise
+    across the codebase (nothing about their CLI output should change).
+    """
+
+    async def coro() -> str:
+        """Handle coro."""
+        raise cli_main.PayrollValidationError("boom")
+
+    with pytest.raises(typer.Exit):
+        cli_main._run_command(coro())
+
+    assert capsys.readouterr().err == "boom\n"
 
 
 def test_parse_optional_decimal_supports_valid_none_and_invalid_values(
@@ -473,10 +522,14 @@ def test_import_payroll_async_rolls_back_on_genuine_conflict(
         _FakeProcessImportedPayrollPeriods,
     )
 
-    with pytest.raises(cli_main.PayrollValidationError):
+    with pytest.raises(cli_main.PayrollValidationError) as exc_info:
         asyncio.run(cli_main._import_payroll_async(sample_file))
 
     assert scope_holder[0].resolved_with == ["validate"]
+    detail = exc_info.value.detail
+    assert isinstance(detail, dict)
+    assert "Cannot commit" in detail["message"]
+    assert detail["conflicting_periods"] == [asdict(conflicting_result.periods[0])]
 
 
 def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

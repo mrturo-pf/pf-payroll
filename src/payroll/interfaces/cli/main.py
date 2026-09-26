@@ -19,11 +19,13 @@ from payroll.application.dto import (
     ComputeContributionsCommandDTO,
     ComputeIncomeTaxCommandDTO,
     GeneratedPayrollReportDTO,
+    ImportedPayrollPeriodDTO,
     PdfImportPreviewDTO,
     ReviewPayrollPeriodCommandDTO,
 )
 from payroll.application.errors import PayrollError, PayrollValidationError
 from payroll.application.services.import_reconciliation import (
+    conflicting_reconciliation_periods,
     is_import_fully_validated,
 )
 from payroll.application.use_cases.assign_plans import AssignPlans
@@ -104,11 +106,25 @@ def _emit_json(payload: object) -> None:
 
 
 def _run_command[T](coro: Coroutine[Any, Any, T]) -> T:
-    """Handle run command."""
+    """Handle run command.
+
+    Prints the plain message first (unchanged behavior for every existing
+    caller), then also prints `exc.detail` as JSON when it's a PayrollError
+    that attached something richer than the message itself -- see
+    PayrollError. A plain OSError/ValueError, or a PayrollError that never
+    opted into structured detail, has nothing extra to show, so this stays
+    silent for those exactly like before.
+    """
     try:
         return asyncio.run(coro)
     except (OSError, ValueError) as exc:
         typer.echo(str(exc), err=True)
+        detail = getattr(exc, "detail", None)
+        if detail is not None and detail != str(exc):
+            typer.echo(
+                json.dumps(detail, default=_json_default, indent=2, sort_keys=True),
+                err=True,
+            )
         raise typer.Exit(code=1) from exc
 
 
@@ -121,6 +137,28 @@ def _parse_optional_decimal(name: str, value: str | None) -> Decimal | None:
     except InvalidOperation as exc:
         typer.echo(f"{name} must be a valid decimal value.", err=True)
         raise typer.Exit(code=1) from exc
+
+
+def _build_conflict_detail(
+    message: str, periods: list[ImportedPayrollPeriodDTO]
+) -> dict[str, object]:
+    """Build the CLI stderr detail payload for a reconciliation conflict.
+
+    Mirrors the HTTP route's build_reconciliation_conflict_detail() in
+    spirit (same "message" + "conflicting_periods" shape, and the same
+    conflicting_reconciliation_periods() filter so only the bad period(s)
+    show up) but serializes plain application DTOs via dataclasses.asdict()
+    instead of the pydantic ImportedPeriodRead schema -- the CLI has no
+    interfaces/api layer to reuse here, and must not import one (hexagonal
+    architecture: the CLI and HTTP API are siblings, neither depends on the
+    other).
+    """
+    return {
+        "message": message,
+        "conflicting_periods": [
+            asdict(period) for period in conflicting_reconciliation_periods(periods)
+        ],
+    }
 
 
 async def _import_payroll_async(file_path: Path) -> object:
@@ -145,10 +183,14 @@ async def _import_payroll_async(file_path: Path) -> object:
                 _build_income_tax_bracket_client(),
             ).execute(result)
             if not is_import_fully_validated(result.periods):
-                raise PayrollValidationError(
+                message = (
                     "Cannot commit: computed contributions/net pay do not "
                     "match the declared amounts for one or more periods. "
                     "Fix the underlying file or reference data and resubmit."
+                )
+                raise PayrollValidationError(
+                    message,
+                    detail=_build_conflict_detail(message, result.periods),
                 )
         except PayrollError:
             await scope.resolve("validate")

@@ -13,6 +13,7 @@ from pydantic import BaseModel, PlainSerializer
 
 from payroll.application.errors import PayrollError, PayrollValidationError
 from payroll.application.services.import_reconciliation import (
+    conflicting_reconciliation_periods,
     is_import_fully_validated,
 )
 from payroll.application.dto import (
@@ -241,6 +242,29 @@ def to_imported_period_read(
         ),
         complementary_insurance_validation=period.complementary_insurance_validation,
     )
+
+
+def build_reconciliation_conflict_detail(
+    message: str, periods: list[ImportedPayrollPeriodDTO]
+) -> dict[str, object]:
+    """Build the structured 400 `detail` payload for a reconciliation conflict.
+
+    Includes only the conflicting periods (see
+    conflicting_reconciliation_periods()) -- a 22-period import with one bad
+    period should not force the caller to scan 21 clean ones to find it.
+    Reuses to_imported_period_read(mode="validate") so each entry has the
+    exact same shape a caller already knows how to parse from a normal
+    response: `id=None` for the same reason as any other validate-mode
+    period -- the whole transaction was rolled back once a genuine conflict
+    was found, so no id from it is real (see ImportedPeriodRead).
+    """
+    return {
+        "message": message,
+        "conflicting_periods": [
+            to_imported_period_read(period, mode="validate").model_dump(mode="json")
+            for period in conflicting_reconciliation_periods(periods)
+        ],
+    }
 
 
 class ImportPayrollResponse(BaseModel):
@@ -694,10 +718,14 @@ async def import_payroll(
         result = await use_case.from_bytes(file.filename, await file.read())
         result = await process_use_case.execute(result)
         if not is_import_fully_validated(result.periods):
-            raise PayrollValidationError(
+            message = (
                 "Cannot commit: computed contributions/net pay do not match "
                 "the declared amounts for one or more periods. Fix the "
                 "underlying file or reference data and resubmit."
+            )
+            raise PayrollValidationError(
+                message,
+                detail=build_reconciliation_conflict_detail(message, result.periods),
             )
         periods_read = [
             to_imported_period_read(period, mode="commit") for period in result.periods
@@ -805,10 +833,14 @@ async def import_payroll_rows(
         ]
         validated = not unresolved and is_import_fully_validated(result.periods)
         if payload.mode == "commit" and not validated:
-            raise PayrollValidationError(
+            message = (
                 "Cannot commit: computed contributions/net pay do not match "
                 'the declared amounts. Resend with mode="validate" to '
                 "inspect the warnings, or fix the underlying data first."
+            )
+            raise PayrollValidationError(
+                message,
+                detail=build_reconciliation_conflict_detail(message, result.periods),
             )
     except PayrollError as exc:
         await scope.resolve("validate")

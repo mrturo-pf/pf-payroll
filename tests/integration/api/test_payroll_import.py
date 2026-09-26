@@ -404,7 +404,17 @@ def test_payroll_import_endpoint_rejects_commit_on_genuine_conflict() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 400
-    assert "Cannot commit" in response.json()["detail"]
+    # jscpd:ignore-start -- deliberate mirror of the analogous assertions in
+    # test_payroll_import_rows.py's own genuine-conflict test.
+    detail = response.json()["detail"]
+    assert "Cannot commit" in detail["message"]
+    assert len(detail["conflicting_periods"]) == 1
+    conflicting = detail["conflicting_periods"][0]
+    assert conflicting["id"] is None  # rolled back -- see ImportedPeriodRead
+    assert conflicting["period_year"] == 2026
+    assert conflicting["period_month"] == 1
+    assert conflicting["net_pay_difference_clp"] == 50000
+    # jscpd:ignore-end
     assert scope.resolved_with == ["validate"]
 
 

@@ -9,6 +9,7 @@ from payroll.application.dto import (
     ImportedPayrollPeriodDTO,
 )
 from payroll.application.services.import_reconciliation import (
+    conflicting_reconciliation_periods,
     is_import_fully_validated,
     period_has_reconciliation_conflict,
 )
@@ -161,3 +162,22 @@ def test_is_import_fully_validated_false_if_any_period_conflicts() -> None:
 def test_is_import_fully_validated_true_for_empty_periods() -> None:
     """No periods at all trivially reconciles cleanly."""
     assert is_import_fully_validated([]) is True
+
+
+def test_conflicting_reconciliation_periods_filters_out_clean_ones() -> None:
+    """Only the genuinely conflicting periods come back, in their original order."""
+    clean = _make_period(id=1)
+    conflicting = _make_period(
+        id=2,
+        net_pay_warning="Declared net_pay does not match. Difference: 1 CLP.",
+        expected_net_pay_clp=Decimal("1"),
+    )
+
+    assert conflicting_reconciliation_periods([clean, conflicting]) == [conflicting]
+
+
+def test_conflicting_reconciliation_periods_empty_when_all_clean() -> None:
+    """A fully clean batch yields no conflicting periods at all."""
+    assert (
+        conflicting_reconciliation_periods([_make_period(), _make_period(id=2)]) == []
+    )

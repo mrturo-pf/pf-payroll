@@ -2,9 +2,23 @@
 
 
 class PayrollError(ValueError):
-    """Base application error."""
+    """Base application error.
+
+    `detail` lets a raiser attach a structured (JSON-serializable) payload
+    richer than the plain message -- e.g. which specific periods/fields
+    conflicted, not just "something didn't reconcile". Defaults to the
+    message itself, so every existing single-string raise across the
+    codebase (`PayrollValidationError("...")`, etc.) keeps working exactly
+    as before with zero call-site changes; only a raiser that explicitly
+    wants richer output needs to pass `detail=`.
+    """
 
     status_code = 400
+
+    def __init__(self, message: str, *, detail: object | None = None) -> None:
+        """Initialize the instance, defaulting detail to the message."""
+        super().__init__(message)
+        self.detail: object = message if detail is None else detail
 
 
 class PayrollValidationError(PayrollError):

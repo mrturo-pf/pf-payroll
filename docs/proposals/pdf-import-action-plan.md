@@ -415,6 +415,26 @@ lint/typecheck/vulture clean.
   can reach without depending on the HTTP interface layer (e.g. moved into
   `application/`), which was deliberately left out of this change's scope.
 
+- **2026-09-26** — Closed the CLI follow-up noted above, same day. Moved
+  `_period_has_reconciliation_conflict()`/`_is_fully_validated()` out of
+  `interfaces/api/routes/payroll.py` into a new
+  `application/services/import_reconciliation.py` (`period_has_
+  reconciliation_conflict()` / `is_import_fully_validated()`, operating
+  directly on `ImportedPayrollPeriodDTO` instead of the HTTP-layer
+  `ImportedPeriodRead` pydantic model, since the CLI must not depend on the
+  interfaces/api layer). Both HTTP routes were updated to call the shared
+  function on `result.periods` (the raw DTOs) before building the read
+  models, rather than duplicating the logic. The `payroll import <file>`
+  CLI command was moved from the plain `open_session()` onto
+  `open_transactional_session()` (the same SAVEPOINT scope the HTTP routes
+  use) and now checks `is_import_fully_validated(result.periods)` before
+  resolving the scope, raising `PayrollValidationError` (already a
+  `ValueError` subclass, so it flows through the CLI's existing
+  `_run_command()` error handling unchanged) and rolling back on a genuine
+  conflict, exactly mirroring the HTTP behavior. 387 tests (+2 unit tests
+  moved to the new module's own test file plus 1 new CLI rollback test),
+  100% coverage, ruff/mypy/vulture/jscpd clean.
+
 - **2026-09-25 (cont. 7)** — Closed 3 gaps vs. the original design found during an
   end-to-end review (see "Closing gaps" above): `validate` no longer rejects an
   unresolved `concept_code` (only `commit` does, with an explicit 400 and

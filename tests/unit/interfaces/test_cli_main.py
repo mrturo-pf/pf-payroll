@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -61,6 +63,25 @@ class _FakeSessionContext:
     async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
         """Exit the async context manager."""
         return None
+
+
+class _FakeTransactionalScope:
+    """Test double for TransactionalSessionScope -- records resolve() calls."""
+
+    def __init__(self) -> None:
+        """Initialize the instance."""
+        self.resolved_with: list[str] = []
+        self.session = "session"
+
+    async def resolve(self, mode: str) -> None:
+        """Record the resolution instead of touching a real transaction."""
+        self.resolved_with.append(mode)
+
+
+@asynccontextmanager
+async def _fake_open_transactional_session() -> AsyncIterator[_FakeTransactionalScope]:
+    """Mimic open_transactional_session() without a real database connection."""
+    yield _FakeTransactionalScope()
 
 
 class _FakeDualRepoUseCase:
@@ -190,10 +211,14 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     class FakeImportPayroll(_FakeImportPayrollBase):
         """Test double for Import Payroll."""
 
-        async def from_bytes(self, filename: str, content: bytes) -> object:
+        async def from_bytes(
+            self, filename: str, content: bytes
+        ) -> ImportPayrollResultDTO:
             """Create from bytes."""
             self._assert_sample_csv(filename, content)
-            return {"imported": True}
+            return ImportPayrollResultDTO(
+                imported_periods=1, imported_items=1, periods=[]
+            )
 
     class FakePayrollQueries:
         """Test double for Payroll Queries."""
@@ -265,6 +290,9 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
     monkeypatch.setattr(cli_main, "SessionLocal", lambda: _FakeSessionContext())
     monkeypatch.setattr(
+        cli_main, "open_transactional_session", _fake_open_transactional_session
+    )
+    monkeypatch.setattr(
         cli_main, "SqlAlchemyPayrollRepository", lambda session: "payroll-repo"
     )
     monkeypatch.setattr(
@@ -286,9 +314,9 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     monkeypatch.setattr(cli_main, "ReviewPayrollPeriod", FakeReviewPayrollPeriod)
     monkeypatch.setattr(cli_main, "GeneratePayrollReport", FakeGeneratePayrollReport)
 
-    assert asyncio.run(cli_main._import_payroll_async(sample_file)) == {
-        "imported": True
-    }
+    assert asyncio.run(cli_main._import_payroll_async(sample_file)) == (
+        ImportPayrollResultDTO(imported_periods=1, imported_items=1, periods=[])
+    )
     assert asyncio.run(cli_main._list_period_summaries_async())[0].period_id == 7
     assert asyncio.run(cli_main._get_period_detail_async(7)).id == 7
     assert (
@@ -315,6 +343,8 @@ def test_import_payroll_async_processes_periods_without_market_sync(
     sample_file = tmp_path / "sample.csv"
     sample_file.write_text("period_month,period_year,employer\n")
 
+    # jscpd:ignore-start -- deliberate mirror of the analogous fixture in
+    # test_import_payroll_async_rolls_back_on_genuine_conflict below.
     import_result = ImportPayrollResultDTO(
         imported_periods=1,
         imported_items=1,
@@ -344,7 +374,12 @@ def test_import_payroll_async_processes_periods_without_market_sync(
             """Create from bytes."""
             return import_result
 
+    # jscpd:ignore-end
+
     monkeypatch.setattr(cli_main, "SessionLocal", lambda: _FakeSessionContext())
+    monkeypatch.setattr(
+        cli_main, "open_transactional_session", _fake_open_transactional_session
+    )
     monkeypatch.setattr(
         cli_main, "SqlAlchemyPayrollRepository", lambda session: "payroll-repo"
     )
@@ -359,6 +394,89 @@ def test_import_payroll_async_processes_periods_without_market_sync(
     result = asyncio.run(cli_main._import_payroll_async(sample_file))
 
     assert result == import_result
+
+
+def test_import_payroll_async_rolls_back_on_genuine_conflict(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A genuine declared-vs-computed conflict rolls back and raises, saving nothing.
+
+    Mirrors the guarantee POST /payroll/import and POST /payroll/import/rows
+    already provide at the HTTP layer: the `payroll import` CLI command must
+    not persist a period it knows does not reconcile.
+    """
+    sample_file = tmp_path / "sample.csv"
+    sample_file.write_text("period_month,period_year,employer\n")
+
+    # jscpd:ignore-start -- deliberate mirror of the analogous fixture in
+    # test_import_payroll_async_processes_periods_without_market_sync above.
+    conflicting_result = ImportPayrollResultDTO(
+        imported_periods=1,
+        imported_items=1,
+        periods=[
+            ImportedPayrollPeriodDTO(
+                id=1,
+                employer="ACME",
+                period_year=2026,
+                period_month=4,
+                payment_date=date(2026, 4, 29),
+                status="actual",
+                employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                item_count=1,
+                declared_net_pay_clp=Decimal("950000"),
+                expected_net_pay_clp=Decimal("900000"),
+                net_pay_difference_clp=Decimal("50000"),
+                net_pay_warning=(
+                    "Declared net_pay does not match the fully computed "
+                    "payroll totals. Difference: 50000 CLP."
+                ),
+            )
+        ],
+    )
+
+    class FakeImportPayroll:
+        """Test double for Import Payroll."""
+
+        def __init__(self, repository: object, importer: object) -> None:
+            """Initialize the instance."""
+
+        async def from_bytes(
+            self, filename: str, content: bytes
+        ) -> ImportPayrollResultDTO:
+            """Return a period whose declared net pay does not reconcile."""
+            return conflicting_result
+
+    # jscpd:ignore-end
+
+    scope_holder: list[_FakeTransactionalScope] = []
+
+    @asynccontextmanager
+    async def _capturing_open_transactional_session() -> AsyncIterator[
+        _FakeTransactionalScope
+    ]:
+        scope = _FakeTransactionalScope()
+        scope_holder.append(scope)
+        yield scope
+
+    monkeypatch.setattr(cli_main, "SessionLocal", lambda: _FakeSessionContext())
+    monkeypatch.setattr(
+        cli_main, "open_transactional_session", _capturing_open_transactional_session
+    )
+    monkeypatch.setattr(
+        cli_main, "SqlAlchemyPayrollRepository", lambda session: "payroll-repo"
+    )
+    monkeypatch.setattr(cli_main, "XlsxPayrollImporter", lambda: "importer")
+    monkeypatch.setattr(cli_main, "ImportPayroll", FakeImportPayroll)
+    monkeypatch.setattr(
+        cli_main,
+        "ProcessImportedPayrollPeriods",
+        _FakeProcessImportedPayrollPeriods,
+    )
+
+    with pytest.raises(cli_main.PayrollValidationError):
+        asyncio.run(cli_main._import_payroll_async(sample_file))
+
+    assert scope_holder[0].resolved_with == ["validate"]
 
 
 def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

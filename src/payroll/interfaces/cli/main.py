@@ -22,6 +22,10 @@ from payroll.application.dto import (
     PdfImportPreviewDTO,
     ReviewPayrollPeriodCommandDTO,
 )
+from payroll.application.errors import PayrollError, PayrollValidationError
+from payroll.application.services.import_reconciliation import (
+    is_import_fully_validated,
+)
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
@@ -51,7 +55,11 @@ from payroll.infrastructure.db.repositories.payroll_repository import (
 from payroll.infrastructure.db.repositories.reference_data_repository import (
     SqlAlchemyReferenceDataRepository,
 )
-from payroll.interfaces.session import SessionLocal, open_session
+from payroll.interfaces.session import (
+    SessionLocal,
+    open_session,
+    open_transactional_session,
+)
 
 app = typer.Typer(help="Payroll CLI")
 
@@ -116,17 +124,37 @@ def _parse_optional_decimal(name: str, value: str | None) -> Decimal | None:
 
 
 async def _import_payroll_async(file_path: Path) -> object:
-    """Handle import payroll async."""
-    async with _open_session() as session:
-        result = await ImportPayroll(
-            SqlAlchemyPayrollRepository(session), XlsxPayrollImporter()
-        ).from_bytes(file_path.name, file_path.read_bytes())
-        return await ProcessImportedPayrollPeriods(
-            SqlAlchemyPayrollRepository(session),
-            _build_pf_rates_client(),
-            SqlAlchemyComplementaryInsuranceRepository(session),
-            _build_income_tax_bracket_client(),
-        ).execute(result)
+    """Handle import payroll async.
+
+    Runs on the same TransactionalSessionScope SAVEPOINT machinery as
+    POST /payroll/import: the whole import + reconciliation pipeline runs
+    inside one transaction, and only actually commits once
+    is_import_fully_validated() confirms no genuine declared-vs-computed
+    conflict was found. A conflict rolls everything back and fails the
+    command instead of persisting partially-reconciled data.
+    """
+    async with open_transactional_session() as scope:
+        try:
+            result = await ImportPayroll(
+                SqlAlchemyPayrollRepository(scope.session), XlsxPayrollImporter()
+            ).from_bytes(file_path.name, file_path.read_bytes())
+            result = await ProcessImportedPayrollPeriods(
+                SqlAlchemyPayrollRepository(scope.session),
+                _build_pf_rates_client(),
+                SqlAlchemyComplementaryInsuranceRepository(scope.session),
+                _build_income_tax_bracket_client(),
+            ).execute(result)
+            if not is_import_fully_validated(result.periods):
+                raise PayrollValidationError(
+                    "Cannot commit: computed contributions/net pay do not "
+                    "match the declared amounts for one or more periods. "
+                    "Fix the underlying file or reference data and resubmit."
+                )
+        except PayrollError:
+            await scope.resolve("validate")
+            raise
+        await scope.resolve("commit")
+        return result
 
 
 async def _list_period_summaries_async() -> object:

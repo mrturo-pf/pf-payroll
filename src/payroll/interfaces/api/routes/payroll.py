@@ -12,6 +12,9 @@ from dataclasses import dataclass
 from pydantic import BaseModel, PlainSerializer
 
 from payroll.application.errors import PayrollError, PayrollValidationError
+from payroll.application.services.import_reconciliation import (
+    is_import_fully_validated,
+)
 from payroll.application.dto import (
     AssignPlansCommandDTO,
     GeneratedPayrollReportDTO,
@@ -37,7 +40,6 @@ from payroll.interfaces.api.errors import to_http_exception
 from payroll.interfaces.session import TransactionalSessionScope
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.shared.payroll_status import resolve_declared_status
-from payroll.shared.constants import COMPLEMENTARY_INSURANCE_VALIDATION_PENDING_PREFIX
 from payroll.interfaces.api.dependencies import (
     get_assign_plans_use_case,
     get_compute_contributions_use_case,
@@ -241,53 +243,6 @@ def to_imported_period_read(
     )
 
 
-def _period_has_reconciliation_conflict(period: ImportedPeriodRead) -> bool:
-    """Return True if this period has a genuine declared-vs-computed mismatch.
-
-    Deliberately excludes "pending" states: a projected period awaiting plan
-    assignment, or a temporary market-data/economic-index lookup gap, also
-    produce a non-null warning, but there's nothing wrong there -- there's
-    simply nothing to compare yet. Blocking a commit for those would break
-    the legitimate "import a future/projected period by CSV" workflow.
-    Distinguished via the typed `expected_*` fields the reconciliation
-    pipeline already computes (populated only once a real comparison ran),
-    not by matching against warning prose -- a wording tweak elsewhere must
-    never silently change this gate's behavior.
-    """
-    if period.net_pay_warning is not None and period.expected_net_pay_clp is not None:
-        return True
-    if (
-        period.contribution_validation is not None
-        and period.contribution_validation.warning is not None
-        and period.contribution_validation.expected_pension_base_clp is not None
-    ):
-        return True
-    if period.complementary_insurance_validation is not None:
-        return any(
-            not warning.startswith(COMPLEMENTARY_INSURANCE_VALIDATION_PENDING_PREFIX)
-            for warning in period.complementary_insurance_validation.warnings
-        )
-    return False
-
-
-def _is_fully_validated(
-    periods: list[ImportedPeriodRead], unresolved_rows: list[UnresolvedRowWarning]
-) -> bool:
-    """Return True when nothing here needs the caller's attention.
-
-    False if any row was left unresolved (concept_code never got matched),
-    or if any period has a genuine declared-vs-computed conflict on
-    net-pay, contributions, or complementary insurance. "Pending" states
-    (nothing to compare yet) do not count -- see
-    _period_has_reconciliation_conflict(). True means every declared amount
-    that *could* be checked reconciled cleanly against what pf-payroll
-    independently computed.
-    """
-    if unresolved_rows:
-        return False
-    return not any(_period_has_reconciliation_conflict(period) for period in periods)
-
-
 class ImportPayrollResponse(BaseModel):
     """Represent Import Payroll Response.
 
@@ -316,7 +271,7 @@ class ImportPayrollResponse(BaseModel):
     "fully reconciled", only "no known conflict".
     - `validated`: True when every row got a resolved concept_code and no
       period has a genuine net-pay/contribution/complementary-insurance
-      conflict. See _is_fully_validated().
+      conflict. See is_import_fully_validated().
     - `saved`: True once the write is durable (mode="commit"), `None` when
       mode="validate" -- nothing was persisted, so "was it saved" does not
       apply. Never False: a failed commit raises an HTTP error instead of
@@ -726,7 +681,7 @@ async def import_payroll(
     Runs on the same transactional-scope machinery as POST
     /payroll/import/rows's mode="commit": the whole import +
     reconciliation pipeline runs inside one SAVEPOINT, and only actually
-    commits once _is_fully_validated() confirms no genuine
+    commits once is_import_fully_validated() confirms no genuine
     declared-vs-computed conflict was found. A conflict rolls everything
     back and fails the request instead of persisting partially-reconciled
     data -- see ImportPayrollResponse's docstring for why `validated` and
@@ -738,15 +693,15 @@ async def import_payroll(
     try:
         result = await use_case.from_bytes(file.filename, await file.read())
         result = await process_use_case.execute(result)
-        periods_read = [
-            to_imported_period_read(period, mode="commit") for period in result.periods
-        ]
-        if not _is_fully_validated(periods_read, []):
+        if not is_import_fully_validated(result.periods):
             raise PayrollValidationError(
                 "Cannot commit: computed contributions/net pay do not match "
                 "the declared amounts for one or more periods. Fix the "
                 "underlying file or reference data and resubmit."
             )
+        periods_read = [
+            to_imported_period_read(period, mode="commit") for period in result.periods
+        ]
     except PayrollError as exc:
         await scope.resolve("validate")
         raise to_http_exception(exc, default_status=400) from exc
@@ -786,7 +741,7 @@ async def import_payroll_rows(
     iterate (fix a few rows, validate again) without a hard failure each
     time. mode="commit" also rejects (400, nothing persisted) if the
     pipeline finds a genuine declared-vs-computed conflict once it runs --
-    see _is_fully_validated() and ImportPayrollResponse's docstring for why
+    see is_import_fully_validated() and ImportPayrollResponse's docstring for why
     a 200 in commit mode always means `validated=True, saved=True` together.
     See ImportPayrollRowsRequest's docstring for the full contract.
 
@@ -848,7 +803,7 @@ async def import_payroll_rows(
             to_imported_period_read(period, mode=payload.mode)
             for period in result.periods
         ]
-        validated = _is_fully_validated(periods_read, unresolved)
+        validated = not unresolved and is_import_fully_validated(result.periods)
         if payload.mode == "commit" and not validated:
             raise PayrollValidationError(
                 "Cannot commit: computed contributions/net pay do not match "

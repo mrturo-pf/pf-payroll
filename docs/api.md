@@ -77,7 +77,7 @@ Available commands:
 | Command | Purpose |
 | --- | --- |
 | `health` | Basic healthcheck. |
-| `import-payroll <file>` | Imports a CSV/XLSX payroll file. |
+| `import-payroll <file>` | Imports a CSV/XLSX payroll file. Runs on the same transactional-scope machinery as `POST /payroll/import`: the whole import + reconciliation pipeline runs inside one SAVEPOINT, and only actually commits once every period reconciles cleanly -- a genuine declared-vs-computed conflict rolls everything back and fails the command with a non-zero exit code instead of persisting partially-reconciled data. |
 | `template-test <pdf>` | Previews a payroll PDF against the current templates without persisting anything (no DB access) -- prints which template matched (if any) and which rows are still unresolved. Helper for building/adjusting `infrastructure/pdf_import/templates/*.json` by hand. |
 | `summary` | Lists payroll period summaries. |
 | `period-detail <period_id>` | Returns one payroll period with detail. |

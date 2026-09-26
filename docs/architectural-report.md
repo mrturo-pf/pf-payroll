@@ -1,22 +1,22 @@
-# Reporte Arquitectónico: Administrador de Nómina
+# Architectural Report: Payroll Manager
 
-**Clasificación del Diseño:** Greenfield, Arquitectura Hexagonal (Modular Monolith), Domain-Driven Design (DDD). Prioridad en precisión financiera estricta, tolerancia a fallos en ingesta manual y portabilidad transparente entre entornos locales (Docker) y Cloud (Managed PostgreSQL).
-
----
-
-## 1. Definición de Supuestos y Decisiones de Alcance
-
-* **Precisión Financiera:** Cálculo exacto. Uso estricto de `Decimal` en Python y `NUMERIC` en PostgreSQL. Nunca utilizar tipos flotantes.
-* **Variables Macroeconómicas:** Monedas (CLP, USD, EUR), Unidades de Reajuste (UF, UTM) y Deflactores (IPC). Soporte nativo para consultas históricas y deflación ($Monto_{Real} = Monto_{Nominal} \times IPC_{Destino} \div IPC_{Origen}$).
-* **Módulos de Seguridad Social (Chile):** Modelado histórico e independiente de instituciones (AFP, Isapre, Fonasa), planes contratados y topes imponibles variables. Los cálculos impositivos (Impuesto Único) dependen de la tabla oficial del SII.
-* **Inmutabilidad:** Los registros en la tabla de `PAY_PERIOD` actúan como *snapshots*. Si un plan de AFP o Isapre cambia en el futuro, los periodos históricos mantienen los IDs de los planes activos en la fecha de pago original.
-* **Persistencia y Portabilidad:** PostgreSQL 16 como motor principal. El esquema es agnóstico del entorno, usando DDL idempotente sin dependencias de extensiones que requieran privilegios de superusuario (para despliegue sin fricción en Neon, Supabase, RDS, etc.).
+**Design classification:** Greenfield, Hexagonal Architecture (Modular Monolith), Domain-Driven Design (DDD). Priority on strict financial precision, fault tolerance on manual ingestion, and transparent portability between local (Docker) and Cloud (Managed PostgreSQL) environments.
 
 ---
 
-## 2. Diseño de Arquitectura: Monolito Modular
+## 1. Assumption Definitions and Scope Decisions
 
-Se utiliza una arquitectura de puertos y adaptadores (Hexagonal) para aislar la lógica de cálculo impositivo y previsional chileno de los mecanismos de entrega (API, CLI) y almacenamiento.
+* **Financial precision:** exact calculation. Strict use of `Decimal` in Python and `NUMERIC` in PostgreSQL. Never use floating-point types.
+* **Macroeconomic variables:** currencies (CLP, USD, EUR), inflation-adjustment units (UF, UTM), and deflators (CPI). Native support for historical queries and deflation ($Amount_{Real} = Amount_{Nominal} \times CPI_{Target} \div CPI_{Origin}$).
+* **Social security modules (Chile):** historical, institution-independent modeling (AFP, Isapre, Fonasa), contracted plans, and variable taxable-income caps. Tax calculations (single income tax) depend on the SII's official table.
+* **Immutability:** records in the `PAY_PERIOD` table act as *snapshots*. If an AFP or Isapre plan changes in the future, historical periods keep the IDs of whichever plans were active on the original payment date.
+* **Persistence and portability:** PostgreSQL 16 as the primary engine. The schema is environment-agnostic, using idempotent DDL with no dependency on extensions that require superuser privileges (for frictionless deployment on Neon, Supabase, RDS, etc.).
+
+---
+
+## 2. Architecture Design: Modular Monolith
+
+A ports-and-adapters (hexagonal) architecture is used to isolate Chilean tax and social-security calculation logic from delivery mechanisms (API, CLI) and storage.
 
 ```text
 ┌────────────────────────────────────────────────────────────────┐
@@ -47,13 +47,13 @@ Se utiliza una arquitectura de puertos y adaptadores (Hexagonal) para aislar la 
 
 ---
 
-## 3. Modelo de Datos Completo (PostgreSQL)
+## 3. Complete Data Model (PostgreSQL)
 
-Diseño altamente normalizado. Soporta índices económicos, instituciones de salud y pensiones, y consolidación vía vistas materializadas para analítica eficiente.
+Highly normalized design. Supports economic indices, health and pension institutions, and consolidation via materialized views for efficient analytics.
 
 ```sql
 -- ============================================================
--- 1. Unidades y Monedas
+-- 1. Units and Currencies
 -- ============================================================
 CREATE TABLE IF NOT EXISTS "RAT_CURRENCY" (
     code        CHAR(3) PRIMARY KEY,
@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS "RAT_ECON_INDEX" (
 );
 
 -- ============================================================
--- 2. Instituciones y Planes Previsionales/Salud
+-- 2. Social Security / Health Institutions and Plans
 -- ============================================================
 CREATE TABLE IF NOT EXISTS "PAY_PENS_INST" (
     id             BIGSERIAL PRIMARY KEY,
@@ -148,7 +148,7 @@ CREATE TABLE IF NOT EXISTS "PAY_CNTRB_CAP" (
 );
 
 -- ============================================================
--- 3. Core Nómina
+-- 3. Payroll Core
 -- ============================================================
 CREATE TABLE IF NOT EXISTS "PAY_EMPLOYER" (
     id           BIGSERIAL PRIMARY KEY,
@@ -177,7 +177,7 @@ CREATE TABLE IF NOT EXISTS "PAY_PERIOD" (
     UNIQUE (employer_id, period_year, period_month)
 );
 
--- 4. Analytics Vista Materializada (ver definición completa en db/01_schema.sql)
+-- 4. Analytics materialized view (see full definition in db/01_schema.sql)
 CREATE MATERIALIZED VIEW IF NOT EXISTS "PAY_MV_SUMARY" AS
 SELECT
     p.id AS period_id,
@@ -185,11 +185,11 @@ SELECT
     p.period_year,
     p.period_month,
     p.payment_date,
-    -- Ingresos imponibles, brutos, descuentos y neto:
+    -- Taxable income, gross income, discounts, and net pay:
     SUM(CASE WHEN c.kind = 'income' AND c.is_taxable THEN i.amount_clp ELSE 0 END) AS taxable_income_clp,
     SUM(CASE WHEN c.kind = 'income'   THEN i.amount_clp ELSE 0 END) AS gross_income_clp,
     SUM(CASE WHEN c.kind = 'discount' THEN i.amount_clp ELSE 0 END) AS total_discounts_clp,
-    -- net_pay = gross - discounts (calculado en la vista)
+    -- net_pay = gross - discounts (computed in the view)
     SUM(CASE WHEN c.kind = 'income'   THEN i.amount_clp ELSE 0 END)
   - SUM(CASE WHEN c.kind = 'discount' THEN i.amount_clp ELSE 0 END) AS net_pay_clp
 FROM "PAY_PERIOD" p
@@ -200,9 +200,9 @@ GROUP BY p.id;
 
 ---
 
-## 4. Lógica de Dominio: Motor de Contribuciones
+## 4. Domain Logic: Contribution Engine
 
-El código maneja topes imponibles, límites de UF y el diferencial específico para el recargo de planes Isapre. Python `Decimal` se usa para prevenir imprecisiones por coma flotante.
+The code handles taxable-income caps, UF limits, and the specific differential for the Isapre plan top-up. Python `Decimal` is used to prevent floating-point imprecision.
 
 ```python
 # src/payroll/domain/contribution_calculator.py
@@ -259,19 +259,19 @@ class ContributionCalculator:
         cap: ContributionCap, 
         uf_value_clp: Decimal
     ) -> HealthContribution:
-        # Aplica tope imponible (igual que pension)
+        # Applies the taxable-income cap (same as pension)
         cap_clp = _quantize_clp(cap.value_uf * uf_value_clp)
         capped_base = min(taxable_clp, cap_clp)
         base_amount = _quantize_clp(capped_base * plan.institution.mandatory_rate)
 
-        # Isapre: recargo sobre el plan contratado; Fonasa: sin recargo adicional
+        # Isapre: top-up over the contracted plan; Fonasa: no additional top-up
         if plan.institution.kind is HealthInstitutionKind.ISAPRE and plan.contracted_uf > 0:
             contracted_clp = _quantize_clp(plan.contracted_uf * uf_value_clp)
             additional_amount = max(Decimal("0"), contracted_clp - base_amount)
         else:
             contracted_clp, additional_amount = Decimal("0"), Decimal("0")
 
-        # Ver src/payroll/domain/contribution_calculator.py para la implementación completa
+        # See src/payroll/domain/contribution_calculator.py for the full implementation
         return HealthContribution(
             institution_code=plan.institution.code,
             institution_kind=plan.institution.kind,
@@ -283,9 +283,9 @@ class ContributionCalculator:
 
 ---
 
-## 5. Adaptadores de Ingesta (Excel Pivot/ETL)
+## 5. Ingestion Adapters (Excel Pivot/ETL)
 
-Para tolerar la planilla histórica (formato horizontal) y mapearlo al dominio puro. Se utiliza `pandas` y una correspondencia de columnas a entidades.
+To tolerate the historical spreadsheet (wide format) and map it to the pure domain. `pandas` is used along with a column-to-entity mapping.
 
 ```python
 # src/payroll/infrastructure/importers/xlsx_importer.py
@@ -337,14 +337,14 @@ def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(long_rows)
 ```
 
-### 5.1 Ingesta alternativa: PDF de liquidación de sueldo
+### 5.1 Alternative ingestion: payslip PDF
 
-Alternativa a Excel/CSV para un único payslip: extracción basada en plantillas JSON
-versionadas (`infrastructure/pdf_import/templates/`), nunca OCR/LLM. Dos rutas HTTP
-nuevas (`POST /payroll/import/pdf-preview`, `POST /payroll/import/rows`) más el use
-case `PreviewPdfImport`, que deliberadamente no recibe ningún repositorio -- es la
-garantía arquitectónica de que el preview nunca puede escribir en la base de datos.
-Detalle completo de diseño e implementación en
+An alternative to Excel/CSV for a single payslip: extraction based on versioned JSON
+templates (`infrastructure/pdf_import/templates/`), never OCR/LLM. Two new HTTP routes
+(`POST /payroll/import/pdf-preview`, `POST /payroll/import/rows`) plus the
+`PreviewPdfImport` use case, which deliberately receives no repository -- that's the
+architectural guarantee that the preview can never write to the database.
+Full design and implementation detail in
 [`docs/proposals/pdf-import-action-plan.md`](proposals/pdf-import-action-plan.md).
 
 ```python
@@ -361,17 +361,17 @@ class TemplatePdfPayrollExtractor(PdfPayrollExtractor):
         raw_text = extract_raw_text(content)
         detail_lines = find_detail_lines(raw_text)
         template = select_template(self._templates, raw_text, labels)
-        # Cada fila detectada se resuelve contra el template (concept_code +
-        # confidence) o queda marcada concept_code=None, confidence=0.0 --
-        # nunca lanza, el preview siempre responde 200.
+        # Each detected row is resolved against the template (concept_code +
+        # confidence) or is left as concept_code=None, confidence=0.0 --
+        # never raises, the preview always responds 200.
         ...
 ```
 
 ---
 
-## 6. Resiliencia de Orígenes de Datos (Fallback Chain)
+## 6. Data Source Resilience (Fallback Chain)
 
-Se utiliza el patrón de diseño "Chain of Responsibility" mediante el `ChainedFxProvider`. Consultará en orden jerárquico (BCCh -> SII -> Mindicador) tolerando degradaciones de red.
+The "Chain of Responsibility" design pattern is used via `ChainedFxProvider`. It queries providers in hierarchical order (BCCh -> SII -> Mindicador), tolerating network degradation.
 
 ```python
 # src/payroll/infrastructure/rate_providers/chained_provider.py
@@ -406,20 +406,20 @@ class ChainedFxProvider(FxRateProvider):
 
 ---
 
-## 7. Runbook: Portabilidad y Migración a la Nube
+## 7. Runbook: Portability and Cloud Migration
 
-La arquitectura permite mantener la Base de Datos libre de vendor lock-in y extensiones exclusivas de la nube.
+The architecture keeps the database free of vendor lock-in and cloud-exclusive extensions.
 
-| Proveedor | Ventajas principales | Adecuación al caso |
+| Provider | Main advantages | Fit for this case |
 | --- | --- | --- |
-| **Neon Serverless** | Ramas de bases de datos, Pausas en inactividad, Free Tier sólido. | Ideal. Permite testing destructivo usando rama separada sin afectar prod. |
-| **Supabase** | Ecosistema completo, Auth/Storage incluido, PostgreSQL 15+. | Excelente si se requiere interfaz de administración web (Studio). |
-| **AWS Aurora v2** | Resiliencia enterprise, Integración profunda AWS. | Excesivo (costo alto ~USD 45/mes mínimo). Evitar para uso personal. |
+| **Neon Serverless** | Database branching, pause on idle, solid free tier. | Ideal. Allows destructive testing on a separate branch without affecting prod. |
+| **Supabase** | Full ecosystem, Auth/Storage included, PostgreSQL 15+. | Excellent if a web admin interface (Studio) is needed. |
+| **AWS Aurora v2** | Enterprise resilience, deep AWS integration. | Overkill (high cost, ~USD 45/month minimum). Avoid for personal use. |
 
-### Pasos de Migración (Local a Managed PostgreSQL)
+### Migration Steps (Local to Managed PostgreSQL)
 
 ```bash
-# 1. Volcado seguro de la base de datos local
+# 1. Safe dump of the local database
 pg_dump \
     --host=localhost \
     --username=payroll \
@@ -430,14 +430,14 @@ pg_dump \
     --compress=9 \
     --file=payroll-$(date +%Y%m%d).dump
 
-# 2. Configurar el endpoint de la nube en la sesión del Shell
+# 2. Configure the cloud endpoint in the shell session
 export TARGET_DSN="postgresql://[USER]:[PASS]@[NEON-HOST]/payroll?sslmode=require"
 export PF_DATABASE_URL="postgresql+asyncpg://${TARGET_DSN#postgresql://}"
 
-# 3. Aplicar migraciones (DML + Idempotency)
+# 3. Apply migrations (DML + idempotency)
 alembic upgrade head
 
-# 4. Restauración de Datos (Data-only, ignorando secuencias owner)
+# 4. Data restore (data-only, ignoring owner sequences)
 pg_restore \
     --dbname="$TARGET_DSN" \
     --data-only \
@@ -447,16 +447,16 @@ pg_restore \
     --jobs=4 \
     payroll-$(date +%Y%m%d).dump
 
-# 5. Validación y recompilación de Analytics
+# 5. Validation and analytics rebuild
 psql "$TARGET_DSN" -c "REINDEX DATABASE payroll; ANALYZE;"
 psql "$TARGET_DSN" -c "REFRESH MATERIALIZED VIEW CONCURRENTLY "PAY_MV_SUMARY";"
 ```
 
 ---
 
-## 8. Verificación y Calidad de Software
+## 8. Verification and Software Quality
 
-Para CI/CD en GitHub Actions se utiliza `pytest` + `testcontainers` ejecutando tests sobre instancias reales de PostgreSQL efímero, `mypy` para validación estática de tipos, y validación estricta de dominios matemáticos usando errores explícitos en código productivo y aserciones normales en tests.
+CI/CD on GitHub Actions uses `pytest` + `testcontainers` running tests against real, ephemeral PostgreSQL instances, `mypy` for static type checking, and strict validation of mathematical domains using explicit errors in production code and plain assertions in tests.
 
 ```python
 # tests/unit/test_health_additional.py

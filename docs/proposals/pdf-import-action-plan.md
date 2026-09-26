@@ -1,395 +1,393 @@
-# PDF import — plan de acción (documento vivo)
+# PDF import — action plan (living document)
 
-> **Regla de este documento:** a diferencia de `pdf-import-design-brief.md` y
-> `pdf-import-design-recommendation.md` (que son el pedido y el análisis originales, y
-> quedan congelados como fueron escritos), **este archivo se actualiza en cada sesión de
-> trabajo** sobre el feature. Cualquier avance, hallazgo nuevo, decisión tomada, o cambio
-> de alcance va acá, con fecha, antes de dar por cerrada una etapa. Si encontrás este
-> documento desactualizado respecto al código, actualizalo vos mismo antes de seguir.
+> **Rule for this document:** unlike `pdf-import-design-brief.md` and
+> `pdf-import-design-recommendation.md` (which are the original request and analysis,
+> and stay frozen as they were written), **this file gets updated every work session**
+> on the feature. Any progress, new finding, decision made, or scope change goes here,
+> dated, before a stage is considered closed. If you find this document out of date
+> relative to the code, update it yourself before continuing.
 
-## Estado general
+## Overall status
 
-| Etapa | Descripción | Estado |
+| Stage | Description | Status |
 | --- | --- | --- |
-| 0 | Semántica de período (código + datos históricos) | **Completa** — código, datos locales, Neon (corregido por el usuario) y el CSV fuente ya alineados |
-| 1 | Endpoint 1 — preview PDF (MVP) | **Completa** — extractor por plantilla, template real de WALMART-CHILE, ruta `POST /payroll/import/pdf-preview` |
-| 2 | Endpoint 2 — confirmar, modo `commit` | **Completa** — `ImportPayroll.from_rows()`, ruta `POST /payroll/import/rows` |
-| 3 | Endpoint 2 — modo `validate` (rollback) | **Completa** — `TransactionalSessionScope` con SAVEPOINT real |
+| 0 | Period semantics (code + historical data) | **Complete** — code, local data, Neon (fixed by the user) and the source CSV are all aligned now |
+| 1 | Endpoint 1 — PDF preview (MVP) | **Complete** — template-based extractor, real WALMART-CHILE template, `POST /payroll/import/pdf-preview` route |
+| 2 | Endpoint 2 — confirm, `commit` mode | **Complete** — `ImportPayroll.from_rows()`, `POST /payroll/import/rows` route |
+| 3 | Endpoint 2 — `validate` mode (rollback) | **Complete** — `TransactionalSessionScope` with a real SAVEPOINT |
 
-## Etapa 0 — Semántica del período
+## Stage 0 — Period semantics
 
-### Qué se hizo (2026-09-25)
+### What was done (2026-09-25)
 
-1. **Código:** `SqlAlchemyPayrollImportRepository._validate_payment_month_matches_period()`
-   en `infrastructure/db/repositories/payroll_repository_imports.py`. Se llama en
-   `import_rows()` justo después de resolver/crear el `EmployerModel`, antes de tocar
-   `PAY_PERIOD`. Compara el mes/año de `payment_date` contra
-   `add_months(date(period_year, period_month, 1), employer.payment_month_offset)` y
-   lanza `PayrollValidationError` si no calzan. Con `payment_month_offset=0` (el default
-   para todo empleador nuevo), esto exige que `payment_date` caiga en el mismo mes que
-   `period_month` — la convención nueva, tal cual la declara el PDF.
-   - Test agregado: `test_sa_payroll_repository_rejects_payment_date_period_mismatch`
-     en `tests/unit/infrastructure/test_payroll_repository.py` (cubre la rama del
-     `raise`, necesario para mantener `--cov-fail-under=100`).
-   - Cobertura verificada: 100% (286 tests, `pytest --cov=payroll --cov-report=term-missing`).
-   - Lint (`make lint`) y typecheck (`make typecheck`) verificados, sin hallazgos.
-   - **No rompió ningún test existente** — todos los fixtures/tests actuales ya asumían
-     `payment_date` y `period_month` en el mismo mes (offset 0), por lo que la
-     validación nueva pasó en verde sin tocar tests preexistentes de import.
+1. **Code:** `SqlAlchemyPayrollImportRepository._validate_payment_month_matches_period()`
+   in `infrastructure/db/repositories/payroll_repository_imports.py`. It's called from
+   `import_rows()` right after resolving/creating the `EmployerModel`, before touching
+   `PAY_PERIOD`. It compares `payment_date`'s month/year against
+   `add_months(date(period_year, period_month, 1), employer.payment_month_offset)` and
+   raises `PayrollValidationError` if they don't match. With `payment_month_offset=0`
+   (the default for every new employer), this requires `payment_date` to fall in the
+   same month as `period_month` — the new convention, exactly as the PDF states it.
+   - Test added: `test_sa_payroll_repository_rejects_payment_date_period_mismatch`
+     in `tests/unit/infrastructure/test_payroll_repository.py` (covers the `raise`
+     branch, needed to keep `--cov-fail-under=100`).
+   - Coverage verified: 100% (286 tests, `pytest --cov=payroll --cov-report=term-missing`).
+   - Lint (`make lint`) and typecheck (`make typecheck`) verified, no findings.
+   - **Broke no existing test** — every current fixture/test already assumed
+     `payment_date` and `period_month` in the same month (offset 0), so the new
+     validation passed cleanly without touching any pre-existing import tests.
 
-2. **Datos (solo entorno local):** se identificó en la DB local que **`WALMART-CHILE`**
-   (`PAY_EMPLOYER.id = 9` en local, `payment_month_offset = 0`) es el único empleador
-   con períodos importados (22 filas, dic-2024 a sep-2026), y **el 100%** seguía la
-   convención vieja (`period_month` = mes de `payment_date` + 1). Los otros dos
-   empleadores locales (`DALT-CONSULTORES`, `CLINICA-ALEMANA`) no tienen períodos
-   cargados, no había nada que corregir ahí.
+2. **Data (local environment only):** the local DB showed that **`WALMART-CHILE`**
+   (`PAY_EMPLOYER.id = 9` locally, `payment_month_offset = 0`) is the only employer with
+   imported periods (22 rows, Dec-2024 through Sep-2026), and **100%** of them followed
+   the old convention (`period_month` = `payment_date`'s month + 1). The other two
+   local employers (`DALT-CONSULTORES`, `CLINICA-ALEMANA`) have no periods loaded, so
+   there was nothing to fix there.
 
-   Se usó un script SQL puntual (idempotente, sin PII — solo `employer_id`/fechas,
-   nunca RUT/nombre de trabajador porque `PAY_PERIOD` no los almacena) para aplicar la
-   corrección. **Por indicación explícita del usuario, el archivo se eliminó del repo**
-   una vez que local, Neon y el CSV fuente quedaron alineados — ya cumplió su función y
-   no se conserva versionado (si hiciera falta reconstruirlo, el SQL era trivial: `UPDATE
-   "PAY_PERIOD" SET period_year = EXTRACT(YEAR FROM payment_date), period_month =
-   EXTRACT(MONTH FROM payment_date) WHERE employer_id = <id de WALMART-CHILE>;` seguido
-   de `REFRESH MATERIALIZED VIEW "PAY_MV_SUMARY"`).
+   A one-off SQL script (idempotent, no PII — only `employer_id`/dates, never a
+   worker's national ID (RUT)/name since `PAY_PERIOD` doesn't store those) was used to
+   apply the fix. **At the user's explicit request, the file was removed from the repo**
+   once local, Neon, and the source CSV were all aligned — it had already served its
+   purpose and isn't kept under version control (if it ever needs to be rebuilt, the SQL
+   was trivial: `UPDATE "PAY_PERIOD" SET period_year = EXTRACT(YEAR FROM payment_date),
+   period_month = EXTRACT(MONTH FROM payment_date) WHERE employer_id = <WALMART-CHILE's
+   id>;` followed by `REFRESH MATERIALIZED VIEW "PAY_MV_SUMARY"`).
 
-   Aplicado y verificado en local:
+   Applied and verified locally:
    ```
-   UPDATE 22   -- las 22 filas de WALMART-CHILE
+   UPDATE 22   -- WALMART-CHILE's 22 rows
    REFRESH MATERIALIZED VIEW "PAY_MV_SUMARY"
    ```
-   Verificación post-fix: `period_year`/`period_month` de cada fila ahora coincide
-   exactamente con el año/mes de su `payment_date` (ej. `payment_date=2024-11-28` ahora
-   vive en el período `2024-11`, ya no en `2024-12`).
+   Post-fix verification: each row's `period_year`/`period_month` now matches exactly
+   its `payment_date`'s year/month (e.g. `payment_date=2024-11-28` now lives in the
+   `2024-11` period, no longer in `2024-12`).
 
 ### Neon (2026-09-25)
 
-El usuario corrigió Neon directamente (fuera de mi alcance, tal como quedó acordado —
-yo no toqué producción). Etapa 0 queda cerrada del lado de base de datos.
+The user fixed Neon directly (out of my scope, as agreed — I did not touch production).
+Stage 0 is closed on the database side.
 
-### Fuente de datos corregida (2026-09-25)
+### Fixed data source (2026-09-25)
 
-`secrets/payroll-input.csv` (el CSV real usado para importar el historial de
-WALMART-CHILE, fuera de git por PII/datos financieros reales) tenía la misma
-convención vieja en sus 22 filas: `period_year`/`period_month` = mes de `payment_date`
-+ 1. Se corrigió recalculando `period_year`/`period_month` directamente a partir de
-`payment_date` con un script Python puntual (no versionado, se corrió una sola vez —
-esto es un archivo de datos gitignoreado, no código de producción, así que no ameritó
-un script en `scripts/data-fixes/` como el de la DB). Verificado: las 22 filas quedaron
-con `period_year`/`period_month` igual al año/mes de su propio `payment_date`,
-consistente con la corrección ya aplicada en local y en Neon. Si este CSV se reimporta
-hoy, pasa limpio por la validación nueva de la sección "Qué se hizo" sin disparar
-`PayrollValidationError`.
+`secrets/payroll-input.csv` (the real CSV used to import WALMART-CHILE's history, kept
+out of git due to real PII/financial data) had the same old convention across its 22
+rows: `period_year`/`period_month` = `payment_date`'s month + 1. It was fixed by
+recalculating `period_year`/`period_month` directly from `payment_date` with a one-off
+Python script (not version-controlled, run only once — this is a gitignored data file,
+not production code, so it didn't warrant a script under `scripts/data-fixes/` like the
+DB one did). Verified: all 22 rows ended up with `period_year`/`period_month` equal to
+their own `payment_date`'s year/month, consistent with the fix already applied locally
+and in Neon. If this CSV is re-imported today, it passes cleanly through the new
+validation described in "What was done" without triggering `PayrollValidationError`.
 
-## Etapa 1 — Endpoint 1 (preview PDF)
+## Stage 1 — Endpoint 1 (PDF preview)
 
-**Completa (2026-09-25).** Sin persistencia: ni `PayrollRepository` ni
-`ProcessImportedPayrollPeriods` están en el grafo de dependencias de este endpoint, por
-construcción (`PreviewPdfImport.__init__` solo recibe el puerto `PdfPayrollExtractor`).
+**Complete (2026-09-25).** No persistence: neither `PayrollRepository` nor
+`ProcessImportedPayrollPeriods` are in this endpoint's dependency graph, by construction
+(`PreviewPdfImport.__init__` only receives the `PdfPayrollExtractor` port).
 
-### Qué se construyó
+### What was built
 
 - **DTOs** (`application/dto.py`): `PdfImportPreviewRowDTO` (raw_label,
-  extracted_amount_clp, kind, concept_code opcional, confidence) y
-  `PdfImportPreviewDTO` (employer/period/worked_days/declared_net_pay_clp, todos
-  opcionales, + template_id + rows). Todo opcional a propósito: el contrato es "nunca
-  falla ruidosamente", en el peor caso se devuelve un preview casi vacío con 200 OK.
-- **Puerto** (`application/ports/pdf_extractors.py`): `PdfPayrollExtractor.extract_preview()`.
+  extracted_amount_clp, kind, optional concept_code, confidence) and
+  `PdfImportPreviewDTO` (employer/period/worked_days/declared_net_pay_clp, all
+  optional, + template_id + rows). Everything optional on purpose: the contract is
+  "never fail loudly", in the worst case an almost-empty preview is returned with a
+  200 OK.
+- **Port** (`application/ports/pdf_extractors.py`): `PdfPayrollExtractor.extract_preview()`.
 - **Use case** (`application/use_cases/preview_pdf_import.py`): `PreviewPdfImport` —
-  deliberadamente sin repositorio, solo delega al extractor.
-- **Infraestructura nueva** (`infrastructure/pdf_import/`):
-  - `text_extraction.py`: helpers genéricos (agnósticos de empleador) para leer texto
-    de un PDF con `pypdf` (`extraction_mode="layout"`), parsear header (mes/año en
-    español, días trabajados, líquido a pagar) y separar el detalle en líneas
-    `(label, monto)`, con un heurístico posicional (columna HABERES vs DESCUENTOS) como
-    señal de respaldo cuando ninguna plantilla resuelve una línea.
-  - `templates.py`: carga y matching de plantillas JSON versionadas. Selección en dos
-    pasos: filtro por `employer_match.name_pattern` contra el texto completo, luego
-    score = cantidad de `fields` cuyo patrón matchea al menos un label del detalle;
-    umbral mínimo `MIN_TEMPLATE_MATCH_SCORE = 3` (si no se alcanza, no se asume nada).
-  - `extractor.py`: `TemplatePdfPayrollExtractor`, la implementación del puerto.
-    Envuelve todo en un `try/except Exception` — un PDF corrupto, escaneado sin capa de
-    texto, o cualquier fallo interno inesperado degrada a un preview vacío en vez de
-    romper el endpoint.
-  - `templates/walmart-chile/v1.json`: **plantilla real**, construida y validada contra
-    la liquidación real del usuario (`secrets/Liquidación_202608.PDF`, nunca commiteada
-    — solo se usó localmente para diseñar/probar la plantilla). Mapea los 13 conceptos
-    reales de WALMART-CHILE a sus `concept_code` de `PAY_CONCEPT`, con la confianza que
-    ya se había acordado en `pdf-import-design-recommendation.md` (Alta=0.9,
-    Media-Alta=0.75, Media=0.6). Verificado extremo a extremo contra el PDF real:
-    empleador, período (2026-8, ya con la convención nueva), días trabajados (30) y
-    líquido a pagar (3.133.182) — los 13 conceptos resuelven a un `concept_code`, cero
-    filas sin resolver.
-- **Ruta** (`interfaces/api/routes/payroll.py`): `POST /payroll/import/pdf-preview`,
-  wireada en `interfaces/api/dependencies.py::get_preview_pdf_import_use_case` (sin
-  `Depends` de repositorio, a propósito).
+  deliberately without a repository, it only delegates to the extractor.
+- **New infrastructure** (`infrastructure/pdf_import/`):
+  - `text_extraction.py`: generic, employer-agnostic helpers to read text from a PDF
+    with `pypdf` (`extraction_mode="layout"`), parse the header (month/year in Spanish,
+    worked days, net pay), and split the detail into `(label, amount)` lines, with a
+    positional heuristic (HABERES vs. DESCUENTOS column) as a fallback signal when no
+    template resolves a line.
+  - `templates.py`: loading and matching of versioned JSON templates. Two-step
+    selection: filter by `employer_match.name_pattern` against the full text, then
+    score = number of `fields` whose pattern matches at least one detail label; minimum
+    threshold `MIN_TEMPLATE_MATCH_SCORE = 3` (if not reached, nothing is assumed).
+  - `extractor.py`: `TemplatePdfPayrollExtractor`, the port's implementation. Wraps
+    everything in a `try/except Exception` — a corrupt PDF, a scan with no text layer,
+    or any unexpected internal failure degrades to an empty preview instead of breaking
+    the endpoint.
+  - `templates/walmart-chile/v1.json`: **a real template**, built and validated against
+    the user's real payslip (`secrets/Liquidación_202608.PDF`, never committed — only
+    used locally to design/test the template). Maps WALMART-CHILE's 13 real concepts to
+    their `concept_code` from `PAY_CONCEPT`, with the confidence already agreed on in
+    `pdf-import-design-recommendation.md` (High=0.9, Medium-High=0.75, Medium=0.6).
+    Verified end to end against the real PDF: employer, period (2026-8, already under
+    the new convention), worked days (30), and net pay (3,133,182) — all 13 concepts
+    resolve to a `concept_code`, zero unresolved rows.
+- **Route** (`interfaces/api/routes/payroll.py`): `POST /payroll/import/pdf-preview`,
+  wired in `interfaces/api/dependencies.py::get_preview_pdf_import_use_case` (no
+  repository `Depends`, on purpose).
 
-### Decisiones/ajustes durante la implementación
+### Decisions/adjustments made during implementation
 
-- El heurístico de columna (HABERES vs DESCUENTOS) para filas no resueltas por ninguna
-  plantilla se calcula **siempre** sobre el texto del documento (no solo cuando no hay
-  plantilla), para que también sirva de respaldo en una fila puntual sin match dentro
-  de un documento cuya plantilla sí matcheó en general.
-- Un token corto (3-6 caracteres) inmediatamente antes del monto solo se trata como
-  "código de concepto" (y se recorta del label) si contiene al menos un dígito — todos
-  los códigos reales observados mezclan letras y números (`1E89`, `/370`, `3C30`).
-  Sin esto, una palabra corta en mayúsculas al final de un label sin código real (ej.
-  "LABEL") se recortaba por error.
-- Cobertura: 100% en los 4 archivos nuevos de `infrastructure/pdf_import/` + use case +
-  wiring de dependencias/ruta (337 tests totales, suite completa). Dos líneas
-  defensivas genuinamente inalcanzables (dado que las regex que las preceden ya
-  garantizan la condición) quedaron marcadas `# pragma: no cover` en vez de forzar un
-  test artificial.
+- The column heuristic (HABERES vs. DESCUENTOS) for rows not resolved by any template is
+  computed **always** over the document's text (not only when there's no template at
+  all), so it also acts as a fallback for a single unmatched row within a document whose
+  template did match overall.
+- A short token (3-6 characters) immediately before the amount is only treated as a
+  "concept code" (and trimmed off the label) if it contains at least one digit — every
+  real code observed mixes letters and numbers (`1E89`, `/370`, `3C30`). Without this, a
+  short uppercase word at the end of a label with no real code (e.g. "LABEL") was being
+  trimmed by mistake.
+- Coverage: 100% across the 4 new files in `infrastructure/pdf_import/` + the use case +
+  dependency/route wiring (337 total tests, full suite). Two genuinely unreachable
+  defensive lines (given that the preceding regexes already guarantee the condition)
+  were marked `# pragma: no cover` instead of forcing an artificial test.
 
-### Pendiente / fuera de alcance de esta etapa
+### Pending / out of scope for this stage
 
-- Solo hay plantilla para WALMART-CHILE. Cualquier otro empleador/formato hoy cae en
-  "sin plantilla" (preview con filas sin resolver, pero header parseado igual).
-- No hay OCR ni LLM — PDFs escaneados sin capa de texto seleccionable devuelven un
-  preview vacío. Fuera de alcance del MVP, tal como está en
-  `pdf-import-design-recommendation.md`.
+- There is only a template for WALMART-CHILE. Any other employer/format currently falls
+  into "no template" (preview with unresolved rows, but the header still parsed).
+- No OCR, no LLM — scanned PDFs with no selectable text layer return an empty preview.
+  Out of scope for the MVP, as stated in `pdf-import-design-recommendation.md`.
 
-## Etapa 2 — Endpoint 2, modo `commit`
+## Stage 2 — Endpoint 2, `commit` mode
 
-**Completa (2026-09-25).** Reusa el 100% del pipeline existente — cero cambios en
-`SqlAlchemyPayrollImportRepository.import_rows()`, que ya era agnóstico de la fuente de
-las filas.
+**Complete (2026-09-25).** Reuses 100% of the existing pipeline — zero changes to
+`SqlAlchemyPayrollImportRepository.import_rows()`, which was already agnostic of the
+rows' source.
 
-### Qué se construyó
+### What was built
 
 - **Use case** (`application/use_cases/import_payroll.py`): `ImportPayroll.from_rows()`,
-  método hermano de `from_bytes()`. Salta el paso de parseo (`PayrollImporter`) y llama
-  directo a `self._repository.import_rows(rows)`. Rechaza (`PayrollValidationError`)
-  una lista vacía, igual que `from_bytes()` rechaza un archivo sin filas.
-- **Modelos de request** (`interfaces/api/routes/payroll.py`): `ImportPayrollRowRequest`
-  (espejo de `ImportPayrollRowDTO`, sin los campos de solo-salida
-  `expected_net_pay_clp`/`net_pay_difference_clp`) y `ImportPayrollRowsRequest`
-  (`mode` + `rows`). `mode` es un `Literal["commit"]` a propósito — todavía no existe
-  `"validate"`, así que mandar ese valor da 422 por schema, no por lógica de negocio
-  escrita a mano (nada de branches muertos esperando la Etapa 3).
-- **Ruta**: `POST /payroll/import/rows`, misma secuencia exacta que `/payroll/import`
-  (`ImportPayroll.from_rows()` → `ProcessImportedPayrollPeriods.execute()`), reusando
-  la respuesta `ImportPayrollResponse` ya existente.
+  a sibling method to `from_bytes()`. Skips the parsing step (`PayrollImporter`) and
+  calls `self._repository.import_rows(rows)` directly. Rejects
+  (`PayrollValidationError`) an empty list, just like `from_bytes()` rejects a file with
+  no rows.
+- **Request models** (`interfaces/api/routes/payroll.py`): `ImportPayrollRowRequest`
+  (mirrors `ImportPayrollRowDTO`, without the output-only fields
+  `expected_net_pay_clp`/`net_pay_difference_clp`) and `ImportPayrollRowsRequest`
+  (`mode` + `rows`). `mode` is deliberately a `Literal["commit"]` — `"validate"` doesn't
+  exist yet, so sending that value returns 422 from the schema, not from hand-written
+  business logic (no dead branches waiting for Stage 3).
+- **Route**: `POST /payroll/import/rows`, the exact same sequence as `/payroll/import`
+  (`ImportPayroll.from_rows()` → `ProcessImportedPayrollPeriods.execute()`), reusing the
+  already-existing `ImportPayrollResponse` response.
 
-### Cómo se resuelve "rechazar concept_code sin resolver" (sección 3 del diseño)
+### How "reject unresolved concept_code" was solved (design section 3)
 
-Sin código defensivo extra: `ImportPayrollRowRequest.concept_code` es `str` (no
-`str | None`), así que un row con `concept_code: null` en el body nunca llega al
-handler — FastAPI/pydantic lo rechazan con 422 antes. El tipo hace campamento donde
-antes hubiera hecho falta un `if`.
+No extra defensive code needed: `ImportPayrollRowRequest.concept_code` is `str` (not
+`str | None`), so a row with `concept_code: null` in the body never reaches the handler
+— FastAPI/pydantic reject it with 422 before that. The type does the work where an `if`
+would otherwise have been needed.
 
 ### Testing
 
-- `tests/unit/application/test_import_payroll.py`: 2 tests nuevos para `from_rows()`
-  (delega bien a la fake repository / rechaza lista vacía).
-- `tests/integration/api/test_payroll_import_rows.py` (nuevo archivo): happy path
-  (modo por default y explícito), 422 en modo `validate`, 422 en `concept_code` nulo,
-  400 en lista vacía (propagado desde el use case), 502 cuando
-  `ProcessImportedPayrollPeriods` falla por una dependencia caída (mismo patrón que
-  el test equivalente de `/payroll/import`).
-- 345 tests totales, 100% cobertura (`--cov-fail-under=100`), lint/typecheck/vulture
-  limpios.
+- `tests/unit/application/test_import_payroll.py`: 2 new tests for `from_rows()`
+  (delegates correctly to the fake repository / rejects an empty list).
+- `tests/integration/api/test_payroll_import_rows.py` (new file): happy path (default
+  and explicit mode), 422 in `validate` mode, 422 on a null `concept_code`, 400 on an
+  empty list (propagated from the use case), 502 when `ProcessImportedPayrollPeriods`
+  fails because of a downstream dependency being down (same pattern as the equivalent
+  `/payroll/import` test).
+- 345 total tests, 100% coverage (`--cov-fail-under=100`), lint/typecheck/vulture clean.
 
-### Pendiente / fuera de alcance de esta etapa
+### Pending / out of scope for this stage
 
-- No hay smoke test manual contra una base Postgres real corriendo (no había una
-  instancia local levantada en esta sesión) — la confianza viene de que
-  `import_rows()` no se tocó (ya estaba 100% cubierto por `/payroll/import`) y de que
-  `from_rows()` es un passthrough trivial, verificado con fakes.
-- El mecanismo de transacción real (`session.commit()` vs `session.rollback()`) queda
-  para la Etapa 3 — como `import_rows()` ya hace *múltiples* `commit()` internos por
-  período (no uno solo al final), un `validate` correcto necesita replantear el scope
-  de la sesión, no solo agregar un `if mode == "commit"` al final.
+- No manual smoke test against a real running Postgres instance (there wasn't a local
+  instance up during this session) — confidence comes from `import_rows()` not being
+  touched (already 100% covered by `/payroll/import`) and `from_rows()` being a trivial
+  passthrough, verified with fakes.
+- The real transaction mechanism (`session.commit()` vs. `session.rollback()`) is left
+  for Stage 3 — since `import_rows()` already does *multiple* internal `commit()`s per
+  period (not a single one at the end), a correct `validate` needs to rethink the
+  session's scope, not just add an `if mode == "commit"` at the end.
 
-## Etapa 3 — Endpoint 2, modo `validate`
+## Stage 3 — Endpoint 2, `validate` mode
 
-**Completa (2026-09-25).** El hallazgo documentado al cerrar la Etapa 2 se confirmó
-correcto: `import_rows()` (y varios pasos de `ProcessImportedPayrollPeriods`, ver
-`_refresh_summary_view()`/`_reconcile_period_net_pay()` en
-`payroll_repository_shared.py`, y `payroll_repository_commands.py`) hacen **varios**
-`session.commit()` internos durante un solo request. Envolver la llamada final en un
-`session.rollback()` no hubiera deshecho nada de eso — cada `commit()` interno ya
-había hecho su propia transacción durable.
+**Complete (2026-09-25).** The finding documented when Stage 2 was closed turned out to
+be correct: `import_rows()` (and several steps of `ProcessImportedPayrollPeriods`, see
+`_refresh_summary_view()`/`_reconcile_period_net_pay()` in
+`payroll_repository_shared.py`, and `payroll_repository_commands.py`) do **several**
+internal `session.commit()`s during a single request. Wrapping the final call in a
+`session.rollback()` wouldn't have undone any of that — each internal `commit()` had
+already made its own durable transaction.
 
-### Cómo se resolvió: SAVEPOINT real, no un flag manual
+### How it was solved: a real SAVEPOINT, not a manual flag
 
-En vez de tocar los `session.commit()` existentes esparcidos por medio codebase (docenas
-de métodos en `payroll_repository_commands.py`, `payroll_repository_shared.py`, y varios
-use cases), se usa el soporte nativo de SQLAlchemy 2.0 para "unirse" una sesión a una
-transacción externa con semántica de SAVEPOINT:
-`AsyncSession(bind=connection, join_transaction_mode="create_savepoint")`. Con esto,
-cada `session.commit()` que hace el código de aplicación **solo libera el SAVEPOINT
-actual** (SQLAlchemy abre uno nuevo automáticamente) — la transacción real de la
-conexión nunca se toca hasta que alguien llama explícitamente `resolve()`. Cero cambios
-en el código existente que ya llamaba `session.commit()` libremente.
+Instead of touching the existing `session.commit()` calls scattered across half the
+codebase (dozens of methods in `payroll_repository_commands.py`,
+`payroll_repository_shared.py`, and several use cases), this uses SQLAlchemy 2.0's
+native support for "joining" a session to an outer transaction with SAVEPOINT
+semantics: `AsyncSession(bind=connection, join_transaction_mode="create_savepoint")`.
+With this, every `session.commit()` the application code makes **only releases the
+current SAVEPOINT** (SQLAlchemy automatically opens a new one) — the connection's real
+transaction is never touched until someone explicitly calls `resolve()`. Zero changes
+to existing code that was already calling `session.commit()` freely.
 
-- **`interfaces/session.py`**: `TransactionalSessionScope` (envuelve `session` +
-  `_transaction`, expone `resolve(mode)` que hace `transaction.commit()` o
-  `transaction.rollback()`) y `open_transactional_session()` (abre la conexión, arranca
-  la transacción real, construye la sesión con `join_transaction_mode="create_savepoint"`
-  y `expire_on_commit=False` — igual que `SessionLocal` — y hace rollback defensivo en
-  el `finally` si `resolve()` nunca se llegó a llamar).
-- **`interfaces/api/dependencies.py`**: `get_transactional_session()` (dependencia
-  FastAPI, cacheada por request) + 4 dependencias hermanas
+- **`interfaces/session.py`**: `TransactionalSessionScope` (wraps `session` +
+  `_transaction`, exposes `resolve(mode)` which does `transaction.commit()` or
+  `transaction.rollback()`) and `open_transactional_session()` (opens the connection,
+  starts the real transaction, builds the session with
+  `join_transaction_mode="create_savepoint"` and `expire_on_commit=False` — same as
+  `SessionLocal` — and does a defensive rollback in the `finally` block if `resolve()`
+  was never called).
+- **`interfaces/api/dependencies.py`**: `get_transactional_session()` (FastAPI
+  dependency, request-cached) + 4 sibling dependencies
   (`get_payroll_repository_for_rows_import`,
   `get_complementary_insurance_repository_for_rows_import`,
   `get_import_payroll_use_case_for_rows_import`,
-  `get_process_imported_payroll_periods_use_case_for_rows_import`) que construyen los
-  mismos use cases de la Etapa 2 pero atados a la sesión transaccional en vez de la
-  sesión "plana" de siempre — necesarias porque FastAPI cachea dependencias por
-  callable, no hay forma de "parametrizar" `get_session()` según el `mode` del body.
-- **Ruta**: ahora un solo `try/except` alrededor de `from_rows()` +
-  `ProcessImportedPayrollPeriods.execute()` (antes eran dos, como en `/payroll/import`)
-  — divergencia deliberada: cualquier excepción fuerza `scope.resolve("validate")`
-  **antes** de re-lanzar el error, sin importar qué `mode` había pedido el cliente. Un
-  import a medio aplicar nunca puede quedar comiteado.
-- `ImportPayrollRowsRequest.mode` pasó de `Literal["commit"]` a
+  `get_process_imported_payroll_periods_use_case_for_rows_import`) that build the same
+  Stage 2 use cases but bound to the transactional session instead of the usual "plain"
+  session — needed because FastAPI caches dependencies per callable, there's no way to
+  "parametrize" `get_session()` based on the body's `mode`.
+- **Route**: now a single `try/except` around `from_rows()` +
+  `ProcessImportedPayrollPeriods.execute()` (there used to be two, like in
+  `/payroll/import`) — a deliberate divergence: any exception forces
+  `scope.resolve("validate")` **before** re-raising the error, regardless of what `mode`
+  the client asked for. A half-applied import can never end up committed.
+- `ImportPayrollRowsRequest.mode` went from `Literal["commit"]` to
   `Literal["commit", "validate"]`.
 
-### Testing — el primer test contra Postgres real de todo pf-payroll
+### Testing — the first test against a real Postgres in all of pf-payroll
 
-Toda la suite existente usa fakes (`FakeSession`, `FakeResultsQueueBase`, etc.) y eso
-sigue siendo correcto para el 99% del dominio. Pero el mecanismo de SAVEPOINT hace una
-afirmación sobre semántica **real** de transacciones que ningún fake puede verificar
-honestamente: que varios `session.commit()` internos de verdad desaparecen con
-`resolve("validate")`. Para eso:
+The entire existing suite uses fakes (`FakeSession`, `FakeResultsQueueBase`, etc.), and
+that's still correct for 99% of the domain. But the SAVEPOINT mechanism makes a claim
+about **real** transaction semantics that no fake can honestly verify: that several
+internal `session.commit()`s really do vanish with `resolve("validate")`. For that:
 
-- `tests/integration/infrastructure/test_transactional_session.py` (nuevo): usa
-  `testcontainers[postgres]` (dependencia dev ya declarada, nunca antes usada en este
-  repo) contra una tabla `probe` desechable, sin tocar el esquema de pf-db. Tres casos:
-  `commit` persiste los dos `commit()` internos, `validate` los descarta a ambos, y un
-  scope nunca resuelto (bug/early-return) hace rollback defensivo solo. Contenedor
-  `postgres:16-alpine` reusado a nivel de módulo (ya estaba cacheado localmente); motor
-  async fresco por test para evitar cruzar el connection pool de asyncpg entre distintos
-  event loops de pytest-asyncio (`asyncio_mode = "strict"`, sin loop compartido).
-  - Nota de entorno: Ryuk (el "reaper" de testcontainers) falla al arrancar en Rancher
-    Desktop/macOS con un error de mount del socket de Docker — problema conocido, ya
-    resuelto en este monorepo: `pf-common/make/common.mk` detecta el socket de Rancher y
-    exporta `TESTCONTAINERS_RYUK_DISABLED=true` automáticamente para `make test`/
-    `make test-cov`. No hizo falta tocar nada ahí, solo usarlo.
-- `tests/unit/interfaces/test_api_dependencies.py`: 5 tests nuevos para las
-  dependencias `_for_rows_import` + el ciclo de vida de `get_transactional_session()`
-  (mismo patrón de `assert_get_session_lifecycle` ya existente, ahora también
-  `assert_get_transactional_session_lifecycle` en `tests/helpers/db_fakes.py`).
-- `tests/integration/api/test_payroll_import_rows.py`: reescrito con
-  `FakeTransactionalSessionScope` (graba con qué `mode` se llamó `resolve()`). Casos:
-  commit por default y explícito, `validate` (pipeline completo corre, pero
-  `resolve("validate")`), 422 en `concept_code` nulo, 422 en `mode` desconocido, rollback
-  forzado cuando `from_rows()` falla (aunque se pidió `commit`), rollback forzado cuando
-  `ProcessImportedPayrollPeriods` falla por dependencia caída (502).
-- 354 tests totales, 100% cobertura (`--cov-fail-under=100`), lint/typecheck/vulture
-  limpios.
+- `tests/integration/infrastructure/test_transactional_session.py` (new): uses
+  `testcontainers[postgres]` (an existing dev dependency, never used before in this
+  repo) against a disposable `probe` table, without touching pf-db's schema. Three
+  cases: `commit` persists both internal `commit()`s, `validate` discards both, and a
+  never-resolved scope (bug/early-return) does a defensive rollback on its own. A
+  `postgres:16-alpine` container is reused at the module level (already cached
+  locally); a fresh async engine per test to avoid crossing asyncpg's connection pool
+  between different pytest-asyncio event loops (`asyncio_mode = "strict"`, no shared
+  loop).
+  - Environment note: Ryuk (testcontainers' "reaper") fails to start on Rancher
+    Desktop/macOS with a Docker socket mount error — a known issue, already solved in
+    this monorepo: `pf-common/make/common.mk` detects Rancher's socket and
+    automatically exports `TESTCONTAINERS_RYUK_DISABLED=true` for `make test`/
+    `make test-cov`. Nothing needed to be touched there, just used.
+- `tests/unit/interfaces/test_api_dependencies.py`: 5 new tests for the
+  `_for_rows_import` dependencies + `get_transactional_session()`'s lifecycle (same
+  pattern as the existing `assert_get_session_lifecycle`, now also
+  `assert_get_transactional_session_lifecycle` in `tests/helpers/db_fakes.py`).
+- `tests/integration/api/test_payroll_import_rows.py`: rewritten with
+  `FakeTransactionalSessionScope` (records which `mode` `resolve()` was called with).
+  Cases: commit by default and explicit, `validate` (full pipeline runs, but
+  `resolve("validate")`), 422 on a null `concept_code`, 422 on an unknown `mode`, forced
+  rollback when `from_rows()` fails (even though `commit` was requested), forced
+  rollback when `ProcessImportedPayrollPeriods` fails due to a downstream dependency
+  being down (502).
+- 354 total tests, 100% coverage (`--cov-fail-under=100`), lint/typecheck/vulture clean.
 
-### Pendiente / fuera de alcance de esta etapa
+### Pending / out of scope for this stage
 
-- No hay un smoke test end-to-end contra el esquema real de pf-db (migraciones +
-  seeds de `PAY_CONCEPT`/planes) ejecutando la ruta HTTP real sin fakes. La confianza
-  viene de tres capas independientes ya cubiertas: el mecanismo SAVEPOINT en sí
-  (Postgres real), la orquestación de la ruta (qué `resolve()` se llama y cuándo,
-  fakes), y `import_rows()`/`ProcessImportedPayrollPeriods` sin cambios (ya cubiertos
-  al 100% desde antes de este feature). Si se quiere ese smoke test completo algún día,
-  ya queda toda la infraestructura de testcontainers lista para reusar.
+- There is no end-to-end smoke test against pf-db's real schema (migrations + seeds for
+  `PAY_CONCEPT`/plans) exercising the real HTTP route with no fakes. Confidence comes
+  from three independent layers already covered: the SAVEPOINT mechanism itself (real
+  Postgres), the route's orchestration (which `resolve()` gets called and when, fakes),
+  and `import_rows()`/`ProcessImportedPayrollPeriods` being unchanged (already 100%
+  covered before this feature). If that full smoke test is ever wanted, all the
+  testcontainers infrastructure is already there to reuse.
 
-## Cierre de gaps vs. el diseño original (2026-09-25)
+## Closing gaps vs. the original design (2026-09-25)
 
-Tras el deploy de la Etapa 3, se revisó `pdf-import-design-recommendation.md` de punta a
-punta contra el código real (no solo contra lo que decía la tabla de "Estado general" de
-este documento) y aparecieron tres divergencias reales frente al diseño aprobado. Las
-tres se cerraron en la misma sesión:
+After Stage 3 shipped, `pdf-import-design-recommendation.md` was reviewed end to end
+against the real code (not just against what this document's "Overall status" table
+said), and three real divergences from the approved design turned up. All three were
+closed in the same session:
 
-1. **`validate` ya no rechaza `concept_code` sin resolver — solo `commit` lo hace.**
-   La sección 3 del diseño es explícita: *"`commit` debe fallar; `validate` no falla —
-   devuelve warning con el detalle"*. La Etapa 3 original hacía `concept_code: str`
-   obligatorio a nivel de schema, rechazando con 422 en **ambos** modos por igual — más
-   simple, pero no lo que pedía el diseño, y un problema real el día que un empleador
-   nuevo (sin plantilla completa) necesite iterar con `validate` antes de tener todo
-   resuelto.
-   - `ImportPayrollRowRequest.concept_code` pasó a `str | None` (sigue siendo un campo
-     requerido en el JSON — debe estar presente — pero ahora puede ser `null`).
-   - La ruta separa las filas resueltas de las no resueltas **antes** de llamar a
-     ningún use case: `mode="commit"` con alguna fila sin resolver lanza
-     `PayrollValidationError` (400) explícito, mencionando los índices afectados, sin
-     tocar `from_rows()`. `mode="validate"` corre el pipeline real solo sobre las filas
-     resueltas (si hay alguna) y reporta las demás en el nuevo campo
-     `ImportPayrollResponse.unresolved_rows` (índice + monto + período), sin fallar.
-   - Caso borde cubierto explícitamente: si `validate` recibe filas pero **ninguna**
-     tiene `concept_code` resuelto, la ruta nunca llama a `from_rows()` (que rechazaría
-     con "rows must not be empty", un error confuso para este caso) — devuelve
-     `imported_periods=0` directo más el warning. Si en cambio la lista de `rows` viene
-     literalmente vacía (`[]`), sí se deja que `from_rows([])` dispare su guardia
-     existente sin cambios, para no alterar ese comportamiento previo.
-   - Tests nuevos en `test_payroll_import_rows.py`: rechazo explícito en `commit`
-     (400, no 422), `validate` con mezcla resuelto/no-resuelto (reporta y sigue),
-     `validate` con todo sin resolver (pipeline nunca se llama).
-2. **Nuevo comando CLI `payroll template-test <pdf>`.** La sección 5 punto 4 del
-   diseño pedía un comando para iterar una plantilla sin programar
-   (`payroll template test <pdf> --employer ...`). No existía. Se agregó
-   `template-test` en `interfaces/cli/main.py` (sin el flag `--employer`: el
-   auto-detect de plantilla ya existe y es exactamente lo que hay que probar, forzar
-   un empleador de antemano sería probar otra cosa) — corre `PreviewPdfImport` con el
-   extractor real (sin DB, sin persistencia), imprime un resumen de una línea
-   (`template_id=... rows=N unresolved=M`) más el detalle de cada fila sin resolver
-   por `stderr`, y el preview completo en JSON por `stdout`. Probado a mano contra
+1. **`validate` no longer rejects an unresolved `concept_code` — only `commit` does.**
+   Design section 3 is explicit: *"`commit` must fail; `validate` does not fail — it
+   returns a warning with the detail"*. The original Stage 3 made `concept_code: str`
+   mandatory at the schema level, rejecting with 422 in **both** modes alike — simpler,
+   but not what the design asked for, and a real problem the day a new employer
+   (without a complete template) needs to iterate with `validate` before everything is
+   resolved.
+   - `ImportPayrollRowRequest.concept_code` changed to `str | None` (still a required
+     field in the JSON — it must be present — but it can now be `null`).
+   - The route splits resolved from unresolved rows **before** calling any use case:
+     `mode="commit"` with any unresolved row raises an explicit `PayrollValidationError`
+     (400), naming the affected indexes, without touching `from_rows()`. `mode="validate"`
+     runs the real pipeline only over the resolved rows (if any) and reports the rest in
+     the new `ImportPayrollResponse.unresolved_rows` field (index + amount + period),
+     without failing.
+   - Explicit edge case covered: if `validate` receives rows but **none** has a resolved
+     `concept_code`, the route never calls `from_rows()` (which would reject with "rows
+     must not be empty", a confusing error for this case) — it returns
+     `imported_periods=0` directly plus the warning. If instead the `rows` list is
+     literally empty (`[]`), `from_rows([])` is still allowed to trigger its existing
+     guard unchanged, to avoid altering that prior behavior.
+   - New tests in `test_payroll_import_rows.py`: explicit rejection on `commit` (400,
+     not 422), `validate` with a mix of resolved/unresolved (reports and continues),
+     `validate` with everything unresolved (pipeline never gets called).
+2. **New `payroll template-test <pdf>` CLI command.** Design section 5, point 4, asked
+   for a command to iterate on a template without writing code
+   (`payroll template test <pdf> --employer ...`). It didn't exist. `template-test` was
+   added to `interfaces/cli/main.py` (without the `--employer` flag: template
+   auto-detection already exists and is exactly what needs to be tested, forcing an
+   employer up front would be testing something else) — it runs `PreviewPdfImport` with
+   the real extractor (no DB, no persistence), prints a one-line summary
+   (`template_id=... rows=N unresolved=M`) plus the detail of every unresolved row to
+   `stderr`, and the full preview as JSON to `stdout`. Tested by hand against
    `secrets/Liquidación_202608.PDF`: `template_id=walmart-chile-v1 rows=13
-   unresolved=0`, confirma que la plantilla real sigue resolviendo el 100%.
-3. **El caveat de pf-rates ahora está en el docstring público del endpoint.** El
-   brief pedía decirlo explícito para quien consuma la API (no solo en los `.md`
-   internos). Se agregó al docstring de `ImportPayrollRowsRequest` en
-   `interfaces/api/routes/payroll.py` (visible en el OpenAPI/Swagger del servicio):
-   ni `commit` ni `validate` deshacen el cacheo de market data que pf-rates pueda
-   hacer en su propia base al resolver tipo de cambio/UTM faltante.
+   unresolved=0`, confirming the real template still resolves 100%.
+3. **The pf-rates caveat now lives in the endpoint's public docstring.** The brief
+   asked for it to be stated explicitly for whoever consumes the API (not only in the
+   internal `.md` files). It was added to `ImportPayrollRowsRequest`'s docstring in
+   `interfaces/api/routes/payroll.py` (visible in the service's OpenAPI/Swagger):
+   neither `commit` nor `validate` undoes any market-data caching pf-rates may do in its
+   own database while resolving a missing exchange rate/UTM.
 
-**Verificación:** 359 tests (+5 vs. el cierre de la Etapa 3), 100% cobertura,
-lint/typecheck/vulture limpios.
+**Verification:** 359 tests (+5 vs. Stage 3's close), 100% coverage,
+lint/typecheck/vulture clean.
 
-## Historial de cambios
+## Change log
 
-- **2026-09-25 (cont. 7)** — Cierre de 3 gaps vs. el diseño original detectados en una
-  revisión punta a punta (ver sección "Cierre de gaps" arriba): `validate` ya no
-  rechaza `concept_code` sin resolver (solo `commit` lo hace, con 400 explícito y
-  `unresolved_rows` en la respuesta), nuevo comando CLI `payroll template-test <pdf>`,
-  y el caveat de pf-rates ahora vive en el docstring público del endpoint. 359 tests,
-  100% cobertura, lint/typecheck/vulture limpios.
-- **2026-09-25 (cont. 6)** — Fix post-push: el push de la Etapa 3 rompió CI (`gh run list`
-  mostró el run en `failure`). Causa: dos tests de `test_payroll_import_rows.py`
-  (los que esperaban 422 por body inválido) no tenían overrides de dependencias,
-  asumiendo que FastAPI corta la resolución de `Depends()` antes de validar el body.
-  **Eso es falso** — FastAPI resuelve todo el árbol de dependencias (incluyendo
-  `get_transactional_session()`, que abre una conexión real vía `engine.connect()`)
-  antes de mirar los errores de validación del body. Localmente los tests igual
-  pasaban porque había un túnel SSH viejo escuchando en el puerto 5432 de la máquina
-  apuntando a una base real; en el runner de GitHub Actions no hay nada ahí y explota
-  con `OSError: Connect call failed`. Fix: los dos tests ahora también mockean
-  `get_transactional_session` (como el resto), y se agregó `scope.resolved_with == []`
-  como assertion explícita de que la dependencia transaccional real nunca se toca en
-  esos casos. Verificado apuntando `PF_DATABASE_URL` a un puerto que de verdad no
-  responde (simulando CI) antes de repushear — 354 tests, 100% cobertura.
-  **Lección para próximas rutas con dependencias que hacen I/O eager:** nunca asumir
-  que un test de "422 por body inválido" puede saltarse los overrides de dependencias
-  solo porque el handler nunca las va a usar — FastAPI las instancia igual.
-- **2026-09-25 (cont. 5)** — Etapa 3 completa: `TransactionalSessionScope` con
-  `join_transaction_mode="create_savepoint"` de SQLAlchemy, ruta `POST
-  /payroll/import/rows` ahora soporta `mode="validate"` de verdad (pipeline completo,
-  cero escritura persistida). Primer test contra Postgres real de todo pf-payroll
-  (`testcontainers[postgres]`). 354 tests, 100% cobertura, lint/typecheck/vulture
-  limpios. Ver detalle en la sección de la Etapa 3 arriba.
-- **2026-09-25 (cont. 4)** — Etapa 2 completa: `ImportPayroll.from_rows()`, ruta
-  `POST /payroll/import/rows` (modo `commit` únicamente), reusando 100% del pipeline
-  existente. 345 tests, 100% cobertura, lint/typecheck/vulture limpios. Ver detalle en
-  la sección de la Etapa 2 arriba.
-- **2026-09-25 (cont. 3)** — Etapa 1 completa: extractor por plantilla, plantilla real
-  de WALMART-CHILE, endpoint `POST /payroll/import/pdf-preview` sin persistencia.
-  337 tests, 100% cobertura, lint/typecheck/vulture limpios. Ver detalle en la sección
-  de la Etapa 1 arriba.
-- **2026-09-25 (cont. 2)** — A pedido explícito del usuario, se eliminó del repo
-  `scripts/data-fixes/2026-09-fix-period-semantics-walmart-chile.sql` (ya no hacía
-  falta: local, Neon y el CSV fuente ya estaban alineados). El SQL quedó documentado
-  arriba por si hace falta reconstruirlo.
-- **2026-09-25 (cont.)** — Usuario confirmó corrección manual de Neon. Corregido también
-  `secrets/payroll-input.csv` (CSV fuente real del import de WALMART-CHILE, gitignoreado)
-  con la misma recalculación `period_year/period_month = año/mes de payment_date`.
-  **Etapa 0 cerrada por completo** (código + los tres lugares de datos: local, Neon,
-  CSV fuente).
-- **2026-09-25** — Arranque del plan de acción. Etapa 0 completada en código y en datos
-  locales; Neon queda pendiente de autorización explícita. Creado este documento de
-  seguimiento (separado de la propuesta original, que queda congelada).
+- **2026-09-25 (cont. 7)** — Closed 3 gaps vs. the original design found during an
+  end-to-end review (see "Closing gaps" above): `validate` no longer rejects an
+  unresolved `concept_code` (only `commit` does, with an explicit 400 and
+  `unresolved_rows` in the response), new `payroll template-test <pdf>` CLI command,
+  and the pf-rates caveat now lives in the endpoint's public docstring. 359 tests,
+  100% coverage, lint/typecheck/vulture clean.
+- **2026-09-25 (cont. 6)** — Post-push fix: Stage 3's push broke CI (`gh run list`
+  showed the run as `failure`). Cause: two tests in `test_payroll_import_rows.py`
+  (the ones expecting 422 for an invalid body) had no dependency overrides, assuming
+  FastAPI would short-circuit `Depends()` resolution before validating the body.
+  **That's false** — FastAPI resolves the entire dependency tree (including
+  `get_transactional_session()`, which opens a real connection via `engine.connect()`)
+  before looking at the body's validation errors. Locally the tests still passed
+  because an old SSH tunnel was listening on port 5432 pointing at a real database; on
+  the GitHub Actions runner there's nothing there and it blows up with
+  `OSError: Connect call failed`. Fix: both tests now also mock
+  `get_transactional_session` (like the rest), and `scope.resolved_with == []` was
+  added as an explicit assertion that the real transactional dependency is never
+  touched in those cases. Verified by pointing `PF_DATABASE_URL` at a port that truly
+  doesn't respond (simulating CI) before re-pushing — 354 tests, 100% coverage.
+  **Lesson for future routes with eager-I/O dependencies:** never assume a "422 for
+  invalid body" test can skip dependency overrides just because the handler will never
+  use them — FastAPI instantiates them regardless.
+- **2026-09-25 (cont. 5)** — Stage 3 complete: `TransactionalSessionScope` with
+  SQLAlchemy's `join_transaction_mode="create_savepoint"`, the `POST
+  /payroll/import/rows` route now truly supports `mode="validate"` (full pipeline, zero
+  persisted writes). The first test against a real Postgres in all of pf-payroll
+  (`testcontainers[postgres]`). 354 tests, 100% coverage, lint/typecheck/vulture clean.
+  See the Stage 3 section above for detail.
+- **2026-09-25 (cont. 4)** — Stage 2 complete: `ImportPayroll.from_rows()`, `POST
+  /payroll/import/rows` route (`commit` mode only), reusing 100% of the existing
+  pipeline. 345 tests, 100% coverage, lint/typecheck/vulture clean. See the Stage 2
+  section above for detail.
+- **2026-09-25 (cont. 3)** — Stage 1 complete: template-based extractor, a real
+  WALMART-CHILE template, `POST /payroll/import/pdf-preview` endpoint with no
+  persistence. 337 tests, 100% coverage, lint/typecheck/vulture clean. See the Stage 1
+  section above for detail.
+- **2026-09-25 (cont. 2)** — At the user's explicit request,
+  `scripts/data-fixes/2026-09-fix-period-semantics-walmart-chile.sql` was removed from
+  the repo (no longer needed: local, Neon, and the source CSV were already aligned).
+  The SQL is documented above in case it ever needs to be rebuilt.
+- **2026-09-25 (cont.)** — User confirmed the manual fix in Neon. Also fixed
+  `secrets/payroll-input.csv` (the real source CSV for WALMART-CHILE's import,
+  gitignored) with the same `period_year/period_month = payment_date`'s year/month
+  recalculation. **Stage 0 fully closed** (code + all three data locations: local,
+  Neon, source CSV).
+- **2026-09-25** — Action plan kicked off. Stage 0 completed in code and in local data;
+  Neon is pending explicit authorization. This tracking document was created (separate
+  from the original proposal, which stays frozen).

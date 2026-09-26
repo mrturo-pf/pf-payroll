@@ -7,8 +7,8 @@ is gitignored by default (see `.gitignore` right here): only this
 
 ## Why this exists (PII, not just credentials)
 
-`pf-payroll` deals with real Chilean *liquidaciones de sueldo* (RUT, sueldo,
-previsión, salud). Per this repo's non-negotiable PII rule, no real PDF and
+`pf-payroll` deals with real Chilean *liquidaciones de sueldo* (national ID/RUT,
+salary, pension, health data). Per this repo's non-negotiable PII rule, no real PDF and
 no JSON/fixture derived from a real PDF may ever live in a git-tracked
 folder — not even temporarily, not even in a test fixtures directory. This
 folder is the sanctioned local drop zone for that kind of material during

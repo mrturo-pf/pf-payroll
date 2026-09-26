@@ -1,97 +1,94 @@
-# Investigación: discrepancia en `HEALTH_ADDITIONAL_UF` en una importación real
+# Investigation: `HEALTH_ADDITIONAL_UF` mismatch on a real import
 
-**Estado:** causa raíz aislada -- **no es un bug de código**. El motor de
-cálculo de pf-payroll y el dato de UF de pf-rates quedaron demostrados
-correctos; la brecha se redujo a una pregunta de datos de referencia
-(`contracted_uf` en `health_plans`) que requiere verificación contra el
-contrato Isapre real del empleado, fuera del alcance de este repo. Ver la
-sección "Cierre" más abajo.
-**Abierto:** 2026-09-26, justo después de deployar los commits `48a6314` y
-`551cf30` (ver `git log` en `pf-payroll`). **Causa raíz aislada el mismo
-día.**
+**Status:** root cause isolated -- **not a code bug**. pf-payroll's calculation
+engine and pf-rates' UF value were both proven correct; the gap was narrowed
+down to a reference-data question (`contracted_uf` in `health_plans`) that
+requires verification against the employee's real Isapre contract, outside
+this repo's scope. See the "Closure" section below.
+**Opened:** 2026-09-26, right after deploying commits `48a6314` and
+`551cf30` (see `git log` in `pf-payroll`). **Root cause isolated the same
+day.**
 
-## Contexto
+## Context
 
-Esta sesión subió dos fixes a `POST /payroll/import/rows`:
+This session shipped two fixes to `POST /payroll/import/rows`:
 
-1. `48a6314` — `build_imported_contribution_validation()` ya no anula
-   `expected_health_plan_additional_clp` solo porque un período tiene más de
-   un `health_plan_id` asignado (ese guard era anterior a la agregación de
-   `contracted_uf` entre todos los planes asignados que hace
-   `get_contribution_context()`, y se disparaba en casi cualquier importación
-   real).
-2. `551cf30` — los campos monetarios de `ImportedPeriodRead` /
-   `ImportedContributionValidationRead` ahora se muestran como números JSON
-   de verdad, en vez del string entre comillas que pydantic serializa por
-   default para `Decimal`.
+1. `48a6314` — `build_imported_contribution_validation()` no longer nulls out
+   `expected_health_plan_additional_clp` just because a period has more than
+   one `health_plan_id` assigned (that guard predated the `contracted_uf`
+   aggregation across every assigned plan done by
+   `get_contribution_context()`, and was firing on almost every real
+   import).
+2. `551cf30` — money fields on `ImportedPeriodRead` /
+   `ImportedContributionValidationRead` now render as real JSON numbers
+   instead of the quoted string pydantic serializes `Decimal` as by default.
 
-Ambos fixes están confirmados funcionando en producción: los números vuelven
-sin comillas, y la validación de `HEALTH_ADDITIONAL_UF` ahora sí corre en vez
-de devolver `null` en silencio. Justamente *por* correr, salió a la luz una
-discrepancia real.
+Both fixes are confirmed working in production: numbers come back unquoted,
+and the `HEALTH_ADDITIONAL_UF` validation now actually runs instead of
+silently returning `null`. Precisely *because* it now runs, it surfaced a
+real discrepancy.
 
-## El hallazgo
+## The finding
 
-Al volver a correr el mismo comprobante real (`WALMART-CHILE`, período
-2026-08, `payment_date=2026-08-31`) contra `POST /payroll/import/rows`
-(`mode=validate`) en producción:
+Re-running the same real payslip (`WALMART-CHILE`, period 2026-08,
+`payment_date=2026-08-31`) against `POST /payroll/import/rows`
+(`mode=validate`) in production:
 
 ```
 declared_health_plan_additional_clp:  38013
 expected_health_plan_additional_clp:  33516
-health_plan_additional_difference_clp: 4497   <- lo calculado es MENOR que lo declarado
+health_plan_additional_difference_clp: 4497   <- computed is LOWER than declared
 warning: "Imported contribution totals do not match the computed payroll
           contributions. HEALTH_ADDITIONAL_UF declared 38013.00 CLP,
           expected 33516 CLP."
 ```
 
-Los otros tres conceptos reconciliados en la misma respuesta coincidieron
-**exacto** (diff `0` en los tres):
+The other three reconciled concepts in the same response all matched
+**exactly** (diff `0` for all three):
 
-- `PENSION_BASE`: declarado 367864 == esperado 367864
-- `PENSION_ADDITIONAL`: declarado 42672 == esperado 42672
-- `HEALTH_BASE`: declarado 257505 == esperado 257505
+- `PENSION_BASE`: declared 367864 == expected 367864
+- `PENSION_ADDITIONAL`: declared 42672 == expected 42672
+- `HEALTH_BASE`: declared 257505 == expected 257505
 
-Ese es un dato importante: descarta que la tasa de cotización, el tope
-(cap) o la base imponible topada estén mal — esos valores son insumos
-compartidos entre pensión y salud. La discrepancia está aislada
-específicamente al cálculo de `HEALTH_ADDITIONAL_UF` (el "adicional" de
-plan Isapre denominado en UF).
+That's an important clue: it rules out the contribution rate, the
+contribution cap, and the capped taxable base all being wrong -- those are
+shared inputs across pension and health. The mismatch is isolated
+specifically to the `HEALTH_ADDITIONAL_UF` (UF-denominated Isapre plan
+"top-up") calculation.
 
-## Dónde vive el cálculo
+## Where the calculation lives
 
-`src/payroll/domain/contribution_calculator.py`, método
-`ContributionCalculator.health()`:
+`src/payroll/domain/contribution_calculator.py`, `ContributionCalculator.health()`:
 
 ```python
 contracted_clp = quantize_clp(plan.contracted_uf * plan_uf_value_clp)
 additional_amount = max(Decimal("0"), contracted_clp - base_amount)
 ```
 
-Como `base_amount` ya se probó correcto (`HEALTH_BASE` coincidió exacto), la
-discrepancia tiene que estar completamente en `contracted_clp`, es decir, en
-uno de estos dos valores:
+Since `base_amount` was already proven correct (`HEALTH_BASE` matched
+exactly), the discrepancy has to live entirely in `contracted_clp`, i.e. in
+one of:
 
-- `plan.contracted_uf` — el valor sembrado en la tabla `health_plans` para
-  el/los plan(es) asignados a este período, o
-- `plan_uf_value_clp` — el tipo de cambio UF de cierre de mes resuelto para
-  `2026-08-31` (ver el caveat ya documentado sobre el cacheo de market data
-  de pf-rates, en el docstring de `ImportPayrollRowsRequest`).
+- `plan.contracted_uf` -- the value seeded in the `health_plans` table for
+  whichever plan(s) got assigned to this period, or
+- `plan_uf_value_clp` -- the month-end UF exchange rate resolved for
+  `2026-08-31` (see the already-documented pf-rates market-data caching
+  caveat on `ImportPayrollRowsRequest`'s docstring).
 
-`plan.contracted_uf` acá es el **agregado** entre todos los `health_plan_id`
-asignados como snapshot al período (ver `get_contribution_context()` en
-`payroll_repository_commands.py`, que suma `contracted_uf` entre todos los
-planes asignados siempre que compartan la misma institución — exactamente el
-comportamiento de agregación en el que el fix `48a6314` empezó a confiar en
-vez de descartarlo de entrada).
+`plan.contracted_uf` here is the **aggregate** across every `health_plan_id`
+snapshot assigned to the period (see `get_contribution_context()` in
+`payroll_repository_commands.py`, which sums `contracted_uf` across all
+assigned plans as long as they share the same institution -- this is the
+exact aggregation behavior that fix `48a6314` started trusting instead of
+bailing out on).
 
-## Duda planteada por el usuario: ¿por qué no hay warning también en `net_pay`?
+## Question raised by the user: why isn't there also a warning on `net_pay`?
 
-Buena pregunta, y tiene una respuesta concreta en el código, no es un
-descuido: `net_pay_difference_clp` y `net_pay_warning` **no** se calculan a
-partir de los valores recién computados por `ContributionCalculator`
-(los `33516` de la fórmula). Se calculan así
-(`_reconcile_period_net_pay()` en `payroll_repository_shared.py`):
+Good question, and it has a concrete answer in the code, not an oversight:
+`net_pay_difference_clp` and `net_pay_warning` are **not** computed from the
+values `ContributionCalculator` just computed (the formula's `33516`). They
+are computed like this (`_reconcile_period_net_pay()` in
+`payroll_repository_shared.py`):
 
 ```python
 summary_result = await self._session.execute(
@@ -106,66 +103,65 @@ period.net_pay_difference_clp = (
 )
 ```
 
-`PayrollSummaryModel.net_pay_clp` sale de la vista materializada
-`PAY_MV_SUMARY`, cuya definición SQL (`pf-db/db/01_schema.sql`) es
-simplemente:
+`PayrollSummaryModel.net_pay_clp` comes from the `PAY_MV_SUMARY` materialized
+view, whose SQL definition (`pf-db/db/01_schema.sql`) is simply:
 
 ```sql
 SUM(CASE WHEN c.kind = 'income'   THEN i.amount_clp ELSE 0 END) -
 SUM(CASE WHEN c.kind = 'discount' THEN i.amount_clp ELSE 0 END) AS net_pay_clp
 ```
 
-Es decir: `expected_net_pay_clp` es la suma de los **ítems ya persistidos y
-declarados** (los `PAY_ITEM` que vinieron del PDF/CSV/JSON importado,
-incluyendo el `38013` declarado de `HEALTH_ADDITIONAL_UF`), no la suma de los
-valores que `ContributionCalculator` recalcula de forma independiente.
+In other words: `expected_net_pay_clp` is the sum of the **already
+persisted, declared items** (the `PAY_ITEM` rows that came from the
+imported PDF/CSV/JSON, including the declared `38013` for
+`HEALTH_ADDITIONAL_UF`), not the sum of the values `ContributionCalculator`
+independently recomputes.
 
-En otras palabras, son **dos chequeos distintos que responden preguntas
-distintas**:
+In other words, these are **two different checks answering two different
+questions**:
 
-1. `contribution_validation` (el que dio warning) responde: *"¿el monto que
-   el comprobante declaró para este concepto coincide con lo que nuestra
-   propia fórmula de cálculo produciría?"*
-2. La reconciliación de `net_pay` responde: *"¿los montos que el comprobante
-   declaró para cada ítem suman exactamente el líquido a pagar que el mismo
-   comprobante declaró?"*
+1. `contribution_validation` (the one that raised the warning) answers:
+   *"does the amount the payslip declared for this concept match what our
+   own calculation formula would produce?"*
+2. The `net_pay` reconciliation answers: *"do the amounts the payslip
+   declared for each item add up exactly to the net pay the same payslip
+   declared?"*
 
-Como el comprobante real ya viene internamente consistente (sus propios
-números ya suman bien entre sí, es un comprobante real del empleador),
-la pregunta (2) siempre va a dar `0` de diferencia sin importar si alguno de
-sus conceptos individuales coincide o no con nuestra fórmula interna. Por
-eso es totalmente posible (y no es un bug) tener un warning en
-`contribution_validation` sin tener, a la vez, diferencia ni warning en
-`net_pay`.
+Since the real payslip is already internally consistent (its own numbers
+already add up correctly, it's a real employer-issued payslip), question (2)
+will always come out to a `0` difference regardless of whether any of its
+individual concepts match our internal formula or not. That's why it's
+entirely possible (and not a bug) to have a warning on
+`contribution_validation` without, at the same time, having a difference or
+a warning on `net_pay`.
 
-Dicho de otra forma: si algún día quisiéramos que un mismatch de
-`HEALTH_ADDITIONAL_UF` como este también se reflejara en `net_pay`,
-haría falta cambiar la reconciliación de `net_pay` para que use los montos
-*recalculados* por `ContributionCalculator` en vez de los montos
-*declarados* que ya están persistidos como `PAY_ITEM` — un cambio de diseño
-bastante más grande que el bug puntual que estamos investigando acá, y que
-no está claro que sea deseable (mezclaría "el comprobante es internamente
-consistente" con "el comprobante coincide con nuestra fórmula", que hoy son
-preguntas separadas a propósito).
+Put another way: if we ever wanted a `HEALTH_ADDITIONAL_UF` mismatch like
+this one to also show up on `net_pay`, the `net_pay` reconciliation would
+need to be changed to use the amounts *recomputed* by `ContributionCalculator`
+instead of the *declared* amounts already persisted as `PAY_ITEM` -- a much
+bigger design change than the specific bug we're investigating here, and one
+that isn't clearly desirable (it would blur "the payslip is internally
+consistent" together with "the payslip matches our formula", which today are
+deliberately separate questions).
 
-## Avance (sesión 2, 2026-09-26): datos reales de `/reference-data`
+## Progress (session 2, 2026-09-26): real `/reference-data` data
 
-Se consultó producción (paso 1 de los próximos pasos, solo lectura):
+Production was queried (step 1 of the next steps, read-only):
 
 ```
 GET /reference-data/health-institutions?include_inactive=true
 ```
-Única institución Isapre activa: `ESENCIAL` (`mandatory_rate=0.07`, coincide
-con lo esperado). El resto (`BANMEDICA`, `COLMENA`, `CONSALUD`, `CRUZBLANCA`,
-`FONASA`, `NUEVA_MASVIDA`, `VIDA_TRES`) están inactivas.
+The only active Isapre institution: `ESENCIAL` (`mandatory_rate=0.07`,
+matches expectations). The rest (`BANMEDICA`, `COLMENA`, `CONSALUD`,
+`CRUZBLANCA`, `FONASA`, `NUEVA_MASVIDA`, `VIDA_TRES`) are inactive.
 
 ```
 GET /reference-data/health-plans?include_inactive=true
 ```
-Existen exactamente 3 planes, los tres bajo `ESENCIAL`, los tres con
-`valid_from=2024-11-01` y `valid_to=null` (o sea, los tres siguen vigentes
-al `2026-08-31` -- esto confirma que `_deduce_health_plan_ids_for_date`
-efectivamente resuelve los 3, no uno solo, para el paso 2):
+There are exactly 3 plans, all three under `ESENCIAL`, all three with
+`valid_from=2024-11-01` and `valid_to=null` (i.e. all three are still valid
+on `2026-08-31` -- this confirms that `_deduce_health_plan_ids_for_date`
+does resolve all 3, not just one, for step 2):
 
 | id | plan_name    | contracted_uf |
 |----|--------------|---------------|
@@ -173,151 +169,145 @@ efectivamente resuelve los 3, no uno solo, para el paso 2):
 | 8  | Base         | 5.42          |
 | 9  | GES          | 0.91          |
 
-Agregado total (lo que `get_contribution_context()` suma, misma
-institución): **7.12 UF**.
+Total aggregate (what `get_contribution_context()` sums, same institution):
+**7.12 UF**.
 
-### Reconstrucción a mano (paso 4, con Decimal exacto)
+### Manual reconstruction (step 4, with exact Decimal math)
 
-Como `base_amount_clp` ya está confirmado correcto (`HEALTH_BASE` coincide
-exacto en 257505), y `additional_amount = contracted_clp - base_amount`,
-podemos despejar qué valor de UF *implica* cada lado sin conocer todavía el
-valor real que devolvió pf-rates:
-
-```
-uf_value implícito en el CALCULADO (33516) = (33516 + 257505) / 7.12
-                                            = 40873.7359550561797752808988764...
-
-uf_value implícito en el DECLARADO (38013) = (38013 + 257505) / 7.12
-                                            = 41505.3370786516853932584269663...
-
-diferencia = 631.60 CLP por UF  (~1.545% más alto en el declarado)
-```
-
-Esto es un hallazgo bastante limpio: **si el agregado de 7.12 UF es
-correcto**, toda la brecha de 4497 CLP se explica con una sola variable --
-un valor de UF ~1.55% más alto usado por quien emitió el comprobante real
-que el que nuestro sistema resolvió para `2026-08-31`. Los dos valores
-implícitos (~40874 y ~41505 CLP/UF) son, además, perfectamente plausibles
-para una UF de mediados de 2026 -- no son números disparatados que
-sugieran que el agregado de 7.12 UF esté mal.
-
-Esto reordena las hipótesis: ahora el sospechoso principal es puntualmente
-el **valor de UF resuelto para `2026-08-31`** (hipótesis 2 original), no la
-composición del agregado de planes (hipótesis 3 original) -- una brecha
-consistente de ~1.55% en un solo número (el precio de la UF) es una
-explicación más simple y más limpia que andar adivinando qué subconjunto de
-los 3 planes sumar.
-
-## Cierre (sesión 2, continuación): el valor de UF está descartado como causa
-
-Se consultó pf-rates directamente:
+Since `base_amount_clp` is already confirmed correct (`HEALTH_BASE` matches
+exactly at 257505), and `additional_amount = contracted_clp - base_amount`,
+we can solve for what UF value each side *implies*, without yet knowing the
+real value pf-rates returned:
 
 ```
-GET /exchange-rates/value?currency_code=UF&rate_date=2026-08-31  (en pf-rates)
+uf_value implied by the COMPUTED value (33516) = (33516 + 257505) / 7.12
+                                                = 40873.7359550561797752808988764...
+
+uf_value implied by the DECLARED value (38013) = (38013 + 257505) / 7.12
+                                                = 41505.3370786516853932584269663...
+
+difference = 631.60 CLP per UF  (~1.545% higher in the declared value)
+```
+
+This is a fairly clean finding: **if the 7.12 UF aggregate is correct**, the
+entire 4497 CLP gap is explained by a single variable -- a UF value ~1.55%
+higher used by whoever issued the real payslip than the one our system
+resolved for `2026-08-31`. The two implied values (~40874 and ~41505
+CLP/UF) are, moreover, perfectly plausible for a mid-2026 UF -- they aren't
+outlandish numbers suggesting the 7.12 UF aggregate itself is wrong.
+
+This reorders the hypotheses: the prime suspect is now specifically the
+**UF value resolved for `2026-08-31`** (original hypothesis 2), not the
+composition of the plan aggregate (original hypothesis 3) -- a consistent
+~1.55% gap in a single number (the UF price) is a simpler, cleaner
+explanation than guessing which subset of the 3 plans to sum.
+
+## Closure (session 2, continued): the UF value is ruled out as the cause
+
+pf-rates was queried directly:
+
+```
+GET /exchange-rates/value?currency_code=UF&rate_date=2026-08-31  (on pf-rates)
 -> { "value_clp": 40873.770000 }
 ```
 
-Reemplazando este valor **real y confirmado** en la fórmula del dominio
-(con el mismo redondeo que usa `quantize_clp`, `ROUND_HALF_UP` a 0
-decimales):
+Plugging this **real, confirmed** value into the domain formula (with the
+same rounding `quantize_clp` uses, `ROUND_HALF_UP` to 0 decimals):
 
 ```
 contracted_clp = 7.12 UF * 40873.77 = 291021.2424
 additional_amount = round(291021.2424 - 257505) = 33516
 ```
 
-**Coincide exacto con el `expected_health_plan_additional_clp: 33516` que
-devolvió la API.** Esto confirma sin ambigüedad que:
+**This matches exactly the `expected_health_plan_additional_clp: 33516` the
+API returned.** This unambiguously confirms that:
 
-- `resolve_month_end_uf_exchange_rate()` está leyendo el valor correcto
-  para `2026-08-31`.
-- pf-rates tiene el dato correcto para esa fecha.
-- La fórmula de `ContributionCalculator.health()` está aplicando ese valor
-  correctamente.
+- `resolve_month_end_uf_exchange_rate()` is reading the correct value for
+  `2026-08-31`.
+- pf-rates has the correct data for that date.
+- `ContributionCalculator.health()`'s formula is applying that value
+  correctly.
 
-Es decir: **no hay ningún bug de código en pf-payroll ni dato
-desactualizado en pf-rates.** La hipótesis 1 (valor de UF) queda
-**descartada por completo**, con evidencia exacta, no aproximada.
+In other words: **there is no code bug in pf-payroll, nor stale data in
+pf-rates.** Hypothesis 1 (the UF value) is **completely ruled out**, with
+exact, not approximate, evidence.
 
-El usuario además buscó manualmente si `41505.34` CLP (el UF implícito en
-lo *declarado* por el comprobante) coincide con el UF de **algún** otro
-día cercano -- **no coincide con ninguno**. Esto descarta también, de forma
-independiente, la variante más débil de la hipótesis 1 ("está usando la
-fecha equivocada, pero un día real"): no hay ninguna fecha real de UF que
-reproduzca el monto declarado usando el agregado de 7.12 UF.
+The user also manually checked whether `41505.34` CLP (the UF implied by
+what the payslip *declared*) matches the UF of **any** other nearby date --
+**it matches none of them**. This independently rules out the weaker
+variant of hypothesis 1 too ("it's using the wrong date, but a real one"):
+there is no real UF date that reproduces the declared amount using the
+7.12 UF aggregate.
 
-### La brecha real, con el UF ya confirmado
+### The real gap, with the UF now confirmed
 
-Con el UF fijo en `40873.77` (el valor correcto y confirmado), lo único que
-puede explicar los `38013` declarados es que el `contracted_uf` total
-realmente contratado por este empleado no sea `7.12` sino:
+With the UF fixed at `40873.77` (the correct, confirmed value), the only
+thing that can explain the declared `38013` is that the total
+`contracted_uf` actually contracted by this employee isn't `7.12` but:
 
 ```
-contracted_uf implícito en lo declarado = (38013 + 257505) / 40873.77
-                                         = 7.23001572891367740240256771029...
+contracted_uf implied by the declared value = (38013 + 257505) / 40873.77
+                                             = 7.23001572891367740240256771029...
 
-gap vs nuestro agregado sembrado (7.12) = 0.11001572891367740240256771029... UF
+gap vs. our seeded aggregate (7.12)         = 0.11001572891367740240256771029... UF
 ```
 
-Es decir, al empleado real parecería faltarle **~0.11 UF** de plan
-contratado en la tabla `health_plans` respecto de lo que el comprobante
-real factura. Ninguno de los 3 planes existentes (`0.79`, `5.42`, `0.91`)
-es ese valor ni una combinación obvia de ellos -- no es que falte sumar uno
-de los 3 que ya existen, sino que posiblemente **falta un cuarto
-componente** en la data de referencia, o alguno de los 3 valores sembrados
-está levemente desactualizado.
+In other words, the real employee appears to be missing **~0.11 UF** of
+contracted plan in the `health_plans` table relative to what the real
+payslip bills. None of the 3 existing plans (`0.79`, `5.42`, `0.91`) is that
+value, nor an obvious combination of them -- it's not that one of the
+existing 3 is missing from the sum, but rather that there's possibly a
+**fourth component** missing from the reference data, or one of the 3
+seeded values is slightly stale.
 
-## Hipótesis (cierre)
+## Hypotheses (closed)
 
-1. ~~Valor de UF resuelto para `2026-08-31` incorrecto.~~ **Descartada**,
-   confirmada con dato real de pf-rates + búsqueda manual del usuario en
-   otras fechas.
-2. **[única hipótesis viva] Dato sembrado `contracted_uf` incompleto o
-   desactualizado para el plan Isapre `ESENCIAL` de este empleado.** Con
-   el UF ya confirmado, la brecha entera (4497 CLP) se explica con un
-   faltante de ~0.11 UF en el total contratado sembrado en `health_plans`
-   (7.12 sembrado vs ~7.23 real implícito). Esto ya **no es una
-   investigación de código** -- es una pregunta de datos/negocio: hay que
-   verificar contra el contrato Isapre real de este empleado (o contra el
-   emisor del comprobante) si le falta un cuarto componente de plan en la
-   tabla `health_plans`, o si alguno de los 3 valores sembrados
-   (`Adicionales=0.79`, `Base=5.42`, `GES=0.91`) debería ser distinto.
-3. ~~Auto-deducción de múltiples planes tomando el conjunto
-   equivocado.~~ **Descartada** como explicación de código: se confirmó que
-   los 3 planes vigentes se resuelven y suman correctamente; la
-   agregación en sí no está rota, simplemente el total sembrado no
-   coincide con la realidad de este empleado.
-4. ~~Redondeo/cuantización en `quantize_clp`.~~ **Descartada**: la
-   reconstrucción exacta con el UF real reproduce el `33516` de la API al
-   CLP exacto.
+1. ~~UF value resolved for `2026-08-31` incorrect.~~ **Ruled out**, confirmed
+   with real data from pf-rates + the user's manual search across other
+   dates.
+2. **[only hypothesis still alive] Seeded `contracted_uf` data is incomplete
+   or stale for this employee's `ESENCIAL` Isapre plan.** With the UF
+   already confirmed, the entire gap (4497 CLP) is explained by a shortfall
+   of ~0.11 UF in the total contracted amount seeded in `health_plans`
+   (7.12 seeded vs. ~7.23 real, implied). This is **no longer a code
+   investigation** -- it's a data/business question: it needs to be
+   verified against this employee's real Isapre contract (or against
+   whoever issues the payslip) whether a fourth plan component is missing
+   from the `health_plans` table, or whether one of the 3 seeded values
+   (`Adicionales=0.79`, `Base=5.42`, `GES=0.91`) should be different.
+3. ~~Multi-plan auto-deduction picking the wrong set.~~ **Ruled out** as a
+   code explanation: it was confirmed that the 3 valid plans are resolved
+   and summed correctly; the aggregation itself isn't broken, the seeded
+   total simply doesn't match this employee's reality.
+4. ~~Rounding/quantization in `quantize_clp`.~~ **Ruled out**: the exact
+   reconstruction with the real UF reproduces the API's `33516` down to the
+   exact CLP.
 
-## Próximos pasos sugeridos
+## Suggested next steps
 
-1. ~~Consultar en producción todos los planes de salud vigentes al
-   `2026-08-31`.~~ **Hecho.**
-2. ~~Confirmar qué `health_plan_ids` resuelve
-   `_deduce_health_plan_ids_for_date`.~~ **Hecho.**
-3. ~~Confirmar el `uf_value_clp` real resuelto para `2026-08-31`.~~
-   **Hecho** -- `40873.77`, coincide exacto con el cálculo.
-4. ~~Reconstruir a mano el cálculo.~~ **Hecho** -- reproduce `33516` al CLP
-   exacto; la brecha se aisló 100% en `contracted_uf`.
-5. **Pendiente (fuera de alcance de código):** confirmar contra el
-   contrato Isapre real de este empleado, o contra quien emite el
-   comprobante, si falta un cuarto componente de plan (`~0.11 UF`) en
-   `health_plans`, o si alguno de los 3 valores sembrados está desfasado.
-   Si se confirma un dato faltante/desactualizado, la corrección sería un
-   `INSERT`/`UPDATE` de datos de referencia (coordinado según las reglas
-   de `pf-db`), **no** un cambio de código en `pf-payroll` -- el motor de
-   cálculo ya quedó demostrado correcto en esta investigación.
+1. ~~Query production for every health plan valid on `2026-08-31`.~~
+   **Done.**
+2. ~~Confirm which `health_plan_ids` `_deduce_health_plan_ids_for_date`
+   resolves.~~ **Done.**
+3. ~~Confirm the real `uf_value_clp` resolved for `2026-08-31`.~~
+   **Done** -- `40873.77`, matches the calculation exactly.
+4. ~~Manually reconstruct the calculation.~~ **Done** -- reproduces `33516`
+   down to the exact CLP; the gap was isolated 100% to `contracted_uf`.
+5. **Pending (outside code scope):** verify against this employee's real
+   Isapre contract, or against whoever issues the payslip, whether a
+   fourth plan component (`~0.11 UF`) is missing from `health_plans`, or
+   whether one of the 3 seeded values is off. If a missing/stale data
+   point is confirmed, the fix would be an `INSERT`/`UPDATE` of reference
+   data (coordinated per `pf-db`'s rules), **not** a code change in
+   `pf-payroll` -- the calculation engine was already proven correct in
+   this investigation.
 
-## Contexto previo relacionado
+## Related prior context
 
-- `docs/proposals/pdf-import-design-recommendation.md` — diseño original de
-  la importación de PDF, incluyendo el error de mapeo `COMISIÓN AFP` ->
-  `HEALTH_ADDITIONAL_UF` arreglado esta misma semana (ver historial de git:
-  `c152f1a`), que es un bug *distinto* y ya resuelto, no relacionado con
-  este.
-- El docstring de `ImportPayrollRowsRequest` en
-  `src/payroll/interfaces/api/routes/payroll.py` — documenta el efecto
-  secundario de cacheo de market data de pf-rates mencionado en la
-  hipótesis 2.
+- `docs/proposals/pdf-import-design-recommendation.md` -- the original PDF
+  import design, including the `COMISIÓN AFP` -> `HEALTH_ADDITIONAL_UF`
+  mapping bug fixed this same week (see git history: `c152f1a`), which is a
+  *different*, already-resolved bug, unrelated to this one.
+- `ImportPayrollRowsRequest`'s docstring in
+  `src/payroll/interfaces/api/routes/payroll.py` -- documents the pf-rates
+  market-data caching side effect mentioned in hypothesis 2.

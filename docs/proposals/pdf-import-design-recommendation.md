@@ -1,191 +1,192 @@
-## Resumen ejecutivo
+## Executive summary
 
-Es factible y de **bajo riesgo** construir el flujo de import por PDF reusando el 100% del
-cuadre de cuentas que ya existe (`from_rows()` nuevo + `ProcessImportedPayrollPeriods`
-sin tocar). Recomendación en una línea: **plantilla como método de extracción para el
-MVP** (barato, ya hay un caso real para construirla), **rutas nuevas** en vez de
-sobrecargar `/payroll/import`, y **nada de conceptos catch-all** en `pf-db` — los gaps
-reales que encontré se resuelven con plantillas + rechazo explícito en `commit`.
+It's feasible and **low-risk** to build the PDF import flow by reusing 100% of the
+reconciliation that already exists (a new `from_rows()` + `ProcessImportedPayrollPeriods`
+untouched). One-line recommendation: **template-based extraction for the MVP** (cheap,
+there's already a real case to build it from), **new routes** instead of overloading
+`/payroll/import`, and **no catch-all concepts** in `pf-db` — the real gaps I found are
+solved with templates + explicit rejection at `commit`.
 
-## 0. Hallazgo adicional: semántica del período (fuera del alcance del import de PDF)
+## 0. Additional finding: period semantics (outside the scope of the PDF import)
 
-Al comparar el período que declara el PDF ("Agosto") contra la base de datos, encontré
-una inconsistencia real de convención, **independiente del feature de import por PDF**,
-que el usuario decidió corregir:
+While comparing the period declared by the PDF ("August") against the database, I found
+a real convention inconsistency, **independent of the PDF import feature**, which the
+user decided to fix:
 
-- **Convención actual en los datos históricos:** `period_year`/`period_month` representa
-  "el mes en el que voy a poder usar ese dinero" — un pago que cae a fin de mes se
-  registraba bajo el período del mes SIGUIENTE.
-- **Convención nueva acordada:** `period_year`/`period_month` representa **el mes
-  trabajado**, tal cual lo declara el documento oficial (el PDF de agosto es agosto,
-  punto). Es más simple, es la que ya usa el propio PDF, y es la que el modelo de datos
-  ya asume por defecto para empleadores nuevos (`payment_month_offset=0` al crear un
-  `EmployerModel` en el import).
+- **Current convention in historical data:** `period_year`/`period_month` represents
+  "the month in which I'll be able to spend that money" — a payment falling at the end
+  of a month was recorded under the FOLLOWING month's period.
+- **Newly agreed convention:** `period_year`/`period_month` represents **the month
+  worked**, exactly as the official document states it (the August PDF is August,
+  period). It's simpler, it's what the PDF itself already uses, and it's what the data
+  model already defaults to for new employers (`payment_month_offset=0` when creating an
+  `EmployerModel` during import).
 
-1. **Código:** el importador (`payroll_repository_imports.py`) hoy toma `period_year`/
-   `period_month`/`payment_date` de la fila tal cual vienen, sin cruzarlos contra la
-   configuración del empleador (`payment_date_rule` / `payment_month_offset`). Falta una
-   validación explícita que rechace (`PayrollValidationError`) un import donde el mes de
-   `payment_date` no coincide con el que el `payment_month_offset` del empleador implica
-   para ese período — así la convención vieja no puede volver a colarse en silencio.
-2. **Datos:** los períodos históricos ya importados bajo la convención vieja para el
-   empleador afectado necesitan recalcularse: `period_year`/`period_month` nuevo =
-   año/mes de `payment_date` (dado que ese empleador usa `payment_month_offset=0`). Esto
-   incluye refrescar la vista materializada `PAY_MV_SUMARY` después del `UPDATE`.
+1. **Code:** the importer (`payroll_repository_imports.py`) currently takes
+   `period_year`/`period_month`/`payment_date` from the row as-is, without cross-
+   checking them against the employer's configuration (`payment_date_rule` /
+   `payment_month_offset`). It's missing an explicit validation that rejects
+   (`PayrollValidationError`) an import where the `payment_date` month doesn't match
+   what the employer's `payment_month_offset` implies for that period — so the old
+   convention can't silently sneak back in.
+2. **Data:** historical periods already imported under the old convention for the
+   affected employer need to be recalculated: new `period_year`/`period_month` =
+   year/month of `payment_date` (given that employer uses `payment_month_offset=0`).
+   This includes refreshing the `PAY_MV_SUMARY` materialized view after the `UPDATE`.
 
-**Alcance de la corrección de datos:** no es solo el período de agosto que motivó esta
-conversación — la revisión mostró que **todo** el historial de ese empleador sigue la
-misma convención vieja de forma consistente, así que el fix de datos es "todo o nada"
-para ese empleador, no un parche puntual de un solo período.
+**Scope of the data fix:** it's not just the August period that triggered this
+conversation — the review showed that **the entire** history for that employer follows
+the same old convention consistently, so the data fix is "all or nothing" for that
+employer, not a one-off patch for a single period.
 
-**Importante — alcance de ambiente:** cualquier corrección de datos debe aplicarse
-primero en la base local de desarrollo, y **por separado, de forma explícita y
-revisada**, contra la base real (Neon) cuando el usuario lo autorice — no hay hoy un
-mecanismo de "push" de local hacia Neon, así que ese segundo paso requiere su propio
-script SQL revisado a mano, no una copia automática.
+**Important — environment scope:** any data fix must be applied first against the local
+development database, and **separately, explicitly, and reviewed**, against the real
+database (Neon) once the user authorizes it — there is currently no "push" mechanism
+from local to Neon, so that second step requires its own hand-reviewed SQL script, not
+an automatic copy.
 
-## 1. Análisis del PDF adjunto
+## 1. Analysis of the attached PDF
 
-Analicé `secrets/Liquidación_202608.PDF` (Corporative Chile S.A., liquidación de agosto).
-Nombres/RUT/montos reales fueron redactados de este documento — solo etiquetas y
-estructura importan para el diseño.
+I analyzed `secrets/Liquidación_202608.PDF` (Corporative Chile S.A., August payslip).
+Real names/national ID (RUT)/amounts were redacted from this document — only labels and
+structure matter for the design.
 
-### Campos que NO son `concept_code` (metadata de período/documento)
+### Fields that are NOT a `concept_code` (period/document metadata)
 
-| Campo en el PDF | Dónde encaja en el dominio actual |
+| Field in the PDF | Where it fits in the current domain |
 | --- | --- |
-| Empleador (nombre) | `ImportPayrollRowDTO.employer` |
-| RUT / nombre del trabajador | **No existe campo para esto en `ImportPayrollRowDTO` — y así debe seguir.** El dominio actual ya evita persistir PII del trabajador; el extractor de PDF debe leerlo solo para eventual validación cruzada (ej. confirmar que el PDF corresponde al empleado esperado) pero **nunca** incluirlo en el JSON de preview ni en lo persistido. |
-| Mes / Año del período | `period_year`, `period_month` |
-| Días trabajados | `worked_days` |
-| Lugar de trabajo, sección, antigüedad laboral | Sin campo hoy — quedan fuera de alcance, no se extraen |
-| Vía de pago, número de cuenta, banco | Sin campo hoy y sin caso de uso — **no extraer** |
-| Totales (haberes / descuentos / líquido a pagar) | `declared_net_pay_clp` (el líquido a pagar declarado); el resto son subtotales derivados, no se persisten como ítems propios |
+| Employer (name) | `ImportPayrollRowDTO.employer` |
+| Worker's national ID (RUT) / name | **There is no field for this in `ImportPayrollRowDTO` — and it must stay that way.** The current domain already avoids persisting worker PII; the PDF extractor should only read it for eventual cross-validation (e.g. confirming the PDF matches the expected employee) but **never** include it in the preview JSON nor in what's persisted. |
+| Period month / year | `period_year`, `period_month` |
+| Worked days | `worked_days` |
+| Workplace, department, seniority | No field today — out of scope, not extracted |
+| Payment method, account number, bank | No field today and no use case — **do not extract** |
+| Totals (income / discounts / net pay) | `declared_net_pay_clp` (the declared net pay); the rest are derived subtotals, not persisted as their own items |
 
-**Hallazgo sobre robustez de extracción:** el bloque resumen del encabezado (`SUELDO
+**Finding about extraction robustness:** the header summary block (`SUELDO
 BASE / HORAS EXTRAS / TOTAL IMPONIBLE / LEYES SOCIALES / AFECTO A IMPUESTO / IMPUESTO
-UNICO`) tiene 6 columnas pero la fila de valores trae menos números cuando alguno es
-cero — la extracción de texto plano corre el riesgo de desalinear columna con valor.
-Esto es evidencia concreta (no hipotética) de por qué una extracción por
-coordenadas/anclas o un LLM con schema forzado son preferibles a un simple
-texto-a-texto: necesitan anclar cada valor a su etiqueta, no a su posición en una
-secuencia.
+UNICO`) has 6 columns, but the values row carries fewer numbers whenever one of them is
+zero — plain text extraction risks misaligning a column with the wrong value. This is
+concrete evidence (not hypothetical) of why coordinate/anchor-based extraction or an LLM
+with a forced schema are preferable to a simple text-to-text approach: they need to
+anchor each value to its label, not to its position in a sequence.
 
-### Mapeo de ítems detallados a `concept_code`
+### Mapping of detailed items to `concept_code`
 
-| Etiqueta en el PDF | Tipo | `concept_code` propuesto | Confianza | Nota |
+| Label in the PDF | Type | Proposed `concept_code` | Confidence | Note |
 | --- | --- | --- | --- | --- |
-| SUELDO | haber | `SALARY_BASE` | Alta | Coincide con "SUELDO BASE" del encabezado |
-| GRATIFICACION LEGAL | haber | `LEGAL_GRATUITY` | Alta | Nombre calza exacto |
-| ASIGNACIÓN TRAB. HIBRIDO | haber | `TELEWORK_REFUND` | Media | "Asignación trabajo híbrido" ≈ reembolso teletrabajo; no imponible, calza con `is_taxable=FALSE` |
-| APORTE SEGURO DE SALUD | haber | `HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION` | Media-Alta | "Aporte" = contribución del empleador |
-| IMPUESTO | descuento | `INCOME_TAX` | Alta | Coincide con "IMPUESTO UNICO" del encabezado |
-| COT. SEG. CES. AFP | descuento | `UNEMPLOYMENT_INSURANCE` | Alta | "Cotización Seguro de Cesantía" |
-| ESENCIAL LEGAL | descuento | `HEALTH_BASE` | Media | Nombre de plan Isapre + "Legal" = tramo obligatorio (7%) |
-| **COMISIÓN AFP** | descuento | `HEALTH_ADDITIONAL_UF` | Alta (confirmado) | Corrección del usuario: se bucketea junto al cargo adicional de salud |
-| FONDO RETIRO AFP | descuento | `PENSION_BASE` (tentativo) | Media | Monto compatible con el 10% obligatorio, pero la etiqueta no lo dice explícito — requiere confirmación humana en la plantilla |
-| ESENCIAL ADICIONAL | descuento | `HEALTH_ADDITIONAL_UF` | Media | Simetría con "Esencial Legal" / `HEALTH_BASE` |
-| **SEGURO DENTAL** | descuento | `HEALTH_INSURANCE` | Alta (confirmado) | Corrección del usuario: se consolida junto a los otros dos seguros |
-| SEGURO DE SALUD | descuento | `HEALTH_INSURANCE` | Alta | Nombre calza exacto |
-| **SEGURO CATASTROFICO** | descuento | `HEALTH_INSURANCE` | Alta (confirmado) | Corrección del usuario: se consolida junto a los otros dos seguros |
+| SUELDO | income | `SALARY_BASE` | High | Matches "SUELDO BASE" from the header |
+| GRATIFICACION LEGAL | income | `LEGAL_GRATUITY` | High | Name matches exactly |
+| ASIGNACIÓN TRAB. HIBRIDO | income | `TELEWORK_REFUND` | Medium | "Hybrid work allowance" ≈ telework refund; non-taxable, matches `is_taxable=FALSE` |
+| APORTE SEGURO DE SALUD | income | `HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION` | Medium-High | "Aporte" = employer contribution |
+| IMPUESTO | discount | `INCOME_TAX` | High | Matches "IMPUESTO UNICO" from the header |
+| COT. SEG. CES. AFP | discount | `UNEMPLOYMENT_INSURANCE` | High | "Unemployment Insurance Contribution" |
+| ESENCIAL LEGAL | discount | `HEALTH_BASE` | Medium | Isapre plan name + "Legal" = mandatory bracket (7%) |
+| **COMISIÓN AFP** | discount | `HEALTH_ADDITIONAL_UF` | High (confirmed) | User correction: bucketed together with the additional health charge |
+| FONDO RETIRO AFP | discount | `PENSION_BASE` (tentative) | Medium | Amount is consistent with the mandatory 10%, but the label doesn't say so explicitly — requires human confirmation in the template |
+| ESENCIAL ADICIONAL | discount | `HEALTH_ADDITIONAL_UF` | Medium | Symmetric with "Esencial Legal" / `HEALTH_BASE` |
+| **SEGURO DENTAL** | discount | `HEALTH_INSURANCE` | High (confirmed) | User correction: consolidated together with the other two insurances |
+| SEGURO DE SALUD | discount | `HEALTH_INSURANCE` | High | Name matches exactly |
+| **SEGURO CATASTROFICO** | discount | `HEALTH_INSURANCE` | High (confirmed) | User correction: consolidated together with the other two insurances |
 
-**Corrección importante sobre mi análisis original:** había asumido que un `concept_code`
-no podía repetirse dentro del mismo período (por eso marqué dental/catastrófico como
-"sin match", para no "chocar" con `HEALTH_INSURANCE` ya usado por Seguro de Salud). Esa
-asunción era **incorrecta** — no hay ninguna restricción de unicidad entre `PAY_ITEM` y
-`PAY_CONCEPT` (la FK `concept_id` es simple, sin `UNIQUE` por período), así que **varios
-ítems de una misma liquidación pueden compartir el mismo `concept_code`** sin problema.
-Con esta corrección, **el PDF analizado ya no tiene gaps reales sin resolver** — los 3
-casos que había marcado como "sin match" ahora están cubiertos.
+**Important correction to my original analysis:** I had assumed a `concept_code`
+couldn't repeat within the same period (that's why I flagged dental/catastrophic as "no
+match", to avoid "colliding" with `HEALTH_INSURANCE` already used by Health Insurance).
+That assumption was **incorrect** — there is no uniqueness constraint between `PAY_ITEM`
+and `PAY_CONCEPT` (the `concept_id` FK is a plain FK, with no `UNIQUE` per period), so
+**several items on the same payslip can share the same `concept_code`** without issue.
+With this correction, **the analyzed PDF no longer has any real unresolved gaps** — the
+3 cases I had flagged as "no match" are now covered.
 
-## 2. Diseño de los dos endpoints
+## 2. Design of the two endpoints
 
 ### Endpoint 1 — `POST /payroll/import/pdf-preview`
 
-- Request: `multipart/form-data`, mismo patrón que `POST /payroll/import` (`UploadFile`).
+- Request: `multipart/form-data`, same pattern as `POST /payroll/import` (`UploadFile`).
 - Response (`PdfImportPreviewResponse`): `employer`, `period_year`, `period_month`,
-  `worked_days`, `declared_net_pay_clp`, y `rows: list[PdfImportPreviewRowDTO]` donde
-  cada fila trae `raw_label`, `extracted_amount_clp`, `kind` (`income`/`discount`
-  inferido), `concept_code: str | None`, `confidence: float`.
-- **No inyecta `PayrollRepository` ni `ProcessImportedPayrollPeriods`** — es una función
-  pura `bytes -> DTO`, sin I/O a base de datos. Nunca lanza 500 por PDF no reconocido:
-  en el peor caso devuelve filas con `concept_code=null` y `confidence=0.0`.
+  `worked_days`, `declared_net_pay_clp`, and `rows: list[PdfImportPreviewRowDTO]` where
+  each row carries `raw_label`, `extracted_amount_clp`, `kind` (inferred
+  `income`/`discount`), `concept_code: str | None`, `confidence: float`.
+- **Does not inject `PayrollRepository` nor `ProcessImportedPayrollPeriods`** — it's a
+  pure `bytes -> DTO` function, with no database I/O. It never raises a 500 for an
+  unrecognized PDF: in the worst case it returns rows with `concept_code=null` and
+  `confidence=0.0`.
 
 ### Endpoint 2 — `POST /payroll/import/rows`
 
 - Request: JSON `{ "mode": "validate" | "commit", "rows": list[ImportPayrollRowDTO] }`.
-- Nuevo método hermano en el use case: `ImportPayroll.from_rows(rows)` — llama directo a
-  `self._repository.import_rows(rows)`, sin pasar por ningún `PayrollImporter` (idéntico
-  a `from_bytes()` menos el paso de parseo).
-- Delega 100% en `from_rows()` + `ProcessImportedPayrollPeriods.execute()` — la misma
-  secuencia exacta que ya usa `/payroll/import` hoy.
-- Mecanismo de transacción: envolver ambos use cases en una transacción explícita de
-  `AsyncSession`; `commit` hace `session.commit()`, `validate` hace `session.rollback()`
-  al final, devolviendo el mismo resultado en ambos casos (warnings, diffs, totales).
+- New sibling method on the use case: `ImportPayroll.from_rows(rows)` — calls
+  `self._repository.import_rows(rows)` directly, without going through any
+  `PayrollImporter` (identical to `from_bytes()` minus the parsing step).
+- Delegates 100% to `from_rows()` + `ProcessImportedPayrollPeriods.execute()` — the exact
+  same sequence already used by `/payroll/import` today.
+- Transaction mechanism: wrap both use cases in an explicit `AsyncSession` transaction;
+  `commit` does `session.commit()`, `validate` does `session.rollback()` at the end,
+  returning the same result in both cases (warnings, diffs, totals).
 
-### ¿Reusar `/payroll/import` o rutas nuevas?
+### Reuse `/payroll/import` or new routes?
 
-**Recomiendo rutas nuevas**, no sobrecargar `/payroll/import` con un content-type
-condicional (multipart vs JSON) más un parámetro `mode`. Cada endpoint mantiene una sola
-responsabilidad, un solo schema de request/response en OpenAPI, y `/payroll/import`
-(CSV/XLSX) queda completamente intacto — cero riesgo de romper el flujo existente.
+**I recommend new routes**, instead of overloading `/payroll/import` with a conditional
+content-type (multipart vs JSON) plus a `mode` parameter. Each endpoint keeps a single
+responsibility, a single request/response schema in OpenAPI, and `/payroll/import`
+(CSV/XLSX) stays completely untouched — zero risk of breaking the existing flow.
 
-## 3. Manejo de conceptos sin match
+## 3. Handling unmatched concepts
 
-**Nota tras la corrección de la sección 1:** el PDF analizado ya no tiene gaps reales
-(los 3 casos que parecían sin match eran en realidad conceptos válidos, una vez
-corregido el supuesto de que un `concept_code` no podía repetirse dentro del mismo
-período). Igual dejo esta sección — el mecanismo sigue siendo necesario para el próximo
-empleador/formato que traiga un concepto genuinamente nuevo.
+**Note after the section 1 correction:** the analyzed PDF no longer has any real gaps
+(the 3 cases that looked unmatched were actually valid concepts, once the assumption
+that a `concept_code` couldn't repeat within the same period was corrected). I'm keeping
+this section anyway — the mechanism is still needed for the next employer/format that
+brings a genuinely new concept.
 
-**Requisito confirmado — varios ítems, mismo concepto:** el extractor y el endpoint 2
-deben soportar que más de un ítem de la liquidación mapee al mismo `concept_code` (ej.
-Seguro de Salud + Seguro Dental + Seguro Catastrófico → los tres bajo `HEALTH_INSURANCE`
-como filas separadas). Esto no requiere ningún cambio de esquema: `PAY_ITEM.concept_id`
-es una FK simple sin restricción `UNIQUE` por período, así que el modelo de datos ya lo
-soporta hoy — el único cuidado es que la plantilla (sección 5) pueda declarar un mismo
-`concept_code` para varios `pdf_label_pattern` distintos, en vez de asumir una relación
-1 a 1 etiqueta↔concepto.
+**Confirmed requirement — several items, same concept:** the extractor and endpoint 2
+must support more than one payslip item mapping to the same `concept_code` (e.g. Health
+Insurance + Dental Insurance + Catastrophic Insurance → all three under
+`HEALTH_INSURANCE` as separate rows). This requires no schema change: `PAY_ITEM.concept_id`
+is a plain FK with no `UNIQUE` constraint per period, so the data model already supports
+this today — the only care needed is that the template (section 5) can declare the same
+`concept_code` for several distinct `pdf_label_pattern`s, instead of assuming a 1-to-1
+label↔concept relationship.
 
-| Opción | Pros | Contras | Impacto en `validate`/`commit` |
+| Option | Pros | Cons | Impact on `validate`/`commit` |
 | --- | --- | --- | --- |
-| (a) Catch-all seedeado en pf-db (`OTHER_INCOME`/`OTHER_DISCOUNT`) | Garantiza que el import nunca se bloquee | Destruye precisión de auditoría (no se puede cuadrar contra pf-rates un balde sin diferenciar); coordinación cross-repo obligatoria; riesgo de "adivinar" silenciosamente si se autoasigna sin humano | N/A — evita el problema en vez de resolverlo |
-| (b) Mapeo manual por plantilla de empleador, con fallback "no resuelto" | Preciso; respeta el catálogo cerrado a propósito; crecimiento deliberado por humano | Costo de setup inicial por cada empleador/formato nuevo | Ninguno directo — es la capa de extracción, no de persistencia |
-| (c) Fila sin `concept_code` en el preview; endpoint 2 la rechaza si llega sin resolver | Cero cambios de esquema; fuerza decisión humana explícita; compone con (b) | No persiste el monto hasta que alguien lo resuelva | `commit` **debe fallar** (`PayrollValidationError`) si queda algún `concept_code=null`; `validate` **no falla** — devuelve warning con el detalle para que el usuario decida antes de confirmar |
+| (a) Seeded catch-all in pf-db (`OTHER_INCOME`/`OTHER_DISCOUNT`) | Guarantees the import never gets blocked | Destroys audit precision (a lumped, undifferentiated bucket can't be reconciled against pf-rates); mandatory cross-repo coordination; risk of silently "guessing" if auto-assigned without a human | N/A — avoids the problem instead of solving it |
+| (b) Manual mapping per employer template, with an "unresolved" fallback | Precise; respects the deliberately closed catalog; deliberate, human-driven growth | Initial setup cost per new employer/format | None direct — it's the extraction layer, not the persistence layer |
+| (c) Row without `concept_code` in the preview; endpoint 2 rejects it if it arrives unresolved | Zero schema changes; forces an explicit human decision; composes with (b) | Doesn't persist the amount until someone resolves it | `commit` **must fail** (`PayrollValidationError`) if any `concept_code=null` remains; `validate` **does not fail** — it returns a warning with the detail so the user can decide before confirming |
 
-**Recomendación: (b) + (c) juntas, nunca (a).** Si con el tiempo un mismo concepto sin
-match (ej. seguro dental) aparece repetido entre varios empleadores, ahí sí se justifica
-agregar un concepto **con nombre propio** vía migración en pf-db — nunca un catch-all
-genérico.
+**Recommendation: (b) + (c) together, never (a).** If, over time, the same unmatched
+concept (e.g. dental insurance) shows up repeatedly across several employers, that's
+when it's justified to add a concept **with its own proper name** via a pf-db migration
+— never a generic catch-all.
 
-## 4. Opciones de extracción (solo endpoint 1)
+## 4. Extraction options (endpoint 1 only)
 
-| Método | Precisión | Tolerancia a cambio de formato | Costo mensual estimado | Complejidad | Testing sin datos reales |
+| Method | Accuracy | Tolerance to format changes | Estimated monthly cost | Complexity | Testing without real data |
 | --- | --- | --- | --- | --- | --- |
-| Plantilla (anclas/regex) | Alta para el mismo formato; ~0% si cambia sin aviso | Baja | **$0** — solo CPU local | Media (una plantilla por empleador+versión) | Trivial: fixtures sintéticos con el mismo layout |
-| LLM con schema JSON forzado (AI Innovation Lab) | Alta, robusta a cambios de orden/formato | Alta | Variable por documento — **cotizar en AI Innovation Lab antes de comprometerse**, no inventar cifra acá | Baja-Media (prompt + validación de schema) | Mockear el proveedor con respuestas JSON grabadas, sin llamadas reales en CI |
-| OCR (PDFs escaneados) | Media, depende de calidad del escaneo | Baja-Media | $0 (Tesseract) vs pago por página (Document AI/Cloud Vision) | Alta (preprocesamiento de imagen + extracción posterior) | Complejo — requiere fixtures de imagen |
-| Híbrido (plantilla primero, LLM como fallback) | Alta en el caso común y en el raro | Alta | Mínimo — LLM solo se invoca cuando la plantilla falla | Alta (dos pipelines + lógica de decisión) | Combina los dos anteriores por separado |
+| Template (anchors/regex) | High for the same format; ~0% if it changes without notice | Low | **$0** — local CPU only | Medium (one template per employer+version) | Trivial: synthetic fixtures with the same layout |
+| LLM with forced JSON schema (AI Innovation Lab) | High, robust to order/format changes | High | Variable per document — **get a quote from AI Innovation Lab before committing**, don't make up a figure here | Low-Medium (prompt + schema validation) | Mock the provider with recorded JSON responses, no real calls in CI |
+| OCR (scanned PDFs) | Medium, depends on scan quality | Low-Medium | $0 (Tesseract) vs. pay-per-page (Document AI/Cloud Vision) | High (image preprocessing + downstream extraction) | Complex — requires image fixtures |
+| Hybrid (template first, LLM as fallback) | High in both the common and the rare case | High | Minimal — LLM is only invoked when the template fails | High (two pipelines + decision logic) | Combines the two above separately |
 
-**Recomendación:** empezar el MVP **solo con plantilla** (ya hay un caso real de Corporative
-Chile para construirla) y agregar el fallback LLM recién cuando aparezca un segundo
-empleador/formato real. Partir con LLM desde el día 1 sin haber intentado plantilla
-sería sobre-ingeniería cara — va contra la regla del ecosistema de que la opción más
-barata gana salvo justificación explícita.
+**Recommendation:** start the MVP with **template only** (there's already a real
+Corporative Chile case to build it from) and add the LLM fallback only once a second
+real employer/format shows up. Starting with an LLM from day 1, without having tried a
+template, would be expensive over-engineering — it goes against the ecosystem rule that
+the cheapest option wins unless explicitly justified.
 
-## 5. Sistema de plantillas versionables — flujo concreto
+## 5. Versionable template system — concrete flow
 
-### Formato y ubicación
+### Format and location
 
-JSON plano (sin agregar dependencia de parsing nueva), un archivo por versión, en
-`pf-payroll/infrastructure/pdf_import/templates/<employer_slug>/v<N>.json`. Nada de esto
-vive en base de datos a propósito (YAGNI): son archivos versionados en git, así el
-historial de cada cambio de mapeo queda en el log de commits del repo, no en una tabla
-mutable sin auditoría.
+Plain JSON (no new parsing dependency), one file per version, in
+`pf-payroll/infrastructure/pdf_import/templates/<employer_slug>/v<N>.json`. None of this
+lives in the database on purpose (YAGNI): these are git-versioned files, so the history
+of every mapping change lives in the repo's commit log, not in a mutable, unaudited
+table.
 
-Ejemplo real (con las correcciones de la sección 1 ya aplicadas — nótese cómo **un solo
-pattern puede matchear varias etiquetas del PDF y mapear al mismo concepto**, cubriendo
-el requisito de varios ítems → un concepto):
+Real example (with the section 1 corrections already applied — note how **a single
+pattern can match several PDF labels and map to the same concept**, covering the
+several-items-to-one-concept requirement):
 
 ```json
 {
@@ -200,74 +201,74 @@ el requisito de varios ítems → un concepto):
 }
 ```
 
-### Flujo paso a paso
+### Step-by-step flow
 
-1. **Arranque en frío (empleador/formato nuevo, cero plantillas):** llega un PDF que no
-   matchea ninguna plantilla existente. El endpoint 1 igual responde 200 — nunca 500 —
-   con todas las filas en `concept_code: null`, `confidence: 0.0`. No hay magia acá: un
-   humano abre el PDF al lado del JSON de preview y arma la primera plantilla a mano.
-2. **Autodetección en imports posteriores:** al llegar un nuevo PDF, el extractor prueba
-   cada plantilla contra el texto extraído y calcula un score = cantidad de
-   `pdf_label_pattern` que matchean al menos una línea del detalle. Se usa la plantilla
-   con mayor score si supera un umbral mínimo (ej. ≥ 3 matches); si ninguna lo supera,
-   se cae al comportamiento del punto 1 (preview vacío, no un error).
-3. **Aplicar la plantilla ganadora:** cada línea del detalle de haberes/descuentos del
-   PDF se compara, en orden, contra los `pdf_label_pattern` de la plantilla elegida. El
-   primero que matchea define `concept_code` y `kind`; si ninguno matchea, esa fila
-   puntual queda `concept_code: null` (aunque el resto del PDF sí haya reconocido una
-   plantilla) — esto es lo que dispara la sección 3 (fila sin resolver).
-4. **Ajustar sin programar:** un comando CLI de apoyo (`payroll template test <pdf>
-   --employer corporative-chile`) corre la extracción de texto + intenta las plantillas
-   existentes y lista qué filas del PDF quedaron sin match. Un humano edita el JSON a
-   mano (agrega o ajusta un `pdf_label_pattern`) y vuelve a correr el comando hasta que
-   reporte 0 filas sin resolver.
-5. **Nueva versión (el mismo empleador rediseña su PDF):** la señal es que, de golpe, el
-   CLI reporta muchas filas sin match aunque existía una plantilla que antes funcionaba
-   bien. Ahí se crea `v2.json` (copiando `v1.json` como base) y se ajusta — **nunca se
-   edita `v1.json` in-place** una vez que ya se usó, para que reprocesar un PDF viejo dé
-   siempre el mismo resultado.
-6. **Quién mantiene esto:** es un proceso deliberadamente manual y humano (coincide con
-   la recomendación (b) de la sección 3: crecimiento del mapeo por decisión explícita,
-   nunca automático/silencioso). No hay ningún job ni proceso que genere o edite
-   plantillas solo — sí puede haber, a futuro, un fallback a LLM (sección 4) para el
-   caso en que ninguna plantilla matchea, pero eso es una capa aparte, no reemplaza este
-   flujo manual de curaduría por empleador.
+1. **Cold start (new employer/format, zero templates):** a PDF arrives that matches no
+   existing template. Endpoint 1 still responds 200 — never 500 — with every row as
+   `concept_code: null`, `confidence: 0.0`. There's no magic here: a human opens the PDF
+   next to the preview JSON and builds the first template by hand.
+2. **Auto-detection on subsequent imports:** when a new PDF arrives, the extractor tries
+   each template against the extracted text and computes a score = number of
+   `pdf_label_pattern`s that match at least one line of the detail. The template with
+   the highest score is used if it clears a minimum threshold (e.g. ≥ 3 matches); if
+   none clears it, it falls back to the point-1 behavior (empty preview, not an error).
+3. **Applying the winning template:** each line in the PDF's income/discount detail is
+   compared, in order, against the chosen template's `pdf_label_pattern`s. The first one
+   that matches sets `concept_code` and `kind`; if none matches, that specific row stays
+   `concept_code: null` (even if the rest of the PDF did recognize a template) — this is
+   what triggers section 3 (unresolved row).
+4. **Adjusting without writing code:** a helper CLI command (`payroll template test <pdf>
+   --employer corporative-chile`) runs text extraction + tries the existing templates
+   and lists which rows of the PDF were left unmatched. A human edits the JSON by hand
+   (adds or adjusts a `pdf_label_pattern`) and reruns the command until it reports 0
+   unresolved rows.
+5. **New version (the same employer redesigns their PDF):** the signal is that,
+   suddenly, the CLI reports many unmatched rows even though there was a template that
+   used to work fine. That's when `v2.json` gets created (copying `v1.json` as a base)
+   and adjusted — **`v1.json` is never edited in place** once it's already been used, so
+   reprocessing an old PDF always gives the same result.
+6. **Who maintains this:** it's a deliberately manual, human process (matches
+   recommendation (b) from section 3: mapping growth by explicit decision, never
+   automatic/silent). There is no job or process that generates or edits templates on
+   its own — there could, in the future, be an LLM fallback (section 4) for the case
+   where no template matches, but that's a separate layer, it doesn't replace this
+   manual per-employer curation flow.
 
-## 6. Testing del modo validate/commit
+## 6. Testing the validate/commit mode
 
-- **Sin residuos:** usar `testcontainers[postgres]` (ya es dependencia dev existente).
-  Correr `mode=validate`, contar filas de `PAY_ITEM` antes/después (debe ser igual),
-  correr `mode=commit` con las mismas filas, contar de nuevo (debe subir).
-- **Mock de pf-rates:** `MarketDataRepository` ya es un `Protocol` — reusar el mismo fake
-  que hoy hace posible el 100% de cobertura de `ProcessImportedPayrollPeriods` (DRY, no
-  crear uno nuevo).
+- **No residue:** use `testcontainers[postgres]` (already an existing dev dependency).
+  Run `mode=validate`, count `PAY_ITEM` rows before/after (must be equal), run
+  `mode=commit` with the same rows, count again (must go up).
+- **Mocking pf-rates:** `MarketDataRepository` is already a `Protocol` — reuse the same
+  fake that already makes 100% coverage of `ProcessImportedPayrollPeriods` possible
+  (DRY, don't create a new one).
 
-## 7. Plan de acción
+## 7. Action plan
 
-0. **Etapa 0 (previa e independiente del import de PDF):** corregir la semántica del
-   período según el hallazgo de la sección 0 — (a) agregar la validación de
-   `payment_date` vs. `payment_month_offset` en el importador, y (b) recalcular
-   `period_year`/`period_month` de los períodos históricos afectados a partir de
-   `payment_date`, refrescando `PAY_MV_SUMARY`. Primero en local, luego (aparte, con
-   autorización explícita) en Neon. **Sin implementar todavía** — queda pendiente de luz
-   verde del usuario, tratada como su propio pedazo de trabajo, no atado al roadmap del
-   import de PDF.
-1. **Etapa 1 (MVP):** Endpoint 1 (preview) con extracción por plantilla, una plantilla
-   real (Corporative Chile, basada en este PDF). Entregable independiente y testeable.
-2. **Etapa 2:** Endpoint 2 solo en modo `commit` (`from_rows()` + `ProcessImportedPayrollPeriods`,
-   sin dry-run todavía) — valida el mecanismo de reuso antes de sumar la complejidad de
-   transacciones.
-3. **Etapa 3:** Modo `validate` (rollback transaccional).
+0. **Stage 0 (prior to, and independent of, the PDF import):** fix the period semantics
+   per the section 0 finding — (a) add the `payment_date` vs. `payment_month_offset`
+   validation in the importer, and (b) recalculate `period_year`/`period_month` for the
+   affected historical periods from `payment_date`, refreshing `PAY_MV_SUMARY`. First
+   locally, then (separately, with explicit authorization) in Neon. **Not implemented
+   yet** — pending the user's explicit go-ahead, treated as its own piece of work, not
+   tied to the PDF import roadmap.
+1. **Stage 1 (MVP):** Endpoint 1 (preview) with template-based extraction, one real
+   template (Corporative Chile, based on this PDF). Independently deliverable and
+   testable.
+2. **Stage 2:** Endpoint 2 in `commit` mode only (`from_rows()` +
+   `ProcessImportedPayrollPeriods`, no dry-run yet) — validates the reuse mechanism
+   before adding transaction complexity.
+3. **Stage 3:** `validate` mode (transactional rollback).
 
-**Riesgos:** coordinación cross-repo con pf-db solo aplicaría si se eligiera la opción
-(a) de la sección 3 — como la recomendación explícita es NO tomarla, el MVP no requiere
-ninguna migración en pf-db. El único efecto secundario ya documentado en el brief
-persiste: `ProcessImportedPayrollPeriods` puede cachear market data en la base de
-pf-rates incluso en modo `validate`.
+**Risks:** cross-repo coordination with pf-db would only apply if option (a) from
+section 3 were chosen — since the explicit recommendation is NOT to take it, the MVP
+requires no pf-db migration. The one side effect already documented in the brief
+persists: `ProcessImportedPayrollPeriods` may cache market data in pf-rates' database
+even in `validate` mode.
 
-## Ejemplos de JSON
+## JSON examples
 
-### Preview (endpoint 1) — nombres genéricos, sin datos reales
+### Preview (endpoint 1) — generic names, no real data
 
 ```json
 {
@@ -295,7 +296,7 @@ pf-rates incluso en modo `validate`.
 }
 ```
 
-### Confirmación (endpoint 2)
+### Confirmation (endpoint 2)
 
 ```json
 {
@@ -317,21 +318,21 @@ pf-rates incluso en modo `validate`.
 }
 ```
 
-## Recomendación final
+## Final recommendation
 
-0. **Semántica del período:** adoptar "el período representa el mes trabajado" (como el
-   PDF), no "el mes en que se puede gastar la plata". Corrección de código (validación
-   en el import) + corrección de datos históricos, ambas pendientes de aprobación
-   explícita — ver Etapa 0 del plan de acción.
-1. Extracción: **plantilla primero**, LLM (vía AI Innovation Lab) solo como fallback en
-   una segunda etapa.
-2. Conceptos sin match: **plantillas + rechazo explícito en `commit`**, nunca catch-all
-   en pf-db. El PDF analizado no dejó gaps reales una vez soportado que varios ítems
-   compartan un mismo `concept_code`, pero el mecanismo sigue vigente para el próximo
-   formato/empleador nuevo.
-3. **Rutas nuevas** (`/payroll/import/pdf-preview`, `/payroll/import/rows`) en vez de
-   sobrecargar `/payroll/import`.
-4. Reusar el 100% de `ProcessImportedPayrollPeriods` sin tocarlo — el diseño ya estaba
-   preparado para esto.
-5. Plan en 4 etapas (0 a 3), con el preview como MVP entregable de forma independiente
-   y la Etapa 0 tratada como trabajo aparte, no bloqueante del resto.
+0. **Period semantics:** adopt "the period represents the month worked" (like the PDF),
+   not "the month in which the money can be spent". A code fix (validation in the
+   import) + a historical data fix, both pending explicit approval — see Stage 0 of the
+   action plan.
+1. Extraction: **template first**, LLM (via AI Innovation Lab) only as a fallback in a
+   second stage.
+2. Unmatched concepts: **templates + explicit rejection at `commit`**, never a catch-all
+   in pf-db. The analyzed PDF left no real gaps once several items sharing the same
+   `concept_code` was supported, but the mechanism stays in place for the next new
+   format/employer.
+3. **New routes** (`/payroll/import/pdf-preview`, `/payroll/import/rows`) instead of
+   overloading `/payroll/import`.
+4. Reuse 100% of `ProcessImportedPayrollPeriods` untouched — the design was already
+   prepared for this.
+5. A 4-stage plan (0 to 3), with the preview as an independently deliverable MVP and
+   Stage 0 treated as separate work, not blocking the rest.

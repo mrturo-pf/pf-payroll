@@ -1,13 +1,14 @@
 # Investigation: `HEALTH_ADDITIONAL_UF` mismatch on a real import
 
-**Status:** root cause isolated -- **not a code bug**. pf-payroll's calculation
-engine and pf-rates' UF value were both proven correct; the gap was narrowed
-down to a reference-data question (`contracted_uf` in `health_plans`) that
-requires verification against the employee's real Isapre contract, outside
-this repo's scope. See the "Closure" section below.
+**Status:** **Fully resolved.** pf-payroll's calculation engine and
+pf-rates' UF value were both proven correct from the start; the gap was
+reference-data staleness (`contracted_uf` in `health_plans`), now fixed, plus
+a residual 1 CLP of rounding noise now absorbed by a reconciliation
+tolerance. See the "Resolution" section at the end for the final
+confirmation against production.
 **Opened:** 2026-09-26, right after deploying commits `48a6314` and
 `551cf30` (see `git log` in `pf-payroll`). **Root cause isolated the same
-day.**
+day. Fully resolved and confirmed in production the same day.**
 
 ## Context
 
@@ -301,6 +302,42 @@ seeded values is slightly stale.
    data (coordinated per `pf-db`'s rules), **not** a code change in
    `pf-payroll` -- the calculation engine was already proven correct in
    this investigation.
+
+## Resolution (2026-09-26, same day)
+
+Two independent fixes closed this out completely:
+
+1. **Reference data corrected.** The `Base` health plan row for `ESENCIAL`
+   was updated from `5.42 UF` (valid through `2026-07-31`) to `5.53 UF`
+   (valid from `2026-08-01`), matching the employee's real Isapre contract.
+   New aggregate: `0.79 + 5.53 + 0.91 = 7.23 UF` -- exactly the value this
+   investigation had already reverse-engineered as implied by the declared
+   amount (see "The real gap, with the UF now confirmed" above).
+2. **Reconciliation tolerance added.** A `100 CLP` tolerance
+   (`_RECONCILIATION_TOLERANCE_CLP`) was added to contribution reconciliation
+   (`PENSION_BASE`, `PENSION_ADDITIONAL`, `HEALTH_BASE`, and
+   `HEALTH_ADDITIONAL_UF`) to absorb rounding noise between the declared
+   payslip amount and the independently recomputed one -- matching an
+   existing `100 CLP` convention already used elsewhere
+   (`ComplementaryInsuranceValidationService`). The exact
+   `*_difference_clp` fields still expose the raw delta; only the warning is
+   suppressed when within tolerance.
+
+**Confirmed against production** by re-running the exact same real payslip
+(`WALMART-CHILE`, period 2026-08) against `POST /payroll/import/rows`
+(`mode=validate`):
+
+```
+declared_health_plan_additional_clp:  38013
+expected_health_plan_additional_clp:  38012   (7.23 UF * 40873.77 - 257505, rounded)
+health_plan_additional_difference_clp: 1
+warning: null   <- within the 100 CLP tolerance, no warning raised
+```
+
+All four reconciled contribution concepts (`PENSION_BASE`, `PENSION_ADDITIONAL`,
+`HEALTH_BASE`, `HEALTH_ADDITIONAL_UF`) and `net_pay` now match with zero or
+tolerance-absorbed difference, and `complementary_insurance_validation`
+returns no warnings either. Nothing left open on this investigation.
 
 ## Related prior context
 

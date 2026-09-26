@@ -213,6 +213,60 @@ def test_build_imported_contribution_validation_reports_mismatches() -> None:
     assert "HEALTH_ADDITIONAL_UF declared 41000 CLP" in validation.warning
 
 
+def test_build_imported_contribution_validation_within_tolerance_has_no_warning() -> (
+    None
+):
+    """Differences of up to 100 CLP are rounding noise, not real mismatches."""
+    detail = _period_detail(
+        [
+            PayrollItemDetailDTO(
+                concept_code="PENSION_BASE",
+                concept_name="Pension Base",
+                kind="discount",
+                is_taxable=False,
+                amount_clp=Decimal("100001"),
+                notes=None,
+            ),
+            PayrollItemDetailDTO(
+                concept_code="HEALTH_ADDITIONAL_UF",
+                concept_name="Health Additional Uf",
+                kind="discount",
+                is_taxable=False,
+                amount_clp=Decimal("40100"),
+                notes=None,
+            ),
+        ]
+    )
+    validation = _standard_validation(detail)
+
+    assert validation is not None
+    assert validation.pension_base_difference_clp == Decimal("1")
+    assert validation.health_plan_additional_difference_clp == Decimal("100")
+    assert validation.warning is None
+
+
+def test_build_imported_contribution_validation_just_over_tolerance_warns() -> None:
+    """A 101 CLP difference already exceeds the 100 CLP rounding tolerance."""
+    detail = _period_detail(
+        [
+            PayrollItemDetailDTO(
+                concept_code="HEALTH_ADDITIONAL_UF",
+                concept_name="Health Additional Uf",
+                kind="discount",
+                is_taxable=False,
+                amount_clp=Decimal("40101"),
+                notes=None,
+            ),
+        ]
+    )
+    validation = _standard_validation(detail)
+
+    assert validation is not None
+    assert validation.health_plan_additional_difference_clp == Decimal("101")
+    assert validation.warning is not None
+    assert "HEALTH_ADDITIONAL_UF declared 40101 CLP" in validation.warning
+
+
 def _multi_plan_detail(health_additional_amount: Decimal) -> PayrollPeriodDetailDTO:
     """Build a period detail with 3 health plan snapshots (see tests below)."""
     return _period_detail(

@@ -26,6 +26,12 @@ _VALIDATION_PENDING_WARNING = (
     "Contribution values will be reconciled after pension and health plans are "
     "assigned."
 )
+# Same tolerance already used by ComplementaryInsuranceValidationService for an
+# analogous declared-vs-calculated CLP comparison: absorbs the few pesos of
+# rounding noise that naturally accumulate across a chain of quantize_clp()
+# calls (rate * capped_base, contracted_uf * uf_value, subtraction, ...)
+# without hiding a genuinely wrong reference-data value or plan assignment.
+_RECONCILIATION_TOLERANCE_CLP = Decimal("100")
 
 
 def _sum_concept_amount(
@@ -42,6 +48,11 @@ def _sum_concept_amount(
         and not any(item.concept_code == concept_code for item in detail.items)
         else amount
     )
+
+
+def _exceeds_tolerance(declared: Decimal, expected: Decimal) -> bool:
+    """Return whether a declared/expected CLP pair differs beyond rounding noise."""
+    return abs(declared - expected) > _RECONCILIATION_TOLERANCE_CLP
 
 
 def build_imported_contribution_validation(
@@ -90,22 +101,22 @@ def build_imported_contribution_validation(
     expected_health_plan_additional_clp = computed.health.additional_amount_clp
 
     mismatches: list[str] = []
-    if declared_pension_base_clp is not None and declared_pension_base_clp != (
-        expected_pension_base_clp
+    if declared_pension_base_clp is not None and _exceeds_tolerance(
+        declared_pension_base_clp, expected_pension_base_clp
     ):
         mismatches.append(
             f"PENSION_BASE declared {declared_pension_base_clp} CLP, "
             f"expected {expected_pension_base_clp} CLP."
         )
-    if declared_pension_additional_clp is not None and (
-        declared_pension_additional_clp != expected_pension_additional_clp
+    if declared_pension_additional_clp is not None and _exceeds_tolerance(
+        declared_pension_additional_clp, expected_pension_additional_clp
     ):
         mismatches.append(
             f"PENSION_ADDITIONAL declared {declared_pension_additional_clp} CLP, "
             f"expected {expected_pension_additional_clp} CLP."
         )
-    if declared_health_base_clp is not None and declared_health_base_clp != (
-        expected_health_base_clp
+    if declared_health_base_clp is not None and _exceeds_tolerance(
+        declared_health_base_clp, expected_health_base_clp
     ):
         mismatches.append(
             f"HEALTH_BASE declared {declared_health_base_clp} CLP, "
@@ -114,7 +125,9 @@ def build_imported_contribution_validation(
     if (
         declared_health_plan_additional_clp is not None
         and expected_health_plan_additional_clp is not None
-        and declared_health_plan_additional_clp != expected_health_plan_additional_clp
+        and _exceeds_tolerance(
+            declared_health_plan_additional_clp, expected_health_plan_additional_clp
+        )
     ):
         mismatches.append(
             "HEALTH_ADDITIONAL_UF declared "

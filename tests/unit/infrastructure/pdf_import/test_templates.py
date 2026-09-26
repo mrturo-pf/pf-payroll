@@ -181,3 +181,38 @@ class TestMatchField:
         _write_template(tmp_path / "acme", "v1.json", _acme_payload())
         template = load_templates(tmp_path)[0]
         assert match_field(template, "UNKNOWN LABEL") is None
+
+
+class TestAfpCommissionRegression:
+    """Regression tests for the real shipped walmart-chile-v1.json mapping.
+
+    AFP commission ("COMISIÓN AFP") is a pension-contribution line item in
+    Chile (and, per INCOME_TAX_DEDUCTIBLE_CONCEPT_CODES, tax-deductible),
+    never a health one -- it was previously mis-mapped to
+    HEALTH_ADDITIONAL_UF instead of PENSION_ADDITIONAL, which silently
+    starved every payroll_period's PENSION_ADDITIONAL concept, permanently
+    blocking net_pay reconciliation (see REVIEW_REQUIRED_CONCEPT_CODES in
+    payroll.shared.constants -- it requires all 6 concepts, PENSION_ADDITIONAL
+    included, to be present before expected_net_pay_clp is ever computed).
+    """
+
+    def _load_real_shipped_template(self) -> Template:
+        """Load the real shipped walmart-chile-v1 template."""
+        template = next(
+            t for t in load_templates() if t.template_id == "walmart-chile-v1"
+        )
+        return template
+
+    def test_afp_commission_maps_to_pension_additional(self) -> None:
+        """The AFP commission label must resolve to PENSION_ADDITIONAL."""
+        template = self._load_real_shipped_template()
+        field = match_field(template, "COMISIÓN AFP P. VITAL")
+        assert field is not None
+        assert field.concept_code == "PENSION_ADDITIONAL"
+
+    def test_isapre_additional_plan_still_maps_to_health_additional_uf(self) -> None:
+        """The real Isapre extra-plan line (ESENCIAL ADICIONAL) is untouched."""
+        template = self._load_real_shipped_template()
+        field = match_field(template, "ESENCIAL ADICIONAL")
+        assert field is not None
+        assert field.concept_code == "HEALTH_ADDITIONAL_UF"

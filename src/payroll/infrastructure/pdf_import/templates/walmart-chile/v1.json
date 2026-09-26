@@ -50,7 +50,7 @@
     },
     {
       "pdf_label_pattern": "(?i)COMISI[OÓ]N\\s+AFP",
-      "concept_code": "HEALTH_ADDITIONAL_UF",
+      "concept_code": "PENSION_ADDITIONAL",
       "kind": "discount",
       "confidence": 0.9
     },

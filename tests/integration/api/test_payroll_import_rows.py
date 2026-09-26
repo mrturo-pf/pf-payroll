@@ -133,6 +133,7 @@ def test_import_payroll_rows_endpoint_defaults_to_commit_mode() -> None:
     assert body["imported_periods"] == 1
     assert body["imported_items"] == 1
     assert body["periods"][0]["employer"] == "ACME"
+    assert body["periods"][0]["id"] == 1
     assert scope.resolved_with == ["commit"]
 
 
@@ -172,6 +173,12 @@ def test_import_payroll_rows_endpoint_validate_mode_never_commits() -> None:
     body = response.json()
     assert body["imported_periods"] == 1
     assert scope.resolved_with == ["validate"]
+    # The use case's DTO carries a real id (the INSERT genuinely happened
+    # inside the SAVEPOINT), but that id is nulled out here: it will never
+    # exist once the outer transaction is rolled back -- see
+    # ImportedPeriodRead's docstring for why Postgres itself never gives
+    # this value back either (BIGSERIAL sequences are not transactional).
+    assert body["periods"][0]["id"] is None
 
 
 def test_import_payroll_rows_endpoint_commit_rejects_unresolved_concept_code() -> None:

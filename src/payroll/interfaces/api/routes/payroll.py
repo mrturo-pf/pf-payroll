@@ -15,9 +15,12 @@ from payroll.application.errors import PayrollError, PayrollValidationError
 from payroll.application.dto import (
     AssignPlansCommandDTO,
     GeneratedPayrollReportDTO,
+    ImportedComplementaryInsuranceValidationDTO,
+    ImportedContributionValidationDTO,
     ImportedPayrollPeriodDTO,
     ImportPayrollResultDTO,
     ImportPayrollRowDTO,
+    PayrollStatusKind,
     PdfImportPreviewDTO,
     ReviewPayrollPeriodCommandDTO,
     ComputeContributionsCommandDTO,
@@ -83,12 +86,77 @@ class UnresolvedRowWarning(BaseModel):
     amount_clp: str
 
 
+class ImportedPeriodRead(BaseModel):
+    """Represent one imported payroll period in an import response.
+
+    Mirrors ImportedPayrollPeriodDTO field-for-field, with one deliberate
+    difference: `id` is `int | None` here, not `int`. POST /payroll/import
+    always commits, so its periods' `id` is always a real, persisted primary
+    key. POST /payroll/import/rows can also run in mode="validate", where
+    the INSERT genuinely happens against a SAVEPOINT (so contributions, tax
+    and net-pay warnings are computed for real, not guessed) but is always
+    rolled back before the response goes out -- see
+    TransactionalSessionScope. The id Postgres assigned during that INSERT
+    will never exist in the table: Postgres sequences are not transactional,
+    so the BIGSERIAL value is permanently consumed regardless of the
+    rollback (an intentional, harmless gap -- see BIGSERIAL's own docs), but
+    the row itself never persists. Returning that id to the caller as if it
+    were a real, reusable reference would be misleading, so it is nulled
+    out here instead -- see to_imported_period_read().
+    """
+
+    id: int | None
+    employer: str
+    period_year: int
+    period_month: int
+    payment_date: date
+    status: PayrollStatusKind
+    employment_contract_kind: EmploymentContractKind
+    item_count: int
+    worked_days: int = 30
+    declared_net_pay_clp: Decimal | None = None
+    expected_net_pay_clp: Decimal | None = None
+    net_pay_difference_clp: Decimal | None = None
+    net_pay_warning: str | None = None
+    contribution_validation: ImportedContributionValidationDTO | None = None
+    complementary_insurance_validation: (
+        ImportedComplementaryInsuranceValidationDTO | None
+    ) = None
+
+
+def to_imported_period_read(
+    period: ImportedPayrollPeriodDTO, *, mode: Literal["commit", "validate"]
+) -> ImportedPeriodRead:
+    """Convert an ImportedPayrollPeriodDTO to its API response shape.
+
+    Nulls out `id` when mode == "validate" -- see ImportedPeriodRead's
+    docstring for why that id must never be treated as a real reference.
+    """
+    return ImportedPeriodRead(
+        id=period.id if mode == "commit" else None,
+        employer=period.employer,
+        period_year=period.period_year,
+        period_month=period.period_month,
+        payment_date=period.payment_date,
+        status=period.status,
+        employment_contract_kind=period.employment_contract_kind,
+        item_count=period.item_count,
+        worked_days=period.worked_days,
+        declared_net_pay_clp=period.declared_net_pay_clp,
+        expected_net_pay_clp=period.expected_net_pay_clp,
+        net_pay_difference_clp=period.net_pay_difference_clp,
+        net_pay_warning=period.net_pay_warning,
+        contribution_validation=period.contribution_validation,
+        complementary_insurance_validation=period.complementary_insurance_validation,
+    )
+
+
 class ImportPayrollResponse(BaseModel):
     """Represent Import Payroll Response."""
 
     imported_periods: int
     imported_items: int
-    periods: list[ImportedPayrollPeriodDTO]
+    periods: list[ImportedPeriodRead]
     unresolved_rows: list[UnresolvedRowWarning] = []
 
 
@@ -141,6 +209,9 @@ class ImportPayrollRowsRequest(BaseModel):
     call may cache data in pf-rates' own database. A pf-payroll rollback
     never undoes that -- harmless (public, non-sensitive reference data), but
     mode="validate" is not 100% free of side effects end-to-end.
+
+    Response's `periods[].id` is `null` in mode="validate" on purpose -- see
+    ImportedPeriodRead's docstring.
     """
 
     mode: Literal["commit", "validate"] = "commit"
@@ -493,7 +564,9 @@ async def import_payroll(
     return ImportPayrollResponse(
         imported_periods=result.imported_periods,
         imported_items=result.imported_items,
-        periods=list(result.periods),
+        periods=[
+            to_imported_period_read(period, mode="commit") for period in result.periods
+        ],
     )
 
 
@@ -582,7 +655,10 @@ async def import_payroll_rows(
     return ImportPayrollResponse(
         imported_periods=result.imported_periods,
         imported_items=result.imported_items,
-        periods=list(result.periods),
+        periods=[
+            to_imported_period_read(period, mode=payload.mode)
+            for period in result.periods
+        ],
         unresolved_rows=unresolved,
     )
 

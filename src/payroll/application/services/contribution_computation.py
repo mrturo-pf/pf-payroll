@@ -81,14 +81,13 @@ def build_imported_contribution_validation(
     expected_pension_base_clp = computed.pension.base_amount_clp
     expected_pension_additional_clp = computed.pension.additional_amount_clp
     expected_health_base_clp = computed.health.base_amount_clp
-    has_multiple_health_plan_snapshots = bool(
-        detail.health_plan_ids and len(detail.health_plan_ids) > 1
-    )
-    expected_health_plan_additional_clp = (
-        None
-        if has_multiple_health_plan_snapshots
-        else computed.health.additional_amount_clp
-    )
+    # NOTE: computed.health.additional_amount_clp is always safe to compare here,
+    # even when the period has multiple assigned health_plan_ids. get_contribution_
+    # context() (payroll_repository_commands.py) already aggregates contracted_uf
+    # across every assigned plan and raises PayrollConflictError up-front if they
+    # don't all belong to the same institution, so by the time `computed` exists,
+    # the aggregate value is guaranteed valid and comparable.
+    expected_health_plan_additional_clp = computed.health.additional_amount_clp
 
     mismatches: list[str] = []
     if declared_pension_base_clp is not None and declared_pension_base_clp != (

@@ -213,11 +213,9 @@ def test_build_imported_contribution_validation_reports_mismatches() -> None:
     assert "HEALTH_ADDITIONAL_UF declared 41000 CLP" in validation.warning
 
 
-def test_build_imported_contribution_validation_skips_multi_plan_additional_check() -> (
-    None
-):
-    """Test validation skips additional health mismatch for multi-plan snapshots."""
-    detail = _period_detail(
+def _multi_plan_detail(health_additional_amount: Decimal) -> PayrollPeriodDetailDTO:
+    """Build a period detail with 3 health plan snapshots (see tests below)."""
+    return _period_detail(
         [
             PayrollItemDetailDTO(
                 concept_code="PENSION_BASE",
@@ -248,15 +246,40 @@ def test_build_imported_contribution_validation_skips_multi_plan_additional_chec
                 concept_name="Health Additional Uf",
                 kind="discount",
                 is_taxable=False,
-                amount_clp=Decimal("41000"),
+                amount_clp=health_additional_amount,
                 notes=None,
             ),
         ],
         health_plan_ids=(1, 2, 3),
     )
+
+
+def test_build_imported_contribution_validation_reconciles_multi_plan_additional() -> (
+    None
+):
+    """Multi-plan snapshots must still be reconciled against the aggregate.
+
+    get_contribution_context() aggregates contracted_uf across every assigned
+    health_plan_id (raising up-front if they belong to different institutions),
+    so by the time `computed` exists here the aggregate is always valid and
+    comparable -- regardless of how many plan snapshots the period has.
+    """
+    detail = _multi_plan_detail(Decimal("41000"))
     validation = _standard_validation(detail)
 
     assert validation is not None
-    assert validation.expected_health_plan_additional_clp is None
-    assert validation.health_plan_additional_difference_clp is None
+    assert validation.expected_health_plan_additional_clp == Decimal("40000")
+    assert validation.health_plan_additional_difference_clp == Decimal("1000")
+    assert validation.warning is not None
+    assert "HEALTH_ADDITIONAL_UF declared 41000 CLP" in validation.warning
+
+
+def test_build_imported_contribution_validation_matches_multi_plan_additional() -> None:
+    """Multi-plan snapshots with a matching declared amount raise no warning."""
+    detail = _multi_plan_detail(Decimal("40000"))
+    validation = _standard_validation(detail)
+
+    assert validation is not None
+    assert validation.expected_health_plan_additional_clp == Decimal("40000")
+    assert validation.health_plan_additional_difference_clp == Decimal("0")
     assert validation.warning is None

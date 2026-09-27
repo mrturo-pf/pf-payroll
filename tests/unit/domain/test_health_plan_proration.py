@@ -8,7 +8,10 @@ from payroll.domain.contributions import (
     HealthInstitutionKind,
     HealthPlan,
 )
-from payroll.domain.health_plan_proration import prorated_contracted_uf
+from payroll.domain.health_plan_proration import (
+    prorated_additional_amount_clp,
+    prorated_contracted_uf,
+)
 
 _INSTITUTION = HealthInstitution(
     code="BANMEDICA",
@@ -115,3 +118,107 @@ def test_prorated_contracted_uf_sums_multiple_overlapping_plans() -> None:
         Decimal("0.91") + Decimal("0.79") + (Decimal("4.94") * Decimal(9) / Decimal(28))
     )
     assert total == expected
+
+
+def test_prorated_additional_matches_naive_formula_when_no_mid_month_change() -> None:
+    """Test the sub-period model matches max(0, whole_month - base) with one plan.
+
+    No mid-month plan change means there is only one sub-period (the whole
+    month), so both formulas must agree exactly.
+    """
+    plan = _plan(
+        plan_id=1,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+        contracted_uf=Decimal("6.64"),
+    )
+    base_amount = Decimal("237530")
+    uf_value = Decimal("38647.94")
+
+    naive = max(Decimal("0"), plan.contracted_uf * uf_value - base_amount)
+    actual = prorated_additional_amount_clp([plan], 2025, 2, base_amount, uf_value)
+    assert actual == naive
+
+
+def test_prorated_additional_is_zero_when_cost_never_reaches_threshold() -> None:
+    """Test a plan combination that stays below the mandatory minimum all month.
+
+    Mirrors GES + Adicionales alone (1.70 UF), which never crosses
+    HEALTH_BASE regardless of how it is sliced -- additional must be 0.
+    """
+    ges = _plan(
+        plan_id=1,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+        contracted_uf=Decimal("0.91"),
+    )
+    additional = _plan(
+        plan_id=2,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+        contracted_uf=Decimal("0.79"),
+    )
+    base_amount = Decimal("237530")
+    uf_value = Decimal("38647.94")
+
+    actual = prorated_additional_amount_clp(
+        [ges, additional], 2025, 2, base_amount, uf_value
+    )
+    assert actual == Decimal("0")
+
+
+def test_prorated_additional_prorates_across_a_mid_month_threshold_crossing() -> None:
+    """Test the real bug this function fixes: a plan change crossing the threshold.
+
+    Reproduces the 2025-02 case from
+    docs/investigations/health-additional-uf-mismatch.md: GES + Adicionales
+    (1.70 UF, below the mandatory minimum all month) plus a `Base` plan
+    (4.94 UF) that only kicks in for the last 5 days of a 28-day February.
+    The naive whole-month formula collapses this to exactly $0 (the
+    blended monthly total never exceeds the threshold); the corrected,
+    sub-period-aware formula recognizes that the last 5 days alone *did*
+    exceed it and charges only for those days.
+    """
+    ges = _plan(
+        plan_id=1,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+        contracted_uf=Decimal("0.91"),
+    )
+    additional = _plan(
+        plan_id=2,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+        contracted_uf=Decimal("0.79"),
+    )
+    base_plan = _plan(
+        plan_id=3,
+        valid_from=date(2025, 2, 24),
+        valid_to=date(2025, 2, 28),
+        contracted_uf=Decimal("4.94"),
+    )
+    base_amount = Decimal("237530")
+    uf_value = Decimal("38647.94")
+
+    naive_whole_month = max(
+        Decimal("0"),
+        prorated_contracted_uf([ges, additional, base_plan], 2025, 2) * uf_value
+        - base_amount,
+    )
+    assert naive_whole_month == Decimal("0")  # the bug: fully masked by the blend
+
+    actual = prorated_additional_amount_clp(
+        [ges, additional, base_plan], 2025, 2, base_amount, uf_value
+    )
+    # Only the last 5 days (24th..28th) combine to 6.64 UF and cross the
+    # prorated threshold for those days specifically -- computed
+    # independently here via plain Decimal arithmetic, not by calling the
+    # function under test with different inputs.
+    days_with_base = Decimal(5)
+    days_in_period = Decimal(28)
+    share = days_with_base / days_in_period
+    expected = (Decimal("1.70") + Decimal("4.94")) * share * uf_value - (
+        base_amount * share
+    )
+    assert actual == expected
+    assert actual > Decimal("0")

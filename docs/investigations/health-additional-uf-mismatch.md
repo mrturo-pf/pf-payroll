@@ -890,3 +890,166 @@ for an explicit follow-up decision rather than assumed here.
 Status: mechanism in place and unit-tested; `2025-02`'s specific residual
 is unchanged and still requires either a confirmed enrollment date or an
 explicit decision to seed the estimated one.
+
+## Session 10 (2026-09-27, same day): user chose to seed the estimated date
+
+Asked the user to pick between (a) seed the `~2025-02-24` estimate as-is,
+(b) leave `2025-02` open indefinitely, or (c) look for a confirmed date
+first. **The user picked (a).**
+
+Before writing the SQL, tried to verify the *exact* day (not just the
+rounded estimate) by reading the real `PAY_PERIOD`/`PAY_ITEM`/
+`RAT_EXCH_RATE` rows for `2025-02` directly from Neon (read-only `SELECT`s
+only, via a throwaway script -- never touched `open_transactional_session`
+for anything but reads, no `resolve("commit")` call). **Blocked at the
+network layer**: the corporate DNS resolver returns `NXDOMAIN` for the Neon
+pooler hostname (`ep-empty-frog-adnp5vg6-pooler.c-2.us-east-1.aws.neon.tech`)
+while ordinary domains (`google.com`, `neon.tech` itself) resolve fine --
+confirmed with `psql`, `asyncpg`, and `nslookup`/`host`, all failing the
+same way, retried twice per the network-resilience rule before giving up.
+This looks like a VPN/split-tunnel or corporate-DNS-allowlist issue with
+this specific Neon project endpoint, not a code problem -- worth a retry
+next session, or from a machine with a route that resolves it.
+
+Given that blocker, and that the user's chosen option was explicitly "use
+the estimate as-is" (not "re-derive it precisely"), no further computation
+was attempted -- re-deriving the exact day would have been solving a
+problem the user didn't ask to solve (YAGNI). The reference-data change
+below implements Session 5's `~February 24, 2025` estimate literally: a
+new `Base` tier row covering `2025-02-24`..`2025-02-28` (5 days, right up
+to the day before the already-confirmed `2025-03-01` row starts), same
+institution and `4.94 UF` tier as that row.
+
+```sql
+-- Seed the estimated partial-month Base plan enrollment for 2025-02.
+-- Matched by attributes (not a hardcoded id) so it works regardless of
+-- the row's actual id in Neon -- see Session 4's Finding 2 for the
+-- already-applied sibling row this copies institution_id from.
+INSERT INTO "PAY_HLTH_PLAN" (institution_id, valid_from, valid_to, plan_name, contracted_uf)
+SELECT institution_id, '2025-02-24', '2025-02-28', 'Base', 4.94
+FROM "PAY_HLTH_PLAN"
+WHERE plan_name = 'Base'
+  AND valid_from = '2025-03-01'
+  AND valid_to   = '2025-07-31'
+  AND contracted_uf = 4.94;
+```
+
+**Not yet applied to Neon** -- following the same pattern as every prior
+reference-data change in this investigation (Findings 1 and 2), the SQL is
+handed to the user to run themselves rather than applied autonomously by
+the agent, consistent with the ecosystem-wide rule of never mutating
+production data without explicit user action.
+
+**Important caveat, not yet resolved:** `2025-02`'s health plan assignment
+was almost certainly already committed to `PAY_PRD_HLTH` (the per-period
+plan snapshot junction table) back when that payslip was first imported,
+before this new row existed. `get_contribution_context()` reads whichever
+plan ids are already snapshotted in `PAY_PRD_HLTH` for a period -- it does
+not re-run `get_health_plans_overlapping_month()` against a period that's
+already been assigned. Inserting this row alone will make *future*
+imports of this payslip (e.g. a fresh `mode=validate` run, as used
+throughout this investigation) pick it up correctly, but will **not**
+retroactively change `2025-02`'s already-persisted assignment unless the
+period is re-imported/re-assigned. Validate by re-running the same
+22-payslip import used in every prior session once VPN/DNS access to Neon
+is restored -- if `unvalidated_period_count` doesn't drop to `0`, the
+re-assignment step is the next thing to check, not the SQL above.
+
+## Session 11 (2026-09-27, same day): the `~Feb 24` estimate was mathematically
+wrong, not just unconfirmed -- the domain formula itself had a real bug
+
+The user found `./modules/pf-db/scripts/export-neon-dump.sh` +
+`restore-neon-dump.sh` (existing tooling, previously unused in this
+investigation) which mirrors the real Neon database into the local Docker
+Postgres -- no VPN/DNS required, since it only talks to the local
+container. This finally unblocked live verification against real
+production data. The user had already run the Session 10 `INSERT` against
+Neon (new row `id=15`, `Base`, `2025-02-24`..`2025-02-28`, `4.94 UF`)
+before this dump was taken, so it was verified directly.
+
+**First finding: the `2025-02-24` estimate does nothing.** Reading the
+real `PAY_PERIOD` (`id=134`, `payment_date=2025-02-27`), `PAY_ITEM`
+(`HEALTH_BASE=237530`), and `RAT_EXCH_RATE` (`UF@2025-02-28=38647.94`) and
+feeding them through the actual `prorated_contracted_uf()` +
+`ContributionCalculator.health()` code for every possible `valid_from` in
+February showed `2025-02-24` computes `additional=$0` -- identical to
+before the row existed. The reason: `additional = max(0, contracted_clp -
+base_amount)` treats `base_amount` (`$237,530`) as a **fixed, un-prorated**
+threshold, so near that threshold a single calendar day of difference in
+`valid_from` swings the result by ~$6,818 (one day's worth of the `4.94
+UF` tier). No single day lands within the `$100 CLP` tolerance -- the two
+nearest candidates jump straight from `$0` (Feb 4) to `$5,455` (Feb 3),
+skipping over `$2,860` entirely. Session 5's original `"~14.9% of the
+month"` proportion analysis assumed the *additional* scales linearly with
+enrollment days; it does not, because of that fixed threshold subtraction.
+
+**Root cause identified as a genuine domain bug, not a data problem.** The
+existing `prorated_contracted_uf()` mechanism (Session 9) prorates the
+raw UF *inputs* for the whole month and only then applies one `max(0,
+... - base_amount)` at the end. That is mathematically correct only when
+the combined plan cost stays on the same side of `base_amount` for the
+entire month. The moment a mid-month plan change makes the combined cost
+cross that threshold partway through -- exactly this case -- the model
+breaks, because it never prorates the threshold itself.
+
+**Fix implemented:** a new pure function,
+`prorated_additional_amount_clp()` in `domain/health_plan_proration.py`,
+replaces the single whole-month `max(0, ...)` with one `max(0, ...)` per
+sub-period of constant plan composition (splitting the month on every
+plan's `valid_from`/`valid_to`), prorating *both* the plan cost and the
+mandatory-minimum threshold by that sub-period's own day count before
+comparing them. `ContributionCalculator.health()` now uses it for
+`additional_amount_clp` (kept `prorated_contracted_uf()` unchanged for the
+informational `contracted_uf`/`contracted_clp` fields). Proven
+mathematically and by test
+(`test_prorated_additional_matches_naive_formula_when_no_mid_month_change`)
+that the two formulas agree exactly whenever there is no mid-month
+threshold crossing -- i.e. this changes behavior *only* for the class of
+bug it fixes, zero risk of regressing any of the other 21
+already-reconciling periods. 4 new unit tests, full suite still green
+(429 passed; the only failures are pre-existing Docker/testcontainers
+infra errors unrelated to this change), `ruff`/`mypy` clean.
+
+**Re-swept every February day with the corrected formula** (script run
+against the real numbers above): the best possible single day is
+**`2025-02-25`** (4 days: 25th-28th), giving `additional=$2,727` --
+`$133` away from the real declared `$2,860`, versus the old model's `$0`
+(`$2,860` away). **Verified end-to-end through the real CLI** against the
+local Neon mirror (`compute-contributions 134 3 9`, after updating the
+seeded row's `valid_from` to `2025-02-25` and adding the corresponding
+`PAY_PRD_HLTH` assignment row locally): `health.additional_amount_clp
+= "2727"`, `health.base_amount_clp = "237530"` (unchanged, as expected),
+`pension.additional_amount_clp = "39362"` and
+`unemployment.employee_amount_clp = "22541"` both still matching their
+declared values exactly -- confirms nothing else regressed.
+
+**Status: `2025-02` residual reduced from `$2,860` to `$133` (a 95%
+reduction), but still technically outside the `$100 CLP` reconciliation
+tolerance** -- the period would still show as unvalidated, just by a much
+smaller margin. The remaining `$133` most plausibly comes from a modeling
+simplification this fix does not attempt to solve: using one single
+month-end UF rate for the whole sub-period instead of each day's own UF
+value, or a `30`-day "commercial month" proration convention some Isapre
+systems use instead of actual calendar days -- neither is implemented
+here (YAGNI: no other period in the 22-payslip real dataset needs either
+refinement, so building them speculatively for a single `$133` residual
+is not justified without further evidence).
+
+**Updated reference-data recommendation for Neon** (supersedes Session
+10's `2025-02-24`; matched by attributes, not the row's actual id, so it
+works regardless of what id Neon assigned it):
+
+```sql
+UPDATE "PAY_HLTH_PLAN"
+SET valid_from = '2025-02-25'
+WHERE plan_name = 'Base'
+  AND valid_from = '2025-02-24'
+  AND valid_to   = '2025-02-28'
+  AND contracted_uf = 4.94;
+```
+
+**Not yet applied to Neon or committed to git** -- both the reference-data
+correction and the domain code change (`health_plan_proration.py`,
+`contribution_calculator.py`, their tests) are ready but pending the
+user's explicit go-ahead, per the ecosystem-wide rule against autonomous
+commits/pushes and production data mutations.

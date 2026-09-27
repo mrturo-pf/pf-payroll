@@ -17,7 +17,10 @@ from payroll.domain.errors import (
     DomainValidationError,
     UnsupportedEmploymentContractKindError,
 )
-from payroll.domain.health_plan_proration import prorated_contracted_uf
+from payroll.domain.health_plan_proration import (
+    prorated_additional_amount_clp,
+    prorated_contracted_uf,
+)
 from payroll.domain.quantizers import quantize_clp
 
 
@@ -73,9 +76,17 @@ class ContributionCalculator:
         pre-aggregated one -- the caller (get_contribution_context()) hands
         over each plan's own valid_from/valid_to so this function can
         prorate a mid-month plan change day by day instead of an
-        all-or-nothing sum (see prorated_contracted_uf()). All plans in the
-        list are assumed to share the same institution -- the caller
-        validates that invariant before this is ever called.
+        all-or-nothing sum. `contracted_uf`/`contracted_clp` (informational,
+        reported on the result) come from the simple whole-month blend
+        (`prorated_contracted_uf()`); `additional_amount_clp` -- the actual
+        top-up charged -- comes from `prorated_additional_amount_clp()`
+        instead, which prices each sub-period of constant plan composition
+        against its own prorated share of the mandatory-minimum threshold.
+        The two only disagree when a mid-month plan change causes the
+        combined cost to cross that threshold partway through the month;
+        otherwise they always match. All plans in the list are assumed to
+        share the same institution -- the caller validates that invariant
+        before this is ever called.
         """
         if not plans:
             raise DomainValidationError(
@@ -90,7 +101,15 @@ class ContributionCalculator:
 
         if institution.kind is HealthInstitutionKind.ISAPRE and contracted_uf > 0:
             contracted_clp = quantize_clp(contracted_uf * plan_uf_value_clp)
-            additional_amount = max(Decimal("0"), contracted_clp - base_amount)
+            additional_amount = quantize_clp(
+                prorated_additional_amount_clp(
+                    plans,
+                    period_year,
+                    period_month,
+                    base_amount,
+                    plan_uf_value_clp,
+                )
+            )
         else:
             contracted_clp = Decimal("0")
             additional_amount = Decimal("0")

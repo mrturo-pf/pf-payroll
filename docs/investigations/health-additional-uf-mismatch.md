@@ -1,16 +1,21 @@
 # Investigation: `HEALTH_ADDITIONAL_UF` mismatch on a real import
 
-**Status:** **Resolved and closed.** The original single-period discrepancy
-(2026-08) was fixed in production. Session 3 found the fix's date boundary
-was 2 months off and found 3 more missing plan tiers. Session 4 obtained an
-independent government record (official Cartola de Cotizaciones) that (a)
-proved the CSV's declared amounts are 100% correct with zero mismatches,
-and (b) validated the 3 missing tiers locally. The user applied both fixes
-to Neon. Session 5 confirmed production behaves identically to the local
-validation (20 of 22 periods reconcile exactly) and investigated the last
-residual (`2025-02`, `$2,860`) to a well-understood, accepted, non-actionable
-limitation of the current (non-prorated) plan-validity model. Nothing left
-open that warrants further code or reference-data changes.
+**Status:** **Resolved and closed**, with one deliberately deferred
+follow-up. The original single-period discrepancy (2026-08) was fixed in
+production. Session 3 found the fix's date boundary was 2 months off and
+found 3 more missing plan tiers. Session 4 obtained an independent
+government record (official Cartola de Cotizaciones) that (a) proved the
+CSV's declared amounts are 100% correct with zero mismatches, and (b)
+validated the 3 missing tiers locally. The user applied both fixes to
+Neon. Session 5 confirmed production behaves identically to the local
+validation (20 of 22 periods reconcile exactly) and closed the last
+residual (`2025-02`, `$2,860`) as non-actionable under the (then-binary,
+non-prorated) plan-validity model. Session 9 implemented day-level
+proration in the domain calculation itself, removing that specific
+limitation -- but `2025-02` still needs a deliberate reference-data
+decision (an actual `valid_from` inside February) before it will reconcile;
+see Session 9 below. Nothing else left open that warrants further code or
+reference-data changes.
 **Opened:** 2026-09-26, right after deploying commits `48a6314` and
 `551cf30` (see `git log` in `pf-payroll`). Root cause for the single 2026-08
 period isolated and resolved the same day (see "Resolution" below).
@@ -857,3 +862,31 @@ against the local database now **commits successfully** (`imported_periods:
 remaining `±1 CLP` diffs on `2025-04`, `2025-07`, and `2026-08` (ordinary
 Decimal rounding, not a new finding) stay silently within the `100 CLP`
 tolerance, same as before.
+
+## Session 9 (2026-09-27): day-level proration implemented -- the binary-model limitation from Session 5 no longer applies
+
+Sessions 5 and 7 both closed `2025-02` as non-actionable specifically
+because "plan validity is a binary check against a single reference date
+... there is no day-level proration anywhere in the pipeline" (Session 5).
+That is no longer true: `ContributionCalculator.health()` now takes every
+plan assigned to a period and sums each one's `contracted_uf` weighted by
+how many days of the period's calendar month its `valid_from`/`valid_to`
+actually overlaps (`domain/health_plan_proration.py`), and
+`get_health_plans_overlapping_month()` (replacing the old single-day
+`get_valid_health_plans_for_date()`) assigns a plan to a period as soon as
+it overlaps *any part* of that month, not just day 1.
+
+**This does not, by itself, fix `2025-02`.** No `PAY_HLTH_PLAN` row exists
+with a `valid_from` inside February 2025 for the mechanism to prorate --
+the real `Base` plan enrollment row still starts `2025-03-01` (per Finding
+1/2, already applied to Neon). Making `2025-02` reconcile would require
+deliberately seeding a new reference-data row (or splitting the existing
+one) with a `valid_from` somewhere in February -- Session 5's proportion
+analysis already estimated `~February 24, 2025`, but that's an *estimate*
+reverse-engineered from one month's ratio, not a confirmed HR/Isapre date,
+and touching real reference data on an estimate is a judgment call left
+for an explicit follow-up decision rather than assumed here.
+
+Status: mechanism in place and unit-tested; `2025-02`'s specific residual
+is unchanged and still requires either a confirmed enrollment date or an
+explicit decision to seed the estimated one.

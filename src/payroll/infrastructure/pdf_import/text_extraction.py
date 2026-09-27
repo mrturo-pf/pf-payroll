@@ -84,11 +84,49 @@ def parse_period(text: str) -> tuple[int, int] | None:
 
 
 def parse_worked_days(text: str) -> int | None:
-    """Parse worked days from the "antiguedad laboral date + days" pattern."""
+    """Parse worked days from DIAS TRABAJADOS column or antiquity pattern.
+
+    First tries column-based parsing (header + value line), then falls back
+    to the date-based regex pattern for backward compatibility with older
+    PDF formats.
+    """
+    # Try column-based parsing first (works for newer Chile PDF layouts)
+    result = _parse_worked_days_from_dias_trabajados_column(text)
+    if result is not None:
+        return result
+
+    # Fall back to regex pattern for older formats or simpler layouts
     match = _ANTIQUITY_AND_WORKED_DAYS_RE.search(text)
     if match is None:
         return None
     return int(match.group(1))
+
+
+def _parse_worked_days_from_dias_trabajados_column(text: str) -> int | None:
+    """Extract worked days from the DIAS TRABAJADOS column.
+
+    Looks for a line containing "DIAS TRABAJADOS" header and extracts
+    the value from the corresponding data line below it. Returns None
+    if the header or value cannot be found.
+    """
+    lines = text.split("\n")
+    for i, line in enumerate(lines):
+        if "DIAS TRABAJADOS" in line.upper() and i + 1 < len(lines):
+            # Next line should contain the value
+            next_line = lines[i + 1]
+            # Extract all numeric values from the line
+            numbers = re.findall(r"\d+", next_line)
+            if numbers:
+                # Look for a valid day value (1-31).
+                # The worked days should be a small positive integer.
+                # We iterate in reverse to prefer rightmost values,
+                # as that's typically where the DIAS TRABAJADOS column is.
+                for num_str in reversed(numbers):
+                    num = int(num_str)
+                    # Validate: worked days should be between 1 and 31
+                    if 1 <= num <= 31:
+                        return num
+    return None
 
 
 def parse_declared_net_pay(text: str) -> Decimal | None:

@@ -61,13 +61,17 @@ and exactly which rows are still unresolved:
 python -m payroll.interfaces.cli.main template-test payslip.pdf
 ```
 
-**Step B -- confirm the (possibly hand-edited) rows from one preview:**
+**Step B -- confirm the (possibly hand-edited) rows from one or more previews:**
 
-This is meant to be a copy/paste from Step A's own JSON response: take one element of
-the response array (one `PdfImportPreviewResponse` object, i.e. one payslip's preview),
-add `"mode"`, and POST it here as-is -- extra fields
+This is meant to be a copy/paste from Step A's own JSON response: wrap the entire
+response array (or just the elements you want in this batch, one `PdfImportPreviewResponse`
+object per payslip) inside `{"mode": ..., "periods": [...]}` and POST it here as-is --
+extra fields
 the preview includes that this endpoint doesn't need (`template_id`, and each row's
-`raw_label`/`kind`/`confidence`) are silently ignored, not rejected. Double-check
+`raw_label`/`kind`/`confidence`) are silently ignored, not rejected. `periods` must have
+at least one element, and no two elements may share the same `(employer, period_year,
+period_month)` -- merge their `rows` by hand first if that's genuinely the same period.
+Double-check
 `employment_contract_kind` before sending: the preview infers it best-effort from the
 payslip's own unemployment-insurance discount (see
 TemplatePdfPayrollExtractor's `_infer_employment_contract_kind`), so it can come back
@@ -79,15 +83,19 @@ curl -X POST http://127.0.0.1:8000/payroll/import/json \
   -H "Content-Type: application/json" \
   -d '{
     "mode": "validate",
-    "employer": "ACME",
-    "period_year": 2026,
-    "period_month": 1,
-    "payment_date": "2026-01-31",
-    "employment_contract_kind": "indefinite",
-    "rows": [
+    "periods": [
       {
-        "concept_code": "SALARY_BASE",
-        "amount_clp": "1000000"
+        "employer": "ACME",
+        "period_year": 2026,
+        "period_month": 1,
+        "payment_date": "2026-01-31",
+        "employment_contract_kind": "indefinite",
+        "rows": [
+          {
+            "concept_code": "SALARY_BASE",
+            "amount_clp": "1000000"
+          }
+        ]
       }
     ]
   }'
@@ -95,17 +103,19 @@ curl -X POST http://127.0.0.1:8000/payroll/import/json \
 
 Notice the header fields (`employer`, `period_year`, `period_month`, `payment_date`,
 `employment_contract_kind`, plus the optional `worked_days`/`declared_net_pay_clp`) are
-declared **once**, not per row -- every row submitted here comes from the same single
-payslip, mirroring `PdfImportPreviewResponse`'s own shape (one set of header fields,
-`rows` carrying only `concept_code`/`amount_clp` each). There is deliberately no
+declared **once per period block**, not per row -- every row within one block comes from
+the same single payslip, mirroring `PdfImportPreviewResponse`'s own shape (one set of
+header fields, `rows` carrying only `concept_code`/`amount_clp` each). There is
+deliberately no
 `status` field here either -- it is inferred exactly like the CSV/XLSX importer already
 does ("actual" once `declared_net_pay_clp` is known, "projected" otherwise), so it is
 never something a caller needs to figure out or pass in.
 
 `mode="validate"` (shown above) runs the exact same pipeline as `mode="commit"` --
-contributions, taxes, and net-pay warnings are genuinely computed -- but every write is
+contributions, taxes, and net-pay warnings are genuinely computed for every period in the
+batch -- but every write is
 rolled back at the end, and rows without a resolved `concept_code` are reported back via
-`unresolved_rows` instead of failing the request. Resend the same request with
+`unresolved_rows` (each entry identified by `period_index` + `row_index`) instead of failing the request. Resend the same request with
 `"mode": "commit"` once every row is resolved and the preview looks right; `commit`
 fails outright (400) if any row still has `concept_code: null`. See
 [the PDF import action plan](proposals/pdf-import-action-plan.md) for the full

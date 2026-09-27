@@ -371,6 +371,8 @@ def test_payroll_import_endpoint() -> None:
         "saved": True,
         "period_count": 1,
         "item_count": 1,
+        "validated_period_count": 1,
+        "unvalidated_period_count": 0,
         "periods": [
             {
                 "id": 1,
@@ -389,6 +391,7 @@ def test_payroll_import_endpoint() -> None:
                     "Declared net_pay will be reconciled after computed "
                     "contributions and income tax are generated."
                 ),
+                "validated": True,
                 "contribution_validation": None,
                 "complementary_insurance_validation": None,
             }

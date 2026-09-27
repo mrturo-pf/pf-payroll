@@ -15,6 +15,7 @@ from payroll.application.errors import PayrollError, PayrollValidationError
 from payroll.application.services.import_reconciliation import (
     conflicting_reconciliation_periods,
     is_import_fully_validated,
+    period_has_reconciliation_conflict,
 )
 from payroll.application.dto import (
     AssignPlansCommandDTO,
@@ -100,13 +101,17 @@ class UnresolvedRowWarning(BaseModel):
     """Represent one submitted row whose concept_code could not be resolved.
 
     Surfaced by POST /payroll/import/json in mode="validate" so a caller can
-    fix these specific rows (identified by their position in the submitted
-    `rows` list) before resending with mode="commit". No period/employer
-    fields here -- those now live once at ImportPayrollRowsRequest's top
-    level, so repeating them per warning would just be duplicate
-    information the caller already sent.
+    fix these specific rows before resending with mode="commit". Identified
+    by `period_index` (the row's position in the top-level `periods` list)
+    plus `row_index` (its position within that period's own `rows` list) --
+    a plain `row_index` alone stopped being unambiguous once a single
+    request could carry more than one period. No employer/period fields
+    here -- those live once per period at ImportPayrollPeriodRequest, so
+    repeating them per warning would just be duplicate information the
+    caller already sent.
     """
 
+    period_index: int
     row_index: int
     amount_clp: str
 
@@ -172,8 +177,9 @@ def to_imported_contribution_validation_read(
 class ImportedPeriodRead(BaseModel):
     """Represent one imported payroll period in an import response.
 
-    Mirrors ImportedPayrollPeriodDTO field-for-field, with one deliberate
-    difference: `id` is `int | None` here, not `int`. Both POST
+    Mirrors ImportedPayrollPeriodDTO field-for-field, with two deliberate
+    differences: `id` is `int | None` here, not `int`, and `validated` is
+    declared first instead of last (see below for both). Both POST
     /payroll/import/spreadsheet and POST /payroll/import/json can run in
     mode="validate", where the INSERT genuinely happens against a SAVEPOINT
     (so contributions, tax and net-pay warnings are computed for real, not
@@ -191,8 +197,15 @@ class ImportedPeriodRead(BaseModel):
     needs its own pydantic schema so the public API contract stays stable
     even if the application-layer dataclass shape changes, and vice versa
     -- see AGENTS.md, "DTOs are the only thing crossing layer boundaries".
+
+    `validated` is declared first (ahead of even `id`), deliberately
+    breaking the DTO mirror below -- pydantic v2 serializes fields in
+    declaration order, so this puts the one field a caller scanning a
+    large `periods[]` array actually cares about at a glance right at the
+    start of each JSON object, instead of buried after every CLP amount.
     """
 
+    validated: bool
     # jscpd:ignore-start
     id: int | None
     employer: str
@@ -215,14 +228,30 @@ class ImportedPeriodRead(BaseModel):
 
 
 def to_imported_period_read(
-    period: ImportedPayrollPeriodDTO, *, mode: Literal["commit", "validate"]
+    period: ImportedPayrollPeriodDTO,
+    *,
+    mode: Literal["commit", "validate"],
+    has_unresolved: bool = False,
 ) -> ImportedPeriodRead:
     """Convert an ImportedPayrollPeriodDTO to its API response shape.
 
     Nulls out `id` when mode == "validate" -- see ImportedPeriodRead's
     docstring for why that id must never be treated as a real reference.
+    `has_unresolved` defaults to False for POST /payroll/import/spreadsheet
+    (a CSV/XLSX row always carries a resolved concept_code, so this never
+    applies there) -- POST /payroll/import/json's route passes it in
+    explicitly per period, since that's the only caller where a period can
+    have rows still missing a concept_code (see `unresolved_rows` on
+    ImportPayrollResponse). `validated` here mirrors the exact same
+    "no *known* conflict" semantics as the top-level `validated` field on
+    ImportPayrollResponse (see period_has_reconciliation_conflict() --
+    "pending" reconciliation states are not conflicts), just scoped to one
+    period instead of the whole batch -- so a caller can tell at a glance
+    which specific period(s) in `periods` need attention instead of
+    scanning every one by hand once the top-level `validated` is False.
     """
     return ImportedPeriodRead(
+        validated=not has_unresolved and not period_has_reconciliation_conflict(period),
         id=period.id if mode == "commit" else None,
         employer=period.employer,
         period_year=period.period_year,
@@ -300,6 +329,15 @@ class ImportPayrollResponse(BaseModel):
       mode="validate" -- nothing was persisted, so "was it saved" does not
       apply. Never False: a failed commit raises an HTTP error instead of
       reaching this response.
+
+    validated_period_count plus unvalidated_period_count are a quick
+    summary over periods[].validated (they always sum to len(periods)) so a
+    caller with a large batch does not have to scan every entry just to
+    know how many are actually fine -- each periods[] entry's own
+    validated field (see to_imported_period_read()) then says which one(s)
+    need a closer look. Same no-known-conflict semantics as the top-level
+    validated field above, just counted per period instead of aggregated
+    across the whole batch.
     """
 
     mode: Literal["commit", "validate"]
@@ -307,6 +345,8 @@ class ImportPayrollResponse(BaseModel):
     saved: bool | None
     period_count: int
     item_count: int
+    validated_period_count: int
+    unvalidated_period_count: int
     periods: list[ImportedPeriodRead]
     unresolved_rows: list[UnresolvedRowWarning] = []
 
@@ -316,47 +356,77 @@ class ImportPayrollRowRequest(BaseModel):
 
     Deliberately just concept_code + amount_clp: employer, period_year,
     period_month, payment_date, employment_contract_kind, worked_days, and
-    declared_net_pay_clp all live once at ImportPayrollRowsRequest's top
-    level instead of being repeated per row -- every row submitted through
-    this endpoint comes from the same single payslip (see
+    declared_net_pay_clp all live once per period at
+    ImportPayrollPeriodRequest's top level instead of being repeated per
+    row -- every row submitted through this endpoint comes from the same
+    single payslip (see
     PdfImportPreviewResponse -- one element of the array POST
     /payroll/pdf-preview returns -- which has the identical shape: one set
     of header fields, N rows each carrying only their own concept-level
     data).
     concept_code is optional here (unlike ImportPayrollRowDTO, where it is
     required) so that a row a human hasn't finished resolving yet can still
-    be submitted with mode="validate" -- see ImportPayrollRowsRequest below.
+    be submitted with mode="validate" -- see ImportPayrollPeriodRequest below.
     """
 
     concept_code: str | None
     amount_clp: Decimal
 
 
-class ImportPayrollRowsRequest(BaseModel):
-    """Represent the request body for POST /payroll/import/json.
+class ImportPayrollPeriodRequest(BaseModel):
+    """Represent one payslip/period block inside a POST /payroll/import/json request.
 
-    All rows come from one payslip (e.g. one element of the array returned
-    by POST /payroll/pdf-preview, confirmed by a human), so
-    employer/period/payment/contract-kind fields
-    are declared once here instead of once per row -- mirroring
-    PdfImportPreviewResponse's own header-fields-once, rows-carry-only-
-    their-own-data shape. This is deliberately a copy/paste target: take a
-    PdfImportPreviewResponse body, add "mode", and POST it here as-is.
+    All rows within one block come from one payslip (e.g. one element of the
+    array returned by POST /payroll/pdf-preview, confirmed by a human), so
+    employer/period/payment/contract-kind fields are declared once per block
+    instead of once per row -- mirroring PdfImportPreviewResponse's own
+    header-fields-once, rows-carry-only-their-own-data shape. This is
+    deliberately a copy/paste target: take one PdfImportPreviewResponse
+    array element and use it as-is as one entry of ImportPayrollJsonRequest's
+    `periods` list (extra fields such as `template_id`/`raw_label`/`kind`/
+    `confidence` are silently ignored, not rejected).
 
     No `status` field on purpose -- it never appears in the source CSV/XLSX
     either (see xlsx_importer.py). It is inferred the exact same way here:
     "actual" once declared_net_pay_clp is known, "projected" otherwise (see
     payroll.shared.payroll_status.resolve_declared_status).
+    """
+
+    employer: str
+    period_year: int
+    period_month: int
+    payment_date: date
+    employment_contract_kind: EmploymentContractKind
+    worked_days: int = 30
+    declared_net_pay_clp: Decimal | None = None
+    rows: list[ImportPayrollRowRequest]
+
+
+class ImportPayrollJsonRequest(BaseModel):
+    """Represent the request body for POST /payroll/import/json.
+
+    `periods` carries one or more ImportPayrollPeriodRequest blocks in a
+    single request -- e.g. the *entire* array returned by a batched POST
+    /payroll/pdf-preview call (one entry per uploaded PDF) can be submitted
+    here verbatim, once a human has confirmed/edited each element. `periods`
+    must have at least one element, and no two elements may share the same
+    (employer, period_year, period_month): each block owns its own header
+    fields (payment_date, contract kind, declared net pay) independently, so
+    silently merging two "same period" blocks would mean picking one's
+    header over the other's with no signal to the caller -- concatenate
+    their `rows` client-side into one block instead if that's genuinely the
+    same period.
 
     mode="commit" persists everything, exactly like POST /payroll/import/spreadsheet --
-    and requires every row to already have a resolved concept_code; any row
-    with concept_code=null makes the whole request fail with 400, nothing is
-    written. mode="validate" runs the exact same pipeline on the rows that
-    *do* have a resolved concept_code -- so contributions, taxes and net-pay
-    warnings are genuinely computed -- while rows still missing a
-    concept_code are reported back via `unresolved_rows` instead of failing
-    the request, then everything is discarded via
-    TransactionalSessionScope.resolve("validate").
+    and requires every row in every period to already have a resolved
+    concept_code; any row with concept_code=null makes the whole request
+    fail with 400, nothing is written. mode="validate" runs the exact same
+    pipeline on the rows that *do* have a resolved concept_code -- so
+    contributions, taxes and net-pay warnings are genuinely computed -- while
+    rows still missing a concept_code are reported back via
+    `unresolved_rows` instead of failing the request, then everything is
+    discarded via TransactionalSessionScope.resolve("validate"). `mode`
+    applies to the whole batch; there is no per-period mode.
 
     Known side effect, in both modes: ProcessImportedPayrollPeriods calls
     pf-rates to resolve missing market data (exchange rates/UTM), and that
@@ -369,14 +439,7 @@ class ImportPayrollRowsRequest(BaseModel):
     """
 
     mode: Literal["commit", "validate"] = "commit"
-    employer: str
-    period_year: int
-    period_month: int
-    payment_date: date
-    employment_contract_kind: EmploymentContractKind
-    worked_days: int = 30
-    declared_net_pay_clp: Decimal | None = None
-    rows: list[ImportPayrollRowRequest]
+    periods: list[ImportPayrollPeriodRequest]
 
 
 class PdfImportPreviewRowRead(BaseModel):
@@ -396,12 +459,13 @@ class PdfImportPreviewResponse(BaseModel):
     in upload order -- since that endpoint now accepts a batch of payslips in
     a single request. Never persists anything -- see PreviewPdfImport /
     TemplatePdfPayrollExtractor. Each element is deliberately shaped so it
-    can be copied verbatim into a POST
-    /payroll/import/json request body (just add "mode" -- template_id is
-    ignored there if it's still present). employment_contract_kind is a
+    can be used verbatim as one entry of a POST /payroll/import/json
+    request's `periods` list (wrap it -- plus every other element wanted in
+    the same batch -- inside `{"mode": ..., "periods": [...]}`; template_id
+    is ignored there if it's still present). employment_contract_kind is a
     best-effort guess (see TemplatePdfPayrollExtractor's
     _infer_employment_contract_kind), not an authoritative value -- confirm
-    or correct it before submitting. See ImportPayrollRowsRequest's
+    or correct it before submitting. See ImportPayrollPeriodRequest's
     docstring.
     """
 
@@ -697,6 +761,18 @@ def to_pdf_response(report: GeneratedPayrollReportDTO) -> Response:
     )
 
 
+def count_validated_periods(periods_read: list[ImportedPeriodRead]) -> tuple[int, int]:
+    """Split a periods_read list into (validated_count, unvalidated_count).
+
+    Shared by both POST /payroll/import/spreadsheet and POST
+    /payroll/import/json so ImportPayrollResponse's validated_period_count /
+    unvalidated_period_count fields are computed identically by both --
+    see ImportPayrollResponse's own docstring for what these two counts mean.
+    """
+    validated_period_count = sum(1 for period in periods_read if period.validated)
+    return validated_period_count, len(periods_read) - validated_period_count
+
+
 @router.post("/import/spreadsheet", response_model=ImportPayrollResponse)
 async def import_payroll(
     file: UploadFile = File(...),
@@ -751,107 +827,166 @@ async def import_payroll(
 
     await scope.resolve(mode)
 
+    validated_period_count, unvalidated_period_count = count_validated_periods(
+        periods_read
+    )
     return ImportPayrollResponse(
         mode=mode,
         validated=validated,
         saved=True if mode == "commit" else None,
         period_count=result.imported_periods,
         item_count=result.imported_items,
+        validated_period_count=validated_period_count,
+        unvalidated_period_count=unvalidated_period_count,
         periods=periods_read,
     )
 
 
+def _reject_duplicate_period_keys(periods: list[ImportPayrollPeriodRequest]) -> None:
+    """Reject a `periods` list where two blocks share the same period key.
+
+    Each block owns its own header fields (payment_date, contract kind,
+    declared_net_pay_clp) independently of any other -- silently merging two
+    entries with the same (employer, period_year, period_month) would mean
+    picking one entry's header over the other's with no signal to the
+    caller. /payroll/import/spreadsheet's row-level grouping never has this
+    problem: a CSV/XLSX row has no separate "period header" to conflict.
+    Raise PayrollValidationError (not a bare pydantic validator) to match
+    this endpoint's existing 400-for-business-rule-violations convention
+    (see e.g. the unresolved-concept_code commit check just below).
+    """
+    seen: set[tuple[str, int, int]] = set()
+    duplicates: set[tuple[str, int, int]] = set()
+    for period in periods:
+        key = (period.employer, period.period_year, period.period_month)
+        if key in seen:
+            duplicates.add(key)
+        seen.add(key)
+    if duplicates:
+        raise PayrollValidationError(
+            "periods must not repeat the same (employer, period_year, "
+            f"period_month) combination: {sorted(duplicates)}"
+        )
+
+
 @router.post("/import/json", response_model=ImportPayrollResponse)
 async def import_payroll_rows(
-    payload: ImportPayrollRowsRequest,
+    payload: ImportPayrollJsonRequest,
     scope: TransactionalSessionScope = Depends(get_transactional_session),
     use_case: ImportPayroll = Depends(get_transactional_import_payroll_use_case),
     process_use_case: ProcessImportedPayrollPeriods = Depends(
         get_transactional_process_imported_payroll_periods_use_case
     ),
 ) -> ImportPayrollResponse:
-    """Confirm already-structured payroll rows (e.g. from a PDF preview).
+    """Confirm one or more already-structured payroll periods (e.g. from a PDF preview).
 
     Reuses the exact same pipeline as POST /payroll/import/spreadsheet
     (ImportPayroll.from_rows() + ProcessImportedPayrollPeriods) against a
     TransactionalSessionScope: mode="commit" makes every write durable,
     mode="validate" runs the same computations then discards all of them.
+    `mode` applies once to the whole `periods` batch; there is no per-period
+    mode. `periods` must have at least one element, and no two elements may
+    share the same (employer, period_year, period_month) -- see
+    _reject_duplicate_period_keys().
 
     Rows with an unresolved concept_code are split out before either use
     case runs: mode="commit" rejects the whole request outright (400) if any
     remain, while mode="validate" simply excludes them from the computed
-    pipeline and reports them back via `unresolved_rows` -- letting a caller
-    iterate (fix a few rows, validate again) without a hard failure each
-    time. mode="commit" also rejects (400, nothing persisted) if the
-    pipeline finds a genuine declared-vs-computed conflict once it runs --
-    see is_import_fully_validated() and ImportPayrollResponse's docstring for why
+    pipeline and reports them back via `unresolved_rows` (each entry
+    identified by `period_index` + `row_index`) -- letting a caller iterate
+    (fix a few rows, validate again) without a hard failure each time.
+    mode="commit" also rejects (400, nothing persisted) if the pipeline
+    finds a genuine declared-vs-computed conflict once it runs -- see
+    is_import_fully_validated() and ImportPayrollResponse's docstring for why
     a 200 in commit mode always means `validated=True, saved=True` together.
-    See ImportPayrollRowsRequest's docstring for the full contract.
+    See ImportPayrollJsonRequest's docstring for the full contract.
 
-    One try/except around both steps (unlike /payroll/import/spreadsheet's two separate
+    One try/except around every step (unlike /payroll/import/spreadsheet's two separate
     blocks) on purpose: any failure here must resolve the scope to
     "validate" before re-raising, regardless of the requested mode -- a
     half-applied import must never be left committed.
     """
     unresolved = [
         UnresolvedRowWarning(
-            row_index=index,
+            period_index=period_index,
+            row_index=row_index,
             amount_clp=str(row.amount_clp),
         )
-        for index, row in enumerate(payload.rows)
+        for period_index, period in enumerate(payload.periods)
+        for row_index, row in enumerate(period.rows)
         if row.concept_code is None
     ]
 
     try:
+        if not payload.periods:
+            raise PayrollValidationError("The periods list must not be empty.")
+        _reject_duplicate_period_keys(payload.periods)
+
         if unresolved and payload.mode == "commit":
             raise PayrollValidationError(
-                "Cannot commit: row(s) at index "
-                f"{[item.row_index for item in unresolved]} have no resolved "
-                'concept_code. Resend with mode="validate" to preview the '
-                "rest, or resolve them first."
+                "Cannot commit: row(s) at (period_index, row_index) "
+                f"{[(item.period_index, item.row_index) for item in unresolved]} "
+                'have no resolved concept_code. Resend with mode="validate" to '
+                "preview the rest, or resolve them first."
             )
 
         rows = [
             ImportPayrollRowDTO(
-                employer=payload.employer,
-                period_year=payload.period_year,
-                period_month=payload.period_month,
-                payment_date=payload.payment_date,
-                status=resolve_declared_status(payload.declared_net_pay_clp),
-                employment_contract_kind=payload.employment_contract_kind,
+                employer=period.employer,
+                period_year=period.period_year,
+                period_month=period.period_month,
+                payment_date=period.payment_date,
+                status=resolve_declared_status(period.declared_net_pay_clp),
+                employment_contract_kind=period.employment_contract_kind,
                 concept_code=row.concept_code,
                 amount_clp=row.amount_clp,
-                worked_days=payload.worked_days,
-                declared_net_pay_clp=payload.declared_net_pay_clp,
+                worked_days=period.worked_days,
+                declared_net_pay_clp=period.declared_net_pay_clp,
             )
-            for row in payload.rows
+            for period in payload.periods
+            for row in period.rows
             if row.concept_code is not None
         ]
 
-        if payload.rows and not rows:
-            # Every submitted row lacks a concept_code (commit already
-            # raised above, so we can only get here in mode="validate"):
-            # nothing to persist yet, but this is not an error.
+        if any(period.rows for period in payload.periods) and not rows:
+            # Every submitted row across every period lacks a concept_code
+            # (commit already raised above, so we can only get here in
+            # mode="validate"): nothing to persist yet, but this is not an
+            # error.
             result = ImportPayrollResultDTO(
                 imported_periods=0, imported_items=0, periods=[]
             )
         else:
-            # Either every row is resolved, or payload.rows was empty to
-            # begin with -- in which case from_rows([])'s own "must not be
-            # empty" guard raises, unchanged from before this feature.
+            # Either every row is resolved, or every period's rows were
+            # empty to begin with -- in which case from_rows([])'s own
+            # "must not be empty" guard raises, unchanged from before this
+            # feature.
             result = await use_case.from_rows(rows)
             result = await process_use_case.execute(result)
 
+        unresolved_period_indices = {item.period_index for item in unresolved}
+        period_index_by_key = {
+            (period.employer, period.period_year, period.period_month): index
+            for index, period in enumerate(payload.periods)
+        }
         periods_read = [
-            to_imported_period_read(period, mode=payload.mode)
+            to_imported_period_read(
+                period,
+                mode=payload.mode,
+                has_unresolved=period_index_by_key.get(
+                    (period.employer, period.period_year, period.period_month)
+                )
+                in unresolved_period_indices,
+            )
             for period in result.periods
         ]
         validated = not unresolved and is_import_fully_validated(result.periods)
         if payload.mode == "commit" and not validated:
             message = (
                 "Cannot commit: computed contributions/net pay do not match "
-                'the declared amounts. Resend with mode="validate" to '
-                "inspect the warnings, or fix the underlying data first."
+                "the declared amounts for one or more periods. Resend with "
+                'mode="validate" to inspect the warnings, or fix the '
+                "underlying data first."
             )
             raise PayrollValidationError(
                 message,
@@ -863,12 +998,17 @@ async def import_payroll_rows(
 
     await scope.resolve(payload.mode)
 
+    validated_period_count, unvalidated_period_count = count_validated_periods(
+        periods_read
+    )
     return ImportPayrollResponse(
         mode=payload.mode,
         validated=validated,
         saved=True if payload.mode == "commit" else None,
         period_count=result.imported_periods,
         item_count=result.imported_items,
+        validated_period_count=validated_period_count,
+        unvalidated_period_count=unvalidated_period_count,
         periods=periods_read,
         unresolved_rows=unresolved,
     )

@@ -1,4 +1,10 @@
-"""Tests for POST /payroll/import/json (stage 3: commit + validate modes)."""
+"""Tests for POST /payroll/import/json (stage 3: commit + validate modes).
+
+Stage 4 added multi-period support: the request body moved from one set of
+header fields + `rows` at the top level to `periods: [...]`, one block per
+payslip/period, each carrying its own header fields + `rows`. `_payload()`
+below builds that shape; `_period()` builds one block of it.
+"""
 
 from datetime import date
 from decimal import Decimal
@@ -32,16 +38,34 @@ SAMPLE_ROW = {
 }
 
 
+def _period(
+    rows: list[dict[str, object]], **header_overrides: object
+) -> dict[str, object]:
+    """Build a single `periods[]` block: shared header once + the given rows.
+
+    Mirrors the real request shape: employer/period/payment/contract-kind
+    live once per block (same as PdfImportPreviewResponse's own header),
+    never repeated per row.
+    """
+    return {**SAMPLE_HEADER, **header_overrides, "rows": rows}
+
+
 def _payload(
     rows: list[dict[str, object]], mode: str | None = None
 ) -> dict[str, object]:
-    """Build a full request body: shared header once + the given rows.
+    """Build a full request body with a single period block.
 
-    Mirrors the real request shape: employer/period/payment/contract-kind
-    live once at the top level (same as PdfImportPreviewResponse's own
-    header), never repeated per row.
+    Kept as the single-period convenience wrapper most tests use --
+    multi-period tests build `periods` by hand instead.
     """
-    payload: dict[str, object] = {**SAMPLE_HEADER, "rows": rows}
+    return _payload_periods([_period(rows)], mode=mode)
+
+
+def _payload_periods(
+    periods: list[dict[str, object]], mode: str | None = None
+) -> dict[str, object]:
+    """Build a full request body from an explicit `periods` list."""
+    payload: dict[str, object] = {"periods": periods}
     if mode is not None:
         payload["mode"] = mode
     return payload
@@ -68,29 +92,41 @@ class FakeImportPayrollFromRows:
         self.called_with: list[object] | None = None
 
     async def from_rows(self, rows: list[object]) -> ImportPayrollResultDTO:
-        """Return a canned successful import result."""
+        """Return a canned successful import result -- one period per distinct key."""
         self.called_with = rows
         assert rows[0].employer == "ACME"
         assert rows[0].concept_code == "SALARY_BASE"
+        keys: list[tuple[str, int, int]] = []
+        for row in rows:
+            key = (row.employer, row.period_year, row.period_month)
+            if key not in keys:
+                keys.append(key)
+        periods = [
+            ImportedPayrollPeriodDTO(
+                id=index + 1,
+                employer=employer,
+                period_year=period_year,
+                period_month=period_month,
+                payment_date=date(period_year, period_month, 28),
+                status="actual",
+                employment_contract_kind=EmploymentContractKind.INDEFINITE,
+                item_count=sum(
+                    1
+                    for row in rows
+                    if (row.employer, row.period_year, row.period_month)
+                    == (employer, period_year, period_month)
+                ),
+                declared_net_pay_clp=Decimal("950000"),
+                expected_net_pay_clp=None,
+                net_pay_difference_clp=None,
+                net_pay_warning=None,
+            )
+            for index, (employer, period_year, period_month) in enumerate(keys)
+        ]
         return ImportPayrollResultDTO(
-            imported_periods=1,
+            imported_periods=len(periods),
             imported_items=len(rows),
-            periods=[
-                ImportedPayrollPeriodDTO(
-                    id=1,
-                    employer="ACME",
-                    period_year=2026,
-                    period_month=1,
-                    payment_date=date(2026, 1, 31),
-                    status="actual",
-                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
-                    item_count=len(rows),
-                    declared_net_pay_clp=Decimal("950000"),
-                    expected_net_pay_clp=None,
-                    net_pay_difference_clp=None,
-                    net_pay_warning=None,
-                )
-            ],
+            periods=periods,
         )
 
 
@@ -210,7 +246,7 @@ def test_import_payroll_rows_endpoint_commit_rejects_unresolved_concept_code() -
         app.dependency_overrides.clear()
 
     assert response.status_code == 400
-    assert "index [0]" in response.json()["detail"]
+    assert "(0, 0)" in response.json()["detail"]
     assert fake_import.called_with is None
     assert scope.resolved_with == ["validate"]
 
@@ -221,7 +257,7 @@ def test_import_payroll_rows_endpoint_validate_reports_unresolved_rows() -> None
     Resolved rows still run through the exact same pipeline (so their
     computed contributions/warnings are genuine), while unresolved rows are
     excluded from that pipeline and reported back via `unresolved_rows`
-    instead, identified by their index in the submitted list.
+    instead, identified by their (period_index, row_index) position.
     """
     scope = FakeTransactionalSessionScope()
     fake_import = _override_happy_path(scope)
@@ -241,9 +277,123 @@ def test_import_payroll_rows_endpoint_validate_reports_unresolved_rows() -> None
     assert body["validated"] is False
     assert body["saved"] is None
     assert body["period_count"] == 1
-    assert body["unresolved_rows"] == [{"row_index": 1, "amount_clp": "5000"}]
+    assert body["unresolved_rows"] == [
+        {"period_index": 0, "row_index": 1, "amount_clp": "5000"}
+    ]
     assert fake_import.called_with is not None
     assert len(fake_import.called_with) == 1
+    assert scope.resolved_with == ["validate"]
+
+
+def test_import_payroll_rows_endpoint_accepts_multiple_periods() -> None:
+    """A single request can carry more than one period block.
+
+    This is the whole point of the multi-period upgrade: previously each
+    period required its own POST request; now the entire response array
+    from a batched POST /payroll/pdf-preview can be submitted together.
+    """
+    scope = FakeTransactionalSessionScope()
+    fake_import = _override_happy_path(scope)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
+    periods = [
+        _period([SAMPLE_ROW]),
+        _period([SAMPLE_ROW], period_month=2, payment_date="2026-02-28"),
+    ]
+
+    try:
+        response = client.post(
+            "/payroll/import/json", json=_payload_periods(periods, mode="commit")
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["period_count"] == 2
+    assert body["item_count"] == 2
+    assert len(body["periods"]) == 2
+    assert body["validated_period_count"] == 2
+    assert body["unvalidated_period_count"] == 0
+    assert all(period["validated"] for period in body["periods"])
+    assert fake_import.called_with is not None
+    assert len(fake_import.called_with) == 2
+    assert scope.resolved_with == ["commit"]
+
+
+def test_import_payroll_rows_endpoint_reports_unresolved_rows_across_periods() -> None:
+    """unresolved_rows' period_index correctly points at the offending block.
+
+    Also asserts the per-period `validated` field + the top-level
+    validated_period_count/unvalidated_period_count summary pinpoint the
+    exact same offending period, not just "something in this batch failed".
+    """
+    scope = FakeTransactionalSessionScope()
+    _override_happy_path(scope)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
+    unresolved_row = {"concept_code": None, "amount_clp": "5000"}
+    periods = [
+        _period([SAMPLE_ROW]),
+        _period([SAMPLE_ROW, unresolved_row], period_month=2),
+    ]
+
+    try:
+        response = client.post(
+            "/payroll/import/json", json=_payload_periods(periods, mode="validate")
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["unresolved_rows"] == [
+        {"period_index": 1, "row_index": 1, "amount_clp": "5000"}
+    ]
+    assert body["validated_period_count"] == 1
+    assert body["unvalidated_period_count"] == 1
+    assert body["periods"][0]["validated"] is True
+    assert body["periods"][1]["validated"] is False
+
+
+def test_import_payroll_rows_endpoint_rejects_empty_periods_list() -> None:
+    """`periods` must have at least one element."""
+    scope = FakeTransactionalSessionScope()
+    _override_happy_path(scope)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
+
+    try:
+        response = client.post(
+            "/payroll/import/json", json=_payload_periods([], mode="validate")
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert "must not be empty" in response.json()["detail"]
+    assert scope.resolved_with == ["validate"]
+
+
+def test_import_payroll_rows_endpoint_rejects_duplicate_period_keys() -> None:
+    """Two blocks sharing (employer, period_year, period_month) is a 400.
+
+    Each block owns its own header (payment_date, contract kind, declared
+    net pay) -- silently merging two "same period" blocks would mean
+    picking one's header over the other's with no signal to the caller.
+    """
+    scope = FakeTransactionalSessionScope()
+    fake_import = _override_happy_path(scope)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
+    periods = [_period([SAMPLE_ROW]), _period([SAMPLE_ROW])]
+
+    try:
+        response = client.post(
+            "/payroll/import/json", json=_payload_periods(periods, mode="validate")
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert "ACME" in response.json()["detail"]
+    assert fake_import.called_with is None
     assert scope.resolved_with == ["validate"]
 
 
@@ -347,8 +497,12 @@ def test_import_payroll_rows_endpoint_validate_all_unresolved_skips_pipeline() -
         "saved": None,
         "period_count": 0,
         "item_count": 0,
+        "validated_period_count": 0,
+        "unvalidated_period_count": 0,
         "periods": [],
-        "unresolved_rows": [{"row_index": 0, "amount_clp": "1000000"}],
+        "unresolved_rows": [
+            {"period_index": 0, "row_index": 0, "amount_clp": "1000000"}
+        ],
     }
     assert fake_import.called_with is None
     assert scope.resolved_with == ["validate"]
@@ -360,7 +514,7 @@ def test_import_payroll_rows_endpoint_derives_projected_status_without_net_pay()
     """Status is inferred as "projected" when declared_net_pay_clp is absent.
 
     status is never accepted as caller input on this endpoint at all (see
-    ImportPayrollRowsRequest's docstring) -- it's inferred the exact same
+    ImportPayrollPeriodRequest's docstring) -- it's inferred the exact same
     way xlsx_importer.py already does for CSV/XLSX imports: "actual" once a
     declared net pay is known, "projected" otherwise. The other tests in
     this module all send declared_net_pay_clp, which only exercises the
@@ -374,7 +528,7 @@ def test_import_payroll_rows_endpoint_derives_projected_status_without_net_pay()
         for key, value in SAMPLE_HEADER.items()
         if key != "declared_net_pay_clp"
     }
-    payload = {**header_without_net_pay, "rows": [SAMPLE_ROW]}
+    payload = _payload_periods([{**header_without_net_pay, "rows": [SAMPLE_ROW]}])
 
     try:
         response = client.post("/payroll/import/json", json=payload)
@@ -413,7 +567,11 @@ def test_import_payroll_rows_endpoint_rolls_back_on_validation_error() -> None:
 
     Even though mode="commit" was requested, a half-applied import must
     never be left committed -- the route always forces a rollback before
-    re-raising any PayrollError.
+    re-raising any PayrollError. Submits one period whose `rows` list is
+    itself empty (still a non-empty `periods` list, so the new empty-periods
+    guard never fires) -- the flattened `rows` passed to from_rows() ends up
+    empty either way, exercising its own "must not be empty" guard exactly
+    like before this feature.
     """
 
     class ErrorImportPayroll:

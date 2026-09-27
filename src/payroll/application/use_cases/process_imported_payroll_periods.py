@@ -34,16 +34,19 @@ from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.compute_unemployment_insurance import (
     ComputeUnemploymentInsurance,
 )
-from payroll.shared.constants import COMPLEMENTARY_INSURANCE_VALIDATION_PENDING_PREFIX
-
-_REQUIRED_IMPORTED_CONTRIBUTION_CODES = frozenset(
-    {
-        "PENSION_BASE",
-        "PENSION_ADDITIONAL",
-        "HEALTH_BASE",
-        "HEALTH_ADDITIONAL_UF",
-    }
+from payroll.shared.constants import (
+    COMPLEMENTARY_INSURANCE_VALIDATION_PENDING_PREFIX,
+    MANDATORY_DECLARED_CONTRIBUTION_CONCEPT_CODES,
 )
+
+# Gates whether it is safe to auto-compute UNEMPLOYMENT_INSURANCE/INCOME_TAX
+# below. Deliberately reuses MANDATORY_DECLARED_CONTRIBUTION_CONCEPT_CODES
+# (PENSION_BASE/PENSION_ADDITIONAL/HEALTH_BASE only) instead of also
+# requiring HEALTH_ADDITIONAL_UF -- that concept is genuinely optional (see
+# its docstring in shared/constants.py), so a period without an additional
+# Isapre plan must not be blocked from getting UNEMPLOYMENT_INSURANCE/
+# INCOME_TAX auto-computed just because it has no such line item.
+_REQUIRED_IMPORTED_CONTRIBUTION_CODES = MANDATORY_DECLARED_CONTRIBUTION_CONCEPT_CODES
 
 
 class ProcessImportedPayrollPeriods:

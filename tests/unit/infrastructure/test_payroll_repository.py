@@ -434,16 +434,15 @@ _FIVE_CONCEPT_CODES = FakeResult(
     ]
 )
 
-_SIX_CONCEPT_ROWS = [
+_REVIEW_REQUIRED_CONCEPT_ROWS = [
     "PENSION_BASE",
     "PENSION_ADDITIONAL",
     "HEALTH_BASE",
-    "HEALTH_ADDITIONAL_UF",
     "UNEMPLOYMENT_INSURANCE",
     "INCOME_TAX",
 ]
 
-_SIX_CONCEPTS_RESULT = FakeResult(scalar_rows=_SIX_CONCEPT_ROWS)
+_REVIEW_REQUIRED_CONCEPTS_RESULT = FakeResult(scalar_rows=_REVIEW_REQUIRED_CONCEPT_ROWS)
 
 # AFP_MODEL pension/health plan pair — shared by assigns_plan_ids and embedded plan
 _AFP_MODEL_PENSION_PLAN, _AFP_MODEL_PENSION_INSTITUTION = build_pension_pair(
@@ -632,7 +631,7 @@ async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
     )
     assert session.flush_count == 1
     # 2 commits from _refresh_summary_view() + 1 from _reconcile_period_net_pay()
-    # bailing out early once it sees this period is missing most of the 6
+    # bailing out early once it sees this period is missing most of the 5
     # REVIEW_REQUIRED_CONCEPT_CODES (only SALARY_BASE/PENSION_BASE were
     # imported here) -- see payroll_repository_shared.py.
     assert session.commit_count == 3
@@ -640,25 +639,38 @@ async def test_sqlalchemy_payroll_repository_imports_rows() -> None:
     assert sum(isinstance(item, PayrollItemModel) for item in session.added) == 2
 
 
-@pytest.mark.asyncio
-async def test_sqlalchemy_payroll_repository_imports_rows_reconciles_net_pay() -> None:
-    """Test import_rows computes expected_net_pay_clp once all 6 concepts land.
-
-    Regression for a bug where import_rows() never called
-    _reconcile_period_net_pay() at all -- expected_net_pay_clp stayed null
-    forever, no matter which concepts were imported, because the reconcile
-    step (already used by the per-item command endpoints) was simply never
-    wired into the bulk import path. See payroll_repository_shared.py's
-    _reconcile_period_net_pay() and REVIEW_REQUIRED_CONCEPT_CODES.
-    """
-    required_codes = [
-        "PENSION_BASE",
-        "PENSION_ADDITIONAL",
-        "HEALTH_BASE",
-        "HEALTH_ADDITIONAL_UF",
-        "UNEMPLOYMENT_INSURANCE",
-        "INCOME_TAX",
+def _build_net_pay_reconciliation_rows(codes: list[str]) -> list[SimpleNamespace]:
+    """Build one declared row per concept code, all sharing one ACME period."""
+    return [
+        SimpleNamespace(
+            employer="ACME",
+            period_year=2026,
+            period_month=1,
+            payment_date=date(2026, 1, 31),
+            status="actual",
+            employment_contract_kind=EmploymentContractKind.INDEFINITE,
+            concept_code=code,
+            amount_clp=Decimal("100000"),
+            declared_net_pay_clp=Decimal("900000"),
+            expected_net_pay_clp=None,
+            net_pay_difference_clp=None,
+        )
+        for code in codes
     ]
+
+
+async def _assert_import_rows_reconciles_net_pay(
+    *, declared_codes: list[str], review_required_codes: list[str]
+) -> None:
+    """Run import_rows() for declared_codes; assert net pay reconciles at 900000 CLP.
+
+    Shared by both the "with HEALTH_ADDITIONAL_UF" and "without it" net-pay
+    reconciliation tests below -- declared_codes is what the payslip itself
+    declares, review_required_codes is what the real DB query's own
+    .where(code.in_(REVIEW_REQUIRED_CONCEPT_CODES)) filter would actually
+    return (a subset of declared_codes in the "with" case, identical to it
+    in the "without" case).
+    """
     employer = EmployerModel(id=10, name="ACME", started_at=date(2026, 1, 31))
     pension_plan, pension_institution = build_pension_pair()
     health_plan, health_institution = build_health_pair()
@@ -668,7 +680,7 @@ async def test_sqlalchemy_payroll_repository_imports_rows_reconciles_net_pay() -
             FakeResult(
                 scalar_rows=[
                     SimpleNamespace(id=index, code=code)
-                    for index, code in enumerate(required_codes, start=1)
+                    for index, code in enumerate(declared_codes, start=1)
                 ]
             ),
             *build_plan_deduction_and_validation_results(
@@ -683,7 +695,7 @@ async def test_sqlalchemy_payroll_repository_imports_rows_reconciles_net_pay() -
             # _refresh_summary_view()'s raw SQL execute
             FakeResult(),
             # _reconcile_period_net_pay(): available concept codes on the period
-            FakeResult(scalar_rows=list(required_codes)),
+            FakeResult(scalar_rows=list(review_required_codes)),
             # _reconcile_period_net_pay(): PAY_MV_SUMARY.net_pay_clp
             FakeResult(scalar_one=Decimal("900000")),
         ]
@@ -691,29 +703,73 @@ async def test_sqlalchemy_payroll_repository_imports_rows_reconciles_net_pay() -
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
     result = await repository.import_rows(
-        [
-            SimpleNamespace(
-                employer="ACME",
-                period_year=2026,
-                period_month=1,
-                payment_date=date(2026, 1, 31),
-                status="actual",
-                employment_contract_kind=EmploymentContractKind.INDEFINITE,
-                concept_code=code,
-                amount_clp=Decimal("100000"),
-                declared_net_pay_clp=Decimal("900000"),
-                expected_net_pay_clp=None,
-                net_pay_difference_clp=None,
-            )
-            for code in required_codes
-        ]
+        _build_net_pay_reconciliation_rows(declared_codes)
     )
 
     assert result.imported_periods == 1
-    assert result.imported_items == len(required_codes)
+    assert result.imported_items == len(declared_codes)
     assert result.periods[0].expected_net_pay_clp == Decimal("900000")
     assert result.periods[0].net_pay_difference_clp == Decimal("0")
     assert result.periods[0].net_pay_warning is None
+
+
+@pytest.mark.asyncio
+async def test_sqlalchemy_payroll_repository_imports_rows_reconciles_net_pay() -> None:
+    """Test import_rows computes expected_net_pay_clp once all required concepts land.
+
+    Regression for a bug where import_rows() never called
+    _reconcile_period_net_pay() at all -- expected_net_pay_clp stayed null
+    forever, no matter which concepts were imported, because the reconcile
+    step (already used by the per-item command endpoints) was simply never
+    wired into the bulk import path. See payroll_repository_shared.py's
+    _reconcile_period_net_pay() and REVIEW_REQUIRED_CONCEPT_CODES.
+
+    Imports all 6 concept codes (including the optional HEALTH_ADDITIONAL_UF)
+    to also prove its presence doesn't break the gate -- REVIEW_REQUIRED_
+    CONCEPT_CODES itself only requires the other 5 (see shared/constants.py),
+    so the fake DB's available-codes-on-this-period query result deliberately
+    excludes HEALTH_ADDITIONAL_UF below, mirroring the real query's own
+    code.in_(REVIEW_REQUIRED_CONCEPT_CODES) filter.
+    """
+    required_codes = [
+        "PENSION_BASE",
+        "PENSION_ADDITIONAL",
+        "HEALTH_BASE",
+        "HEALTH_ADDITIONAL_UF",
+        "UNEMPLOYMENT_INSURANCE",
+        "INCOME_TAX",
+    ]
+    review_required_codes = [
+        code for code in required_codes if code != "HEALTH_ADDITIONAL_UF"
+    ]
+    await _assert_import_rows_reconciles_net_pay(
+        declared_codes=required_codes, review_required_codes=review_required_codes
+    )
+
+
+@pytest.mark.asyncio
+async def test_import_rows_reconciles_net_pay_without_health_additional() -> None:
+    """A period genuinely missing HEALTH_ADDITIONAL_UF still reconciles net pay.
+
+    Regression for the opposite bug: HEALTH_ADDITIONAL_UF used to be a hard
+    requirement in REVIEW_REQUIRED_CONCEPT_CODES, so a real payslip with no
+    additional Isapre plan cost (a legitimate, common case -- confirmed
+    against 22 real payslips where 3 months genuinely had no such line item)
+    stayed "pending" forever even though PENSION_BASE/PENSION_ADDITIONAL/
+    HEALTH_BASE/UNEMPLOYMENT_INSURANCE/INCOME_TAX were all already declared
+    and sufficient to reconcile. See shared/constants.py's
+    MANDATORY_DECLARED_CONTRIBUTION_CONCEPT_CODES docstring.
+    """
+    required_codes = [
+        "PENSION_BASE",
+        "PENSION_ADDITIONAL",
+        "HEALTH_BASE",
+        "UNEMPLOYMENT_INSURANCE",
+        "INCOME_TAX",
+    ]
+    await _assert_import_rows_reconciles_net_pay(
+        declared_codes=required_codes, review_required_codes=required_codes
+    )
 
 
 @pytest.mark.asyncio
@@ -2323,7 +2379,7 @@ async def test_sqlalchemy_payroll_repository_reconciles_net_pay_after_tax(
             FakeResult(scalar_one=SimpleNamespace(id=9, code="INCOME_TAX")),
             FakeResult(),
             FakeResult(),
-            _SIX_CONCEPTS_RESULT,
+            _REVIEW_REQUIRED_CONCEPTS_RESULT,
             FakeResult(scalar_one=summary_net_pay),
         ]
     )

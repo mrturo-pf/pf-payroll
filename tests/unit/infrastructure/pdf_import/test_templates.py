@@ -197,8 +197,9 @@ class TestAfpCommissionRegression:
     HEALTH_ADDITIONAL_UF instead of PENSION_ADDITIONAL, which silently
     starved every payroll_period's PENSION_ADDITIONAL concept, permanently
     blocking net_pay reconciliation (see REVIEW_REQUIRED_CONCEPT_CODES in
-    payroll.shared.constants -- it requires all 6 concepts, PENSION_ADDITIONAL
-    included, to be present before expected_net_pay_clp is ever computed).
+    payroll.shared.constants -- it requires all 5 required concepts,
+    PENSION_ADDITIONAL included, to be present before expected_net_pay_clp is
+    ever computed).
     """
 
     def test_afp_commission_maps_to_pension_additional(self) -> None:

@@ -8,6 +8,7 @@ from payroll.application.dto import (
     PayrollPeriodDetailDTO,
 )
 from payroll.application.errors import PayrollValidationError
+from payroll.shared.constants import COMPLEMENTARY_INSURANCE_VALIDATION_PENDING_PREFIX
 
 
 class ComplementaryInsuranceValidationError(PayrollValidationError):
@@ -56,10 +57,19 @@ class ComplementaryInsuranceValidationService:
         employer_declared = self._extract_declared_employer_contribution(detail)
         employee_declared = self._extract_employee_health_insurance(detail)
 
-        # If employee health insurance is absent, skip validation.
+        # If employee health insurance is absent, skip validation. This is
+        # deliberately prefixed the same way as the EconomicIndexNotFoundError
+        # case below (COMPLEMENTARY_INSURANCE_VALIDATION_PENDING_PREFIX): a
+        # concept genuinely never declared for this period (CSV cell blank,
+        # or the PDF simply has no such line -- the two import sources differ
+        # only in *why* the row is absent, not in what it means) is "nothing
+        # to compare", not a conflict -- see
+        # period_has_reconciliation_conflict(), which relies on this exact
+        # prefix to avoid blocking a commit for it.
         if employee_declared is None:
             warnings.append(
-                "No declared health_insurance amount found in CSV. "
+                f"{COMPLEMENTARY_INSURANCE_VALIDATION_PENDING_PREFIX}"
+                "No declared health_insurance amount found for this period. "
                 "Complementary insurance validation skipped."
             )
             return True, warnings
@@ -131,7 +141,7 @@ class ComplementaryInsuranceValidationService:
 
         warnings.append(
             f"[{year}-{month:02d}] Complementary insurance cost discrepancy "
-            f"detected. CSV declares health_insurance "
+            f"detected. Imported payroll data declares health_insurance "
             f"{declared_health_insurance} CLP, but calculation "
             f"based on assigned plans yields {audit.calculated_total_cost_clp} CLP "
             f"(difference: {audit.difference_clp} CLP, "
@@ -234,7 +244,7 @@ class ComplementaryInsuranceValidationService:
         or health insurance employer contribution patterns.
 
         Returns the declared amount (including 0), or None if the concept
-        code is not found in the CSV at all.
+        code was never imported for this period at all.
         """
         # Search for declared health insurance employer contribution items
         items = [
@@ -258,10 +268,11 @@ class ComplementaryInsuranceValidationService:
         Searches for items with concept_code == "HEALTH_INSURANCE" (employee deduction).
 
         Returns the declared amount (including 0), or None if the concept
-        code is not found in the CSV at all. This follows the same logic as
-        _extract_declared_employer_contribution to maintain consistency:
-        - Decimal('0') means the concept was in the CSV with value 0
-        - None means the concept was never declared in the CSV
+        code was never imported for this period at all. This follows the
+        same logic as _extract_declared_employer_contribution to maintain
+        consistency:
+        - Decimal('0') means the concept was imported with value 0
+        - None means the concept was never declared for this period
         """
         # Search for declared health insurance (employee deduction) items
         items = [

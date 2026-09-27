@@ -17,6 +17,7 @@ from payroll.application.services.complementary_insurance_validation import (
     ComplementaryInsuranceValidationService,
 )
 from payroll.infrastructure.db.models.reference_data import PayrollConceptKind
+from payroll.shared.constants import COMPLEMENTARY_INSURANCE_VALIDATION_PENDING_PREFIX
 
 
 @pytest.fixture
@@ -159,7 +160,14 @@ async def test_validate_no_declared_amount(
     service: ComplementaryInsuranceValidationService,
     payroll_period_detail_dto: PayrollPeriodDetailDTO,
 ) -> None:
-    """Test validation when no declared contribution is found."""
+    """Test validation when no declared contribution is found.
+
+    The warning must carry COMPLEMENTARY_INSURANCE_VALIDATION_PENDING_PREFIX --
+    period_has_reconciliation_conflict() relies on that exact prefix to treat
+    "nothing declared, nothing to compare" as pending rather than a genuine
+    conflict (see import_reconciliation.py). Losing the prefix here would
+    silently make every period missing this concept fail validation again.
+    """
     computed_costs = _create_computed_costs(Decimal("0"))
     detail = replace(payroll_period_detail_dto, items=[])
 
@@ -167,6 +175,7 @@ async def test_validate_no_declared_amount(
 
     assert is_valid is True
     assert len(warnings) > 0
+    assert warnings[0].startswith(COMPLEMENTARY_INSURANCE_VALIDATION_PENDING_PREFIX)
     assert "no declared" in warnings[0].lower()
 
 

@@ -319,8 +319,10 @@ class ImportPayrollRowRequest(BaseModel):
     declared_net_pay_clp all live once at ImportPayrollRowsRequest's top
     level instead of being repeated per row -- every row submitted through
     this endpoint comes from the same single payslip (see
-    PdfImportPreviewResponse, which has the identical shape: one set of
-    header fields, N rows each carrying only their own concept-level data).
+    PdfImportPreviewResponse -- one element of the array POST
+    /payroll/pdf-preview returns -- which has the identical shape: one set
+    of header fields, N rows each carrying only their own concept-level
+    data).
     concept_code is optional here (unlike ImportPayrollRowDTO, where it is
     required) so that a row a human hasn't finished resolving yet can still
     be submitted with mode="validate" -- see ImportPayrollRowsRequest below.
@@ -333,8 +335,9 @@ class ImportPayrollRowRequest(BaseModel):
 class ImportPayrollRowsRequest(BaseModel):
     """Represent the request body for POST /payroll/import/json.
 
-    All rows come from one payslip (e.g. one PdfImportPreviewResponse
-    confirmed by a human), so employer/period/payment/contract-kind fields
+    All rows come from one payslip (e.g. one element of the array returned
+    by POST /payroll/pdf-preview, confirmed by a human), so
+    employer/period/payment/contract-kind fields
     are declared once here instead of once per row -- mirroring
     PdfImportPreviewResponse's own header-fields-once, rows-carry-only-
     their-own-data shape. This is deliberately a copy/paste target: take a
@@ -387,10 +390,13 @@ class PdfImportPreviewRowRead(BaseModel):
 
 
 class PdfImportPreviewResponse(BaseModel):
-    """Represent Pdf Import Preview Response.
+    """Represent one payslip's preview in the POST /payroll/pdf-preview response.
 
-    Never persists anything -- see PreviewPdfImport / TemplatePdfPayrollExtractor.
-    This is deliberately shaped so it can be copied verbatim into a POST
+    POST /payroll/pdf-preview returns a list of these -- one per uploaded PDF,
+    in upload order -- since that endpoint now accepts a batch of payslips in
+    a single request. Never persists anything -- see PreviewPdfImport /
+    TemplatePdfPayrollExtractor. Each element is deliberately shaped so it
+    can be copied verbatim into a POST
     /payroll/import/json request body (just add "mode" -- template_id is
     ignored there if it's still present). employment_contract_kind is a
     best-effort guess (see TemplatePdfPayrollExtractor's
@@ -902,27 +908,40 @@ def to_pdf_import_preview_response(
     )
 
 
-@router.post("/pdf-preview", response_model=PdfImportPreviewResponse)
+@router.post("/pdf-preview", response_model=list[PdfImportPreviewResponse])
 async def preview_pdf_import(
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
     use_case: PreviewPdfImport = Depends(get_preview_pdf_import_use_case),
-) -> PdfImportPreviewResponse:
-    """Preview payroll data extracted from a PDF.
+) -> list[PdfImportPreviewResponse]:
+    """Preview payroll data extracted from one or more PDFs.
+
+    Accepts a batch of PDF payslips in a single request (e.g. several
+    distinct liquidaciones for different employees or periods) and returns
+    one preview per file, in the same order they were uploaded. Each file is
+    extracted fully independently -- one payslip's template match or
+    resolved rows never influence another's.
 
     Read-only: never touches PayrollRepository nor
     ProcessImportedPayrollPeriods, and never persists anything. A PDF that
-    matches no known template still returns 200 with unresolved rows instead
-    of failing -- see PreviewPdfImport / TemplatePdfPayrollExtractor.
+    matches no known template still contributes a 200-worthy entry with
+    unresolved rows instead of failing the whole batch -- see
+    PreviewPdfImport / TemplatePdfPayrollExtractor. If any file in the batch
+    has no filename or fails extraction outright, the entire request fails
+    with 400 and nothing is returned, rather than silently dropping that one
+    file from the response.
     """
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="A PDF file name is required.")
-
     try:
-        preview = await use_case.execute(file.filename, await file.read())
+        previews = []
+        for file in files:
+            if not file.filename:
+                raise HTTPException(
+                    status_code=400, detail="A PDF file name is required."
+                )
+            previews.append(await use_case.execute(file.filename, await file.read()))
     except PayrollError as exc:
         raise to_http_exception(exc, default_status=400) from exc
 
-    return to_pdf_import_preview_response(preview)
+    return [to_pdf_import_preview_response(preview) for preview in previews]
 
 
 @router.get("/summary", response_model=list[PayrollSummaryRead])

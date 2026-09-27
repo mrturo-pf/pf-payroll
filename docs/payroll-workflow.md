@@ -25,18 +25,32 @@ python -m payroll.interfaces.cli.main import-payroll tests/fixtures/sample_payro
 
 ### Alternative: import from a PDF payslip
 
-Instead of a CSV/XLSX file, a single payslip PDF can be turned into a payroll period
-through a two-step preview/confirm flow. Extraction is template-based (versioned JSON
-templates in `infrastructure/pdf_import/templates/`), never OCR/LLM -- a PDF matching no
-known template, or containing rows a template doesn't recognize, still returns a usable
-preview with those rows flagged as unresolved (`concept_code: null`) instead of failing.
+Instead of a CSV/XLSX file, one or more payslip PDFs can be turned into payroll
+periods through a two-step preview/confirm flow. Extraction is template-based
+(versioned JSON templates in `infrastructure/pdf_import/templates/`), never OCR/LLM --
+a PDF matching no known template, or containing rows a template doesn't recognize,
+still contributes a usable preview with those rows flagged as unresolved
+(`concept_code: null`) instead of failing the whole request.
 
 **Step A -- preview (read-only, never persists anything):**
+
+A single file works exactly as before, just wrapped in a one-element JSON array:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/payroll/pdf-preview \
   -H "X-API-Key: your-api-key-here" \
-  -F "file=@payslip.pdf"
+  -F "files=@payslip.pdf"
+```
+
+Or send a batch of distinct liquidaciones in one request by repeating the `files`
+field -- the response array preserves upload order, and each PDF is extracted fully
+independently (one payslip's template match or rows never affect another's):
+
+```bash
+curl -X POST http://127.0.0.1:8000/payroll/pdf-preview \
+  -H "X-API-Key: your-api-key-here" \
+  -F "files=@payslip-employee-a.pdf" \
+  -F "files=@payslip-employee-b.pdf"
 ```
 
 Before wiring a new employer's template, iterate on it locally with the CLI helper
@@ -47,10 +61,11 @@ and exactly which rows are still unresolved:
 python -m payroll.interfaces.cli.main template-test payslip.pdf
 ```
 
-**Step B -- confirm the (possibly hand-edited) rows from the preview:**
+**Step B -- confirm the (possibly hand-edited) rows from one preview:**
 
-This is meant to be a copy/paste from Step A's own JSON response: take the full
-`PdfImportPreviewResponse` body, add `"mode"`, and POST it here as-is -- extra fields
+This is meant to be a copy/paste from Step A's own JSON response: take one element of
+the response array (one `PdfImportPreviewResponse` object, i.e. one payslip's preview),
+add `"mode"`, and POST it here as-is -- extra fields
 the preview includes that this endpoint doesn't need (`template_id`, and each row's
 `raw_label`/`kind`/`confidence`) are silently ignored, not rejected. Double-check
 `employment_contract_kind` before sending: the preview infers it best-effort from the

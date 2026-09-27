@@ -183,6 +183,11 @@ class TestMatchField:
         assert match_field(template, "UNKNOWN LABEL") is None
 
 
+def _load_real_shipped_template(template_id: str = "walmart-chile-v1") -> Template:
+    """Load a real shipped template by id, shared by every regression test below."""
+    return next(t for t in load_templates() if t.template_id == template_id)
+
+
 class TestAfpCommissionRegression:
     """Regression tests for the real shipped walmart-chile-v1.json mapping.
 
@@ -196,23 +201,71 @@ class TestAfpCommissionRegression:
     included, to be present before expected_net_pay_clp is ever computed).
     """
 
-    def _load_real_shipped_template(self) -> Template:
-        """Load the real shipped walmart-chile-v1 template."""
-        template = next(
-            t for t in load_templates() if t.template_id == "walmart-chile-v1"
-        )
-        return template
-
     def test_afp_commission_maps_to_pension_additional(self) -> None:
         """The AFP commission label must resolve to PENSION_ADDITIONAL."""
-        template = self._load_real_shipped_template()
+        template = _load_real_shipped_template()
         field = match_field(template, "COMISIÓN AFP P. VITAL")
         assert field is not None
         assert field.concept_code == "PENSION_ADDITIONAL"
 
     def test_isapre_additional_plan_still_maps_to_health_additional_uf(self) -> None:
         """The real Isapre extra-plan line (ESENCIAL ADICIONAL) is untouched."""
-        template = self._load_real_shipped_template()
+        template = _load_real_shipped_template()
         field = match_field(template, "ESENCIAL ADICIONAL")
         assert field is not None
         assert field.concept_code == "HEALTH_ADDITIONAL_UF"
+
+
+class TestPayslipVariantConceptCoverage:
+    """Regression tests covering payslip variants beyond a plain monthly payslip.
+
+    A 2026-09 audit of every liquidación in secrets/liquidacion/ (22 real
+    Walmart-Chile payslips spanning 2024-11 through 2026-08) found 8 raw
+    labels the template didn't recognize yet -- all from months with a
+    holiday bonus, a vacation bonus, an availability bonus, or a prior-month
+    salary/leave adjustment, none of which appear in a bare monthly payslip.
+    Every one of them already had a matching concept_code in pf-db's
+    PAY_CONCEPT seed data (used by the CSV/XLSX importer already), so this
+    was a template gap, not a missing domain concept.
+    """
+
+    @pytest.mark.parametrize(
+        ("raw_label", "concept_code", "kind"),
+        [
+            ("AGUINALDO", "HOLIDAY_BONUS", "income"),
+            ("AGUINALDO FIESTAS PATRIAS", "HOLIDAY_BONUS", "income"),
+            ("ANTICIPO AGUINALDO", "HOLIDAY_BONUS_ADVANCE", "discount"),
+            ("BONO POR DISPONIBILIDAD", "AVAILABILITY_BONUS", "income"),
+            ("REAJUSTE GRATI. MENSUAL", "LEGAL_GRATUITY_ADJUSTMENT", "income"),
+            ("INCENTIVO VACACIONES", "VACATION_INCENTIVE", "income"),
+            ("ANTICIPO BONO VACACIONES", "VACATION_BONUS_ADVANCE", "discount"),
+            (
+                "DSCTO LICEN-AUSEN MES ANT",
+                "PRIOR_MONTH_LEAVE_ABSENCE_DISCOUNT",
+                "discount",
+            ),
+            ("DIF.SUELDO MES ANTERIOR", "PRIOR_SALARY_DIFFERENCE", "income"),
+        ],
+    )
+    def test_variant_label_resolves_to_expected_concept(
+        self, raw_label: str, concept_code: str, kind: str
+    ) -> None:
+        """Each payslip-variant raw label must resolve to its expected concept."""
+        template = _load_real_shipped_template()
+        field = match_field(template, raw_label)
+        assert field is not None
+        assert field.concept_code == concept_code
+        assert field.kind == kind
+
+    def test_holiday_bonus_advance_is_never_confused_with_holiday_bonus(self) -> None:
+        """'ANTICIPO AGUINALDO' must never fall through to the '^AGUINALDO' field.
+
+        Both HOLIDAY_BONUS and HOLIDAY_BONUS_ADVANCE share the substring
+        'AGUINALDO', on opposite sides of the payslip (income vs discount) --
+        this pins the anchored '^AGUINALDO' pattern so a future edit can't
+        accidentally widen it into matching the advance line too.
+        """
+        template = _load_real_shipped_template()
+        field = match_field(template, "ANTICIPO AGUINALDO")
+        assert field is not None
+        assert field.concept_code == "HOLIDAY_BONUS_ADVANCE"

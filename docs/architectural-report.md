@@ -339,9 +339,11 @@ def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:
 
 ### 5.1 Alternative ingestion: payslip PDF
 
-An alternative to Excel/CSV for a single payslip: extraction based on versioned JSON
-templates (`infrastructure/pdf_import/templates/`), never OCR/LLM. Two new HTTP routes
-(`POST /payroll/pdf-preview`, `POST /payroll/import/json`) plus the
+An alternative to Excel/CSV: extraction based on versioned JSON templates
+(`infrastructure/pdf_import/templates/`), never OCR/LLM. `POST /payroll/pdf-preview`
+accepts a batch of one or more payslip PDFs and returns one preview per file, in
+upload order; `POST /payroll/import/json` then confirms one payslip's (possibly
+hand-edited) rows at a time. Both routes share the
 `PreviewPdfImport` use case, which deliberately receives no repository -- that's the
 architectural guarantee that the preview can never write to the database.
 Full design and implementation detail in

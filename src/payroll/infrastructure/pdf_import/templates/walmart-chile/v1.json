@@ -71,6 +71,54 @@
       "concept_code": "HEALTH_INSURANCE",
       "kind": "discount",
       "confidence": 0.9
+    },
+    {
+      "pdf_label_pattern": "(?i)^AGUINALDO",
+      "concept_code": "HOLIDAY_BONUS",
+      "kind": "income",
+      "confidence": 0.85
+    },
+    {
+      "pdf_label_pattern": "(?i)ANTICIPO\\s+AGUINALDO",
+      "concept_code": "HOLIDAY_BONUS_ADVANCE",
+      "kind": "discount",
+      "confidence": 0.9
+    },
+    {
+      "pdf_label_pattern": "(?i)BONO\\s+POR\\s+DISPONIBILIDAD",
+      "concept_code": "AVAILABILITY_BONUS",
+      "kind": "income",
+      "confidence": 0.9
+    },
+    {
+      "pdf_label_pattern": "(?i)REAJUSTE\\s+GRATI\\.?\\s*MENSUAL",
+      "concept_code": "LEGAL_GRATUITY_ADJUSTMENT",
+      "kind": "income",
+      "confidence": 0.85
+    },
+    {
+      "pdf_label_pattern": "(?i)INCENTIVO\\s+VACACIONES",
+      "concept_code": "VACATION_INCENTIVE",
+      "kind": "income",
+      "confidence": 0.9
+    },
+    {
+      "pdf_label_pattern": "(?i)ANTICIPO\\s+BONO\\s+VACACIONES",
+      "concept_code": "VACATION_BONUS_ADVANCE",
+      "kind": "discount",
+      "confidence": 0.9
+    },
+    {
+      "pdf_label_pattern": "(?i)DSCTO\\s+LICEN[\\s-]*AUSEN\\s+MES\\s+ANT",
+      "concept_code": "PRIOR_MONTH_LEAVE_ABSENCE_DISCOUNT",
+      "kind": "discount",
+      "confidence": 0.85
+    },
+    {
+      "pdf_label_pattern": "(?i)DIF\\.?\\s*SUELDO\\s+MES\\s+ANTERIOR",
+      "concept_code": "PRIOR_SALARY_DIFFERENCE",
+      "kind": "income",
+      "confidence": 0.85
     }
   ]
 }

@@ -25,6 +25,7 @@ from payroll.infrastructure.db.models.reference_data import (
     PensionInstitutionModel,
     PensionPlanModel,
 )
+from payroll.shared.dates import last_day_of_month
 
 
 def _to_health_plan_dtos(
@@ -220,15 +221,28 @@ class SqlAlchemyReferenceDataRepository:
             additional_rate=plan.additional_rate,
         )
 
-    async def get_valid_health_plans_for_date(
-        self, reference_date: date
+    async def get_health_plans_overlapping_month(
+        self, period_year: int, period_month: int
     ) -> list[HealthPlanDTO]:
-        """Get valid health plans for a given reference date.
+        """Get every active health plan overlapping any part of the given month.
 
-        A plan is valid if:
-        - reference_date >= valid_from AND
-        - (valid_to IS NULL OR reference_date <= valid_to)
+        A plan overlaps if:
+        - valid_from <= last day of the month AND
+        - (valid_to IS NULL OR valid_to >= first day of the month)
+
+        Deliberately broader than "valid on a single reference day" (the
+        previous behavior here) -- a plan that only takes effect mid-month
+        (a real Isapre plan change) still needs to be assigned to the period
+        so ContributionCalculator.health() can prorate it day by day (see
+        domain/health_plan_proration.py); excluding it entirely just because
+        it wasn't valid on day 1 made a genuine partial-month contribution
+        unreproducible. The `is_active` filter mirrors the
+        `require_active=True` check the caller used to run per-plan
+        afterwards -- baking it into the query means every plan this method
+        returns is already known-assignable, with nothing left to re-check.
         """
+        first_day = date(period_year, period_month, 1)
+        last_day = last_day_of_month(first_day)
         result = await self._session.execute(
             select(HealthPlanModel, HealthInstitutionModel)
             .join(
@@ -237,10 +251,11 @@ class SqlAlchemyReferenceDataRepository:
             )
             .where(
                 and_(
-                    HealthPlanModel.valid_from <= reference_date,
+                    HealthInstitutionModel.is_active.is_(True),
+                    HealthPlanModel.valid_from <= last_day,
                     or_(
                         HealthPlanModel.valid_to.is_(None),
-                        HealthPlanModel.valid_to >= reference_date,
+                        HealthPlanModel.valid_to >= first_day,
                     ),
                 )
             )

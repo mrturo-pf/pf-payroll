@@ -46,6 +46,8 @@ class StubPayrollRepository:
         return ContributionComputationContextDTO(
             period_id=command.period_id,
             payment_date=date(2026, 1, 31),
+            period_year=2026,
+            period_month=1,
             taxable_income_clp=Decimal("1000000"),
             employment_contract_kind=EmploymentContractKind.INDEFINITE,
             pension_plan=PensionPlan(
@@ -68,6 +70,21 @@ class StubPayrollRepository:
                 plan_name="Plan Oro",
                 contracted_uf=Decimal("8.1000"),
             ),
+            health_plans=[
+                HealthPlan(
+                    id=2,
+                    institution=HealthInstitution(
+                        "BANMEDICA",
+                        "Banmedica",
+                        HealthInstitutionKind.ISAPRE,
+                        Decimal("0.07"),
+                    ),
+                    valid_from=date(2026, 1, 1),
+                    valid_to=None,
+                    plan_name="Plan Oro",
+                    contracted_uf=Decimal("8.1000"),
+                )
+            ],
             cap=ContributionCap(
                 "pension_health", date(2026, 1, 1), None, Decimal("90.0000")
             ),

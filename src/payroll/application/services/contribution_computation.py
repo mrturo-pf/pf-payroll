@@ -214,7 +214,9 @@ class ContributionComputationService(_WithContributionCalculator):
         )
         health = self._calculator.health(
             context.taxable_income_clp,
-            context.health_plan,
+            context.health_plans,
+            context.period_year,
+            context.period_month,
             context.cap,
             month_end_uf_value_clp,
             month_end_uf_value_clp,

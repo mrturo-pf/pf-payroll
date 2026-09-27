@@ -13,7 +13,11 @@ from payroll.domain.contributions import (
     PensionPlan,
     UnemploymentContribution,
 )
-from payroll.domain.errors import UnsupportedEmploymentContractKindError
+from payroll.domain.errors import (
+    DomainValidationError,
+    UnsupportedEmploymentContractKindError,
+)
+from payroll.domain.health_plan_proration import prorated_contracted_uf
 from payroll.domain.quantizers import quantize_clp
 
 
@@ -56,34 +60,49 @@ class ContributionCalculator:
     def health(
         self,
         taxable_clp: Decimal,
-        plan: HealthPlan,
+        plans: list[HealthPlan],
+        period_year: int,
+        period_month: int,
         cap: ContributionCap,
         cap_uf_value_clp: Decimal,
         plan_uf_value_clp: Decimal,
     ) -> HealthContribution:
-        """Handle health."""
+        """Handle health.
+
+        `plans` is every health plan assigned to this period, not a single
+        pre-aggregated one -- the caller (get_contribution_context()) hands
+        over each plan's own valid_from/valid_to so this function can
+        prorate a mid-month plan change day by day instead of an
+        all-or-nothing sum (see prorated_contracted_uf()). All plans in the
+        list are assumed to share the same institution -- the caller
+        validates that invariant before this is ever called.
+        """
+        if not plans:
+            raise DomainValidationError(
+                "ContributionCalculator.health() requires at least one "
+                "assigned health plan."
+            )
+        institution = plans[0].institution
         cap_clp, capped_base = self._capped_base(taxable_clp, cap, cap_uf_value_clp)
 
-        base_amount = quantize_clp(capped_base * plan.institution.mandatory_rate)
+        base_amount = quantize_clp(capped_base * institution.mandatory_rate)
+        contracted_uf = prorated_contracted_uf(plans, period_year, period_month)
 
-        if (
-            plan.institution.kind is HealthInstitutionKind.ISAPRE
-            and plan.contracted_uf > 0
-        ):
-            contracted_clp = quantize_clp(plan.contracted_uf * plan_uf_value_clp)
+        if institution.kind is HealthInstitutionKind.ISAPRE and contracted_uf > 0:
+            contracted_clp = quantize_clp(contracted_uf * plan_uf_value_clp)
             additional_amount = max(Decimal("0"), contracted_clp - base_amount)
         else:
             contracted_clp = Decimal("0")
             additional_amount = Decimal("0")
 
         return HealthContribution(
-            institution_code=plan.institution.code,
-            institution_kind=plan.institution.kind,
+            institution_code=institution.code,
+            institution_kind=institution.kind,
             taxable_clp=taxable_clp,
             cap_clp=cap_clp,
             capped_base_clp=capped_base,
             base_amount_clp=base_amount,
-            contracted_uf=plan.contracted_uf,
+            contracted_uf=contracted_uf,
             contracted_clp=contracted_clp,
             additional_amount_clp=additional_amount,
         )

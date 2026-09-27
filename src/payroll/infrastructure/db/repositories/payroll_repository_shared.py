@@ -309,3 +309,32 @@ class SqlAlchemyPayrollRepositoryBase:
             )
 
         return health_plan_model, health_institution_model
+
+    async def _get_assigned_health_plan(
+        self, plan_id: int
+    ) -> tuple[HealthPlanModel, HealthInstitutionModel]:
+        """Fetch a health plan already snapshotted onto a period, by ID only.
+
+        Deliberately skips the single-day valid_from/valid_to check
+        `_get_health_plan()` does -- a plan already recorded in
+        PayrollPeriodHealthPlanModel was already proven to overlap its
+        period's month (and belong to an active institution) at import time
+        by get_health_plans_overlapping_month(). Re-applying a single-day
+        check here at contribution-compute time would wrongly reject a plan
+        that only covers *part* of the month -- exactly the case day-level
+        proration exists to support (see domain/health_plan_proration.py).
+        Only existence is re-verified, not validity.
+        """
+        health_result = await self._session.execute(
+            select(HealthPlanModel, HealthInstitutionModel)
+            .join(
+                HealthInstitutionModel,
+                HealthPlanModel.institution_id == HealthInstitutionModel.id,
+            )
+            .where(HealthPlanModel.id == plan_id)
+        )
+        health_row = health_result.first()
+        if health_row is None:
+            raise HealthPlanNotFoundError(f"Health plan {plan_id} was not found.")
+        health_plan_model, health_institution_model = health_row
+        return health_plan_model, health_institution_model

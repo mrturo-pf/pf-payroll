@@ -237,16 +237,18 @@ def build_plan_deduction_and_validation_results(
     health_plan: HealthPlanModel,
     health_institution: HealthInstitutionModel,
 ) -> list[FakeResult]:
-    """Build the 4 FakeResults import_rows() needs when no plan_id is given.
+    """Build the 3 FakeResults import_rows() needs when no plan_id is given.
 
-    Two "deduce from date" lookups, then two "validate it exists and is
-    valid for payment_date" lookups, in this exact call order.
+    Two "deduce for the period" lookups, then one "validate it exists and is
+    valid for payment_date" lookup for pension only -- health plans deduced
+    via get_health_plans_overlapping_month() are already known-active and
+    overlapping, so import_rows() skips a separate per-plan validation query
+    for them (see the `plans_were_deduced` guard in import_rows()).
     """
     return [
         FakeResult(joined_rows=[(pension_plan, pension_institution)]),
         FakeResult(joined_rows=[(health_plan, health_institution)]),
         FakeResult(first_row=(pension_plan, pension_institution)),
-        FakeResult(first_row=(health_plan, health_institution)),
     ]
 
 
@@ -483,7 +485,9 @@ def _afp_test_import_session(extra_results: list[FakeResult]) -> FakeSession:
             FakeResult(
                 joined_rows=[(_AFP_TEST_PENSION_PLAN, _AFP_TEST_PENSION_INSTITUTION)]
             ),
-            # Health plan deduction
+            # Health plan deduction (get_health_plans_overlapping_month() already
+            # filters for active + overlapping-the-month, so no separate per-plan
+            # validation query follows it, unlike pension)
             FakeResult(
                 joined_rows=[(_AFP_TEST_HEALTH_PLAN, _AFP_TEST_HEALTH_INSTITUTION)]
             ),
@@ -491,8 +495,6 @@ def _afp_test_import_session(extra_results: list[FakeResult]) -> FakeSession:
             FakeResult(
                 first_row=(_AFP_TEST_PENSION_PLAN, _AFP_TEST_PENSION_INSTITUTION)
             ),
-            # Health plan validation
-            FakeResult(first_row=(_AFP_TEST_HEALTH_PLAN, _AFP_TEST_HEALTH_INSTITUTION)),
             *extra_results,
         ]
     )
@@ -970,7 +972,7 @@ async def test_sa_payroll_repository_rejects_missing_health_plans_deduction() ->
 
     with pytest.raises(
         ValueError,
-        match="No valid health plans found for reference date",
+        match="No valid health plans found for period",
     ):
         await repository.import_rows([build_import_row()])
 
@@ -1261,7 +1263,13 @@ async def test_repository_rejects_context_without_health_snapshots() -> None:
 
 @pytest.mark.asyncio
 async def test_repository_sums_contracted_uf_for_multiple_period_health_plans() -> None:
-    """Test contribution context sums contracted UF across period health plans."""
+    """Test contribution context exposes every assigned health plan for summing.
+
+    health_plan.contracted_uf is now just the requested plan's own value --
+    it's health_plans (the full list) that ContributionCalculator.health()
+    sums (prorated by day-overlap; both plans here cover the full month, so
+    a flat sum matches the prorated one).
+    """
     _period, session = _multi_health_session(
         build_health_pair(plan_id=23, contracted_uf=Decimal("0.91"), plan_name="GES")
     )
@@ -1271,7 +1279,9 @@ async def test_repository_sums_contracted_uf_for_multiple_period_health_plans() 
         SimpleNamespace(period_id=5, pension_plan_id=11, health_plan_id=22)
     )
 
-    assert result.health_plan.contracted_uf == Decimal("6.33")
+    assert sum((plan.contracted_uf for plan in result.health_plans), Decimal("0")) == (
+        Decimal("6.33")
+    )
 
 
 @pytest.mark.asyncio

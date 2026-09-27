@@ -343,7 +343,8 @@ Import notes:
 - `payment_date` is required
 - `worked_days` is optional; if omitted, the import defaults to 30
 - `pension_plan_id` and `health_plan_id` are optional, but must be provided together
-- `health_plan_id` accepts one id or multiple ids separated by commas (for example `2,3`) and the system sums all their `contracted_uf` values during contribution calculation
+- `health_plan_id` accepts one id or multiple ids separated by commas (for example `2,3`); contribution calculation sums each plan's `contracted_uf`, prorated by how many days of the period's calendar month that plan's `valid_from`/`valid_to` actually overlaps (a plan valid the whole month contributes its full value; a plan that only starts or ends mid-month contributes a day-weighted fraction)
+- when `pension_plan_id`/`health_plan_id` are omitted, both are deduced from every active reference-data plan overlapping the period's month, not just the plan valid on the 1st -- a plan that only takes effect partway through the month is still assigned and prorated the same way
 - `employer` is required
 - `employment_contract_kind` is required
 - accepted contract kind aliases include `indefinite`, `fixed_term`, `indefinido`, and `plazo_fijo`

@@ -206,6 +206,8 @@ class StubPayrollRepository:
             {
                 "period_id": 7,
                 "payment_date": date(2026, 4, 30),
+                "period_year": 2026,
+                "period_month": 4,
                 "taxable_income_clp": Decimal("1000000"),
                 "employment_contract_kind": EmploymentContractKind.INDEFINITE,
                 "pension_plan": type(
@@ -248,6 +250,29 @@ class StubPayrollRepository:
                         "contracted_uf": Decimal("8.1000"),
                     },
                 )(),
+                "health_plans": [
+                    type(
+                        "HealthPlan",
+                        (),
+                        {
+                            "id": 2,
+                            "institution": type(
+                                "HealthInstitution",
+                                (),
+                                {
+                                    "code": "BANMEDICA",
+                                    "name": "Banmedica",
+                                    "kind": HealthInstitutionKind.ISAPRE,
+                                    "mandatory_rate": Decimal("0.07"),
+                                },
+                            )(),
+                            "valid_from": date(2026, 1, 1),
+                            "valid_to": None,
+                            "plan_name": "Plan Oro",
+                            "contracted_uf": Decimal("8.1000"),
+                        },
+                    )()
+                ],
                 "cap": type(
                     "Cap",
                     (),

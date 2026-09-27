@@ -344,14 +344,28 @@ class ReviewPayrollPeriodResultDTO:
 
 @dataclass(frozen=True, slots=True)
 class ContributionComputationContextDTO:
-    """Represent Contribution Computation Context DTO."""
+    """Represent Contribution Computation Context DTO.
+
+    `health_plan` is the single requested/representative plan (used only for
+    its `id`, echoed back on ComputeContributionsResultDTO.health_plan_id).
+    `health_plans` is every health plan actually assigned to this period --
+    the full, unaggregated list, each with its own valid_from/valid_to --
+    used by ContributionCalculator.health() to prorate a mid-month plan
+    change day by day instead of an all-or-nothing sum (see
+    domain/health_plan_proration.py). period_year/period_month identify
+    which calendar month to prorate against; not necessarily payment_date's
+    own month for every employer payment-date convention.
+    """
 
     period_id: int
     payment_date: date
+    period_year: int
+    period_month: int
     taxable_income_clp: Decimal
     employment_contract_kind: EmploymentContractKind
     pension_plan: PensionPlan
     health_plan: HealthPlan
+    health_plans: list[HealthPlan]
     cap: ContributionCap
     unemployment_cap: ContributionCap
 

@@ -253,7 +253,6 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
         )
 
         taxable_income_clp = await self._get_taxable_income_clp(period.id)
-        aggregated_contracted_uf = health_plan_model.contracted_uf
         assigned_plan_ids_result = await self._session.execute(
             select(PayrollPeriodHealthPlanModel.health_plan_id).where(
                 PayrollPeriodHealthPlanModel.period_id == period.id
@@ -272,25 +271,38 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
                 "The provided health_plan_id does not match the period health "
                 "plan snapshots."
             )
-        aggregated_contracted_uf = Decimal("0")
+        assigned_health_plans: list[HealthPlan] = []
         for assigned_plan_id in assigned_plan_ids:
             (
                 assigned_health_plan_model,
                 assigned_health_institution_model,
-            ) = await self._get_health_plan(
-                assigned_plan_id,
-                period.payment_date,
-            )
+            ) = await self._get_assigned_health_plan(assigned_plan_id)
             if assigned_health_institution_model.code != health_institution_model.code:
                 raise PayrollConflictError(
                     "All assigned health plans for a payroll period must belong "
                     "to the same health institution."
                 )
-            aggregated_contracted_uf += assigned_health_plan_model.contracted_uf
+            assigned_health_plans.append(
+                HealthPlan(
+                    id=assigned_health_plan_model.id,
+                    institution=HealthInstitution(
+                        code=assigned_health_institution_model.code,
+                        name=assigned_health_institution_model.name,
+                        kind=assigned_health_institution_model.kind,
+                        mandatory_rate=assigned_health_institution_model.mandatory_rate,
+                    ),
+                    valid_from=assigned_health_plan_model.valid_from,
+                    valid_to=assigned_health_plan_model.valid_to,
+                    plan_name=assigned_health_plan_model.plan_name,
+                    contracted_uf=assigned_health_plan_model.contracted_uf,
+                )
+            )
 
         return ContributionComputationContextDTO(
             period_id=period.id,
             payment_date=period.payment_date,
+            period_year=period.period_year,
+            period_month=period.period_month,
             taxable_income_clp=taxable_income_clp,
             employment_contract_kind=period.employment_contract_kind,
             pension_plan=PensionPlan(
@@ -315,8 +327,9 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
                 valid_from=health_plan_model.valid_from,
                 valid_to=health_plan_model.valid_to,
                 plan_name=health_plan_model.plan_name,
-                contracted_uf=aggregated_contracted_uf,
+                contracted_uf=health_plan_model.contracted_uf,
             ),
+            health_plans=assigned_health_plans,
             cap=ContributionCap(
                 cap_type=cap_model.cap_type.value,
                 valid_from=cap_model.valid_from,

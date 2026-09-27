@@ -56,19 +56,28 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
             )
         return plan.id
 
-    async def _deduce_health_plan_ids_for_date(
-        self, reference_date: date
+    async def _deduce_health_plan_ids_for_month(
+        self, period_year: int, period_month: int
     ) -> tuple[int, ...]:
-        """Deduce valid health plan IDs for a given reference date.
+        """Deduce every active health plan ID overlapping the given month.
 
-        Raises PayrollValidationError if no valid plans are found.
+        Raises PayrollValidationError if none overlap at all. Deliberately
+        broader than a single reference-day check
+        (get_health_plans_overlapping_month()'s docstring) so a plan that
+        only takes effect mid-month still gets assigned to the period --
+        ContributionCalculator.health() prorates it day by day instead of
+        applying it for the full month or not at all (see
+        domain/health_plan_proration.py).
         """
-        plans = await self._reference_data_repository.get_valid_health_plans_for_date(
-            reference_date
+        plans = (
+            await self._reference_data_repository.get_health_plans_overlapping_month(
+                period_year, period_month
+            )
         )
         if not plans:
             raise PayrollValidationError(
-                f"No valid health plans found for reference date {reference_date}."
+                "No valid health plans found for period "
+                f"{period_year}-{period_month:02d}."
             )
         return tuple(plan.id for plan in plans)
 
@@ -211,19 +220,31 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                 )
 
             # If not explicitly provided, deduce from reference date
+            plans_were_deduced = pension_plan_id is None
             if pension_plan_id is None:
                 reference_date = date(year, month, 1)
                 pension_plan_id = await self._deduce_pension_plan_for_date(
                     reference_date
                 )
-                health_plan_ids = await self._deduce_health_plan_ids_for_date(
-                    reference_date
+                health_plan_ids = await self._deduce_health_plan_ids_for_month(
+                    year, month
                 )
 
             # Validate the plans exist
             await self._get_pension_plan(pension_plan_id, first_row.payment_date)
             if health_plan_ids is not None:
                 for plan_id in health_plan_ids:
+                    if plans_were_deduced:
+                        # get_health_plans_overlapping_month() already proved
+                        # this plan overlaps the period's month and belongs to
+                        # an active institution -- re-checking it against the
+                        # single payment_date here would wrongly reject a
+                        # plan that only covers *part* of the month (exactly
+                        # the case day-level proration exists to support; see
+                        # domain/health_plan_proration.py). Only explicitly
+                        # caller-provided plan IDs (the else branch, not
+                        # deduced) still get the strict single-day check.
+                        continue
                     await self._get_health_plan(
                         plan_id,
                         first_row.payment_date,

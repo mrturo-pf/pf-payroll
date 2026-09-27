@@ -60,19 +60,23 @@ def test_health_contribution_uses_contract_amount_for_isapre_only() -> None:
     calculator = ContributionCalculator()
     isapre_contribution = calculator.health(
         taxable_clp=Decimal("1000000"),
-        plan=HealthPlan(
-            id=2,
-            institution=HealthInstitution(
-                code="BANMEDICA",
-                name="Banmedica",
-                kind=HealthInstitutionKind.ISAPRE,
-                mandatory_rate=Decimal("0.07"),
-            ),
-            valid_from=date(2026, 1, 1),
-            valid_to=None,
-            plan_name="Plan Oro",
-            contracted_uf=Decimal("4.5000"),
-        ),
+        plans=[
+            HealthPlan(
+                id=2,
+                institution=HealthInstitution(
+                    code="BANMEDICA",
+                    name="Banmedica",
+                    kind=HealthInstitutionKind.ISAPRE,
+                    mandatory_rate=Decimal("0.07"),
+                ),
+                valid_from=date(2026, 1, 1),
+                valid_to=None,
+                plan_name="Plan Oro",
+                contracted_uf=Decimal("4.5000"),
+            )
+        ],
+        period_year=2026,
+        period_month=1,
         cap=ContributionCap(
             "pension_health", date(2026, 1, 1), None, Decimal("90.0000")
         ),
@@ -81,19 +85,23 @@ def test_health_contribution_uses_contract_amount_for_isapre_only() -> None:
     )
     fonasa_contribution = calculator.health(
         taxable_clp=Decimal("1000000"),
-        plan=HealthPlan(
-            id=3,
-            institution=HealthInstitution(
-                code="FONASA",
-                name="Fonasa",
-                kind=HealthInstitutionKind.FONASA,
-                mandatory_rate=Decimal("0.07"),
-            ),
-            valid_from=date(2026, 1, 1),
-            valid_to=None,
-            plan_name="Base",
-            contracted_uf=Decimal("0"),
-        ),
+        plans=[
+            HealthPlan(
+                id=3,
+                institution=HealthInstitution(
+                    code="FONASA",
+                    name="Fonasa",
+                    kind=HealthInstitutionKind.FONASA,
+                    mandatory_rate=Decimal("0.07"),
+                ),
+                valid_from=date(2026, 1, 1),
+                valid_to=None,
+                plan_name="Base",
+                contracted_uf=Decimal("0"),
+            )
+        ],
+        period_year=2026,
+        period_month=1,
         cap=ContributionCap(
             "pension_health", date(2026, 1, 1), None, Decimal("90.0000")
         ),
@@ -106,6 +114,22 @@ def test_health_contribution_uses_contract_amount_for_isapre_only() -> None:
     assert isapre_contribution.additional_amount_clp == Decimal("0")
     assert fonasa_contribution.contracted_clp == Decimal("0")
     assert fonasa_contribution.additional_amount_clp == Decimal("0")
+
+
+def test_health_contribution_rejects_empty_plan_list() -> None:
+    """Test health contribution rejects an empty assigned-plans list."""
+    with pytest.raises(ValueError, match="at least one assigned health plan"):
+        ContributionCalculator().health(
+            taxable_clp=Decimal("1000000"),
+            plans=[],
+            period_year=2026,
+            period_month=1,
+            cap=ContributionCap(
+                "pension_health", date(2026, 1, 1), None, Decimal("90.0000")
+            ),
+            cap_uf_value_clp=Decimal("10000"),
+            plan_uf_value_clp=Decimal("10000"),
+        )
 
 
 def test_unemployment_contribution_depends_on_contract_kind() -> None:

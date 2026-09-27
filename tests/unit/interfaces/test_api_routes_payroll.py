@@ -52,8 +52,8 @@ def test_imported_contribution_validation_read_serializes_amounts_as_json_number
 ):
     """*_clp fields render as bare JSON numbers, not pydantic's default quoted str.
 
-    This is the concrete behavior requested for POST /payroll/import and
-    POST /payroll/import/rows responses: MoneyCLP overrides pydantic's
+    This is the concrete behavior requested for POST /payroll/import/spreadsheet and
+    POST /payroll/import/json responses: MoneyCLP overrides pydantic's
     default Decimal-to-string JSON serialization for these fields only.
     """
     read = ImportedContributionValidationRead(

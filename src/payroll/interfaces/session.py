@@ -34,7 +34,7 @@ class TransactionalSessionScope:
     per-period commits in `payroll_repository_commands.py`). That is fine for
     every existing endpoint, which always wants those commits to stick.
 
-    POST /payroll/import/rows with mode="validate" needs the opposite: run
+    POST /payroll/import/json with mode="validate" needs the opposite: run
     the *exact same* pipeline (so contributions/tax/warnings are genuinely
     computed, not guessed), but discard every single write at the end --
     including all of those internal commits. Wrapping the whole thing in one

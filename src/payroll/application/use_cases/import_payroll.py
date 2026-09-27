@@ -30,7 +30,7 @@ class ImportPayroll:
     ) -> ImportPayrollResultDTO:
         """Import already-structured payroll rows, skipping the file-parsing step.
 
-        Sibling to from_bytes(): used by POST /payroll/import/rows, where rows
+        Sibling to from_bytes(): used by POST /payroll/import/json, where rows
         come from a previously-previewed-and-edited PDF import instead of a
         parsed CSV/XLSX file. Delegates to the exact same
         PayrollRepository.import_rows() -- no separate persistence path.

@@ -64,7 +64,7 @@ class FakeTransactionalSessionScope:
     """Test double for TransactionalSessionScope -- records resolve() calls.
 
     A deliberate, jscpd-exempted mirror of the identically-shaped double in
-    test_payroll_import_rows.py -- POST /payroll/import now runs on the
+    test_payroll_import_json.py -- POST /payroll/import/spreadsheet now runs on the
     exact same transactional-scope machinery.
     """
 
@@ -88,9 +88,9 @@ def _override_import_dependencies(
 ) -> None:
     """Wire the fake import/process use cases + a fake scope into the app.
 
-    Shared by every /payroll/import test below to avoid repeating this same
+    Shared by every /payroll/import/spreadsheet test below to avoid repeating this same
     three-dependency wiring per test -- mirrors
-    test_payroll_import_rows.py's own _override_happy_path() helper.
+    test_payroll_import_json.py's own _override_happy_path() helper.
     process_use_case defaults to the untouched-passthrough double; pass an
     explicit one (e.g. a fake that raises) to simulate a downstream failure
     instead.
@@ -150,7 +150,7 @@ class FakeImportPayrollWithConflict:
     Shared by both the commit-mode-rejects and validate-mode-reports tests
     below (same fixture, two different `mode` values through the route) --
     also a deliberate, jscpd-exempted mirror of the analogous fixture in
-    test_payroll_import_rows.py's own genuine-conflict tests.
+    test_payroll_import_json.py's own genuine-conflict tests.
     """
 
     # jscpd:ignore-start
@@ -348,7 +348,7 @@ def test_payroll_import_endpoint() -> None:
 
     try:
         response = client.post(
-            "/payroll/import",
+            "/payroll/import/spreadsheet",
             files={
                 "file": (
                     "sample.csv",
@@ -412,7 +412,7 @@ def test_payroll_import_endpoint_rejects_commit_on_genuine_conflict() -> None:
 
     try:
         response = client.post(
-            "/payroll/import",
+            "/payroll/import/spreadsheet",
             files={"file": ("sample.csv", b"data", "text/csv")},
         )
     finally:
@@ -420,7 +420,7 @@ def test_payroll_import_endpoint_rejects_commit_on_genuine_conflict() -> None:
 
     assert response.status_code == 400
     # jscpd:ignore-start -- deliberate mirror of the analogous assertions in
-    # test_payroll_import_rows.py's own genuine-conflict test.
+    # test_payroll_import_json.py's own genuine-conflict test.
     detail = response.json()["detail"]
     assert "Cannot commit" in detail["message"]
     assert len(detail["conflicting_periods"]) == 1
@@ -439,7 +439,7 @@ def test_payroll_import_endpoint_accepts_explicit_commit_mode() -> None:
     Mirrors test_import_payroll_rows_endpoint_accepts_explicit_commit_mode
     -- this endpoint takes `mode` as a multipart form field (alongside
     `file`), not JSON, since it is a file upload, but the contract is
-    otherwise identical to POST /payroll/import/rows.
+    otherwise identical to POST /payroll/import/json.
     """
     scope = FakeTransactionalSessionScope()
     _override_import_dependencies(scope, FakeImportPayroll())
@@ -447,7 +447,7 @@ def test_payroll_import_endpoint_accepts_explicit_commit_mode() -> None:
 
     try:
         response = client.post(
-            "/payroll/import",
+            "/payroll/import/spreadsheet",
             data={"mode": "commit"},
             files={"file": ("sample.csv", b"salary_base", "text/csv")},
         )
@@ -473,7 +473,7 @@ def test_payroll_import_endpoint_validate_mode_never_commits() -> None:
 
     try:
         response = client.post(
-            "/payroll/import",
+            "/payroll/import/spreadsheet",
             data={"mode": "validate"},
             files={"file": ("sample.csv", b"salary_base", "text/csv")},
         )
@@ -483,7 +483,7 @@ def test_payroll_import_endpoint_validate_mode_never_commits() -> None:
     assert response.status_code == 200
     body = response.json()
     # jscpd:ignore-start -- deliberate mirror of the analogous assertions in
-    # test_payroll_import_rows.py's own validate-mode-never-commits test.
+    # test_payroll_import_json.py's own validate-mode-never-commits test.
     assert body["mode"] == "validate"
     assert body["validated"] is True
     assert body["saved"] is None
@@ -515,7 +515,7 @@ def test_payroll_import_endpoint_validate_mode_reports_conflict_without_failing(
 
     try:
         response = client.post(
-            "/payroll/import",
+            "/payroll/import/spreadsheet",
             data={"mode": "validate"},
             files={"file": ("sample.csv", b"data", "text/csv")},
         )
@@ -567,7 +567,7 @@ def test_payroll_import_returns_502_when_processing_raises_dependency_error() ->
 
     try:
         response = client.post(
-            "/payroll/import",
+            "/payroll/import/spreadsheet",
             files={"file": ("payroll.csv", b"data", "text/csv")},
         )
     finally:
@@ -596,10 +596,11 @@ def test_payroll_import_endpoint_requires_filename_and_surfaces_value_errors() -
 
     try:
         missing_name = client.post(
-            "/payroll/import", files={"file": ("", b"noop", "text/csv")}
+            "/payroll/import/spreadsheet", files={"file": ("", b"noop", "text/csv")}
         )
         invalid_file = client.post(
-            "/payroll/import", files={"file": ("bad.csv", b"noop", "text/csv")}
+            "/payroll/import/spreadsheet",
+            files={"file": ("bad.csv", b"noop", "text/csv")},
         )
     finally:
         app.dependency_overrides.clear()

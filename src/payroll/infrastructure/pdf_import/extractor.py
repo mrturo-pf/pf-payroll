@@ -108,7 +108,7 @@ def _infer_employment_contract_kind(
     unmatched template, or one that doesn't map this concept -- rather than
     guessing from nothing. Either way, this only pre-fills
     PdfImportPreviewResponse for a human to confirm or correct before
-    POST /payroll/import/rows, which still requires employment_contract_kind
+    POST /payroll/import/json, which still requires employment_contract_kind
     explicitly -- this is never used to persist anything by itself.
     """
     matches = [
@@ -139,7 +139,7 @@ def _resolve_payment_date(
     override on its own; `PreviewPdfImport` is the one that may recompute
     this into the real employer rule afterwards, once the template match
     here has revealed which employer produced the PDF. A caller confirming
-    this preview through POST /payroll/import/rows can still override
+    this preview through POST /payroll/import/json can still override
     payment_date by hand if either guess turns out wrong.
     """
     if period_year is None or period_month is None:

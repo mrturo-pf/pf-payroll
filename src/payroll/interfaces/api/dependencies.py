@@ -117,7 +117,7 @@ async def get_transactional_session() -> AsyncIterator[TransactionalSessionScope
     connection/transaction that the route resolves exactly once, at the very
     end -- see TransactionalSessionScope's docstring for why a plain
     session.rollback() would not be enough here. Used by both
-    POST /payroll/import (CSV/XLSX) and POST /payroll/import/rows
+    POST /payroll/import/spreadsheet (CSV/XLSX) and POST /payroll/import/json
     (PDF-confirm): both need the ability to run the full import +
     reconciliation pipeline and still roll everything back if the result
     turns out not fully validated.

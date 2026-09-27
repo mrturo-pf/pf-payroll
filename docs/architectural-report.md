@@ -341,7 +341,7 @@ def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:
 
 An alternative to Excel/CSV for a single payslip: extraction based on versioned JSON
 templates (`infrastructure/pdf_import/templates/`), never OCR/LLM. Two new HTTP routes
-(`POST /payroll/import/pdf-preview`, `POST /payroll/import/rows`) plus the
+(`POST /payroll/pdf-preview`, `POST /payroll/import/json`) plus the
 `PreviewPdfImport` use case, which deliberately receives no repository -- that's the
 architectural guarantee that the preview can never write to the database.
 Full design and implementation detail in

@@ -1,4 +1,4 @@
-"""Tests for POST /payroll/import/rows (stage 3: commit + validate modes)."""
+"""Tests for POST /payroll/import/json (stage 3: commit + validate modes)."""
 
 from datetime import date
 from decimal import Decimal
@@ -124,7 +124,7 @@ def test_import_payroll_rows_endpoint_defaults_to_commit_mode() -> None:
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
-        response = client.post("/payroll/import/rows", json=_payload([SAMPLE_ROW]))
+        response = client.post("/payroll/import/json", json=_payload([SAMPLE_ROW]))
     finally:
         app.dependency_overrides.clear()
 
@@ -148,7 +148,7 @@ def test_import_payroll_rows_endpoint_accepts_explicit_commit_mode() -> None:
 
     try:
         response = client.post(
-            "/payroll/import/rows",
+            "/payroll/import/json",
             json=_payload([SAMPLE_ROW], mode="commit"),
         )
     finally:
@@ -166,7 +166,7 @@ def test_import_payroll_rows_endpoint_validate_mode_never_commits() -> None:
 
     try:
         response = client.post(
-            "/payroll/import/rows",
+            "/payroll/import/json",
             json=_payload([SAMPLE_ROW], mode="validate"),
         )
     finally:
@@ -205,7 +205,7 @@ def test_import_payroll_rows_endpoint_commit_rejects_unresolved_concept_code() -
     row = {**SAMPLE_ROW, "concept_code": None}
 
     try:
-        response = client.post("/payroll/import/rows", json=_payload([row]))
+        response = client.post("/payroll/import/json", json=_payload([row]))
     finally:
         app.dependency_overrides.clear()
 
@@ -230,7 +230,7 @@ def test_import_payroll_rows_endpoint_validate_reports_unresolved_rows() -> None
 
     try:
         response = client.post(
-            "/payroll/import/rows",
+            "/payroll/import/json",
             json=_payload([SAMPLE_ROW, unresolved_row], mode="validate"),
         )
     finally:
@@ -300,7 +300,7 @@ def test_import_payroll_rows_endpoint_rejects_commit_on_genuine_conflict() -> No
 
     try:
         response = client.post(
-            "/payroll/import/rows", json=_payload([SAMPLE_ROW], mode="commit")
+            "/payroll/import/json", json=_payload([SAMPLE_ROW], mode="commit")
         )
     finally:
         app.dependency_overrides.clear()
@@ -334,7 +334,7 @@ def test_import_payroll_rows_endpoint_validate_all_unresolved_skips_pipeline() -
 
     try:
         response = client.post(
-            "/payroll/import/rows", json=_payload([row], mode="validate")
+            "/payroll/import/json", json=_payload([row], mode="validate")
         )
     finally:
         app.dependency_overrides.clear()
@@ -377,7 +377,7 @@ def test_import_payroll_rows_endpoint_derives_projected_status_without_net_pay()
     payload = {**header_without_net_pay, "rows": [SAMPLE_ROW]}
 
     try:
-        response = client.post("/payroll/import/rows", json=payload)
+        response = client.post("/payroll/import/json", json=payload)
     finally:
         app.dependency_overrides.clear()
 
@@ -398,7 +398,7 @@ def test_import_payroll_rows_endpoint_rejects_unknown_mode() -> None:
 
     try:
         response = client.post(
-            "/payroll/import/rows",
+            "/payroll/import/json",
             json=_payload([SAMPLE_ROW], mode="dry-run"),
         )
     finally:
@@ -436,7 +436,7 @@ def test_import_payroll_rows_endpoint_rolls_back_on_validation_error() -> None:
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
-        response = client.post("/payroll/import/rows", json=_payload([], mode="commit"))
+        response = client.post("/payroll/import/json", json=_payload([], mode="commit"))
     finally:
         app.dependency_overrides.clear()
 
@@ -472,7 +472,7 @@ def test_import_payroll_rows_endpoint_returns_502_when_processing_raises() -> No
     )
 
     try:
-        response = client.post("/payroll/import/rows", json=_payload([SAMPLE_ROW]))
+        response = client.post("/payroll/import/json", json=_payload([SAMPLE_ROW]))
     finally:
         app.dependency_overrides.clear()
 

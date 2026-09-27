@@ -99,7 +99,7 @@ MoneyCLP = Annotated[
 class UnresolvedRowWarning(BaseModel):
     """Represent one submitted row whose concept_code could not be resolved.
 
-    Surfaced by POST /payroll/import/rows in mode="validate" so a caller can
+    Surfaced by POST /payroll/import/json in mode="validate" so a caller can
     fix these specific rows (identified by their position in the submitted
     `rows` list) before resending with mode="commit". No period/employer
     fields here -- those now live once at ImportPayrollRowsRequest's top
@@ -173,12 +173,11 @@ class ImportedPeriodRead(BaseModel):
     """Represent one imported payroll period in an import response.
 
     Mirrors ImportedPayrollPeriodDTO field-for-field, with one deliberate
-    difference: `id` is `int | None` here, not `int`. POST /payroll/import
-    always commits, so its periods' `id` is always a real, persisted primary
-    key. POST /payroll/import/rows can also run in mode="validate", where
-    the INSERT genuinely happens against a SAVEPOINT (so contributions, tax
-    and net-pay warnings are computed for real, not guessed) but is always
-    rolled back before the response goes out -- see
+    difference: `id` is `int | None` here, not `int`. Both POST
+    /payroll/import/spreadsheet and POST /payroll/import/json can run in
+    mode="validate", where the INSERT genuinely happens against a SAVEPOINT
+    (so contributions, tax and net-pay warnings are computed for real, not
+    guessed) but is always rolled back before the response goes out -- see
     TransactionalSessionScope. The id Postgres assigned during that INSERT
     will never exist in the table: Postgres sequences are not transactional,
     so the BIGSERIAL value is permanently consumed regardless of the
@@ -276,8 +275,8 @@ class ImportPayrollResponse(BaseModel):
     mode="validate" -> both counts describe what *would* be persisted if the
     same payload were resent with mode="commit" -- nothing was written (see
     TransactionalSessionScope / ImportedPeriodRead's docstring for why
-    `periods[].id` is also null in that case). Both POST /payroll/import
-    and POST /payroll/import/rows support mode="validate"; it defaults to
+    `periods[].id` is also null in that case). Both POST /payroll/import/spreadsheet
+    and POST /payroll/import/json support mode="validate"; it defaults to
     "commit" on both so existing callers see no behavior change.
 
     Named `period_count`/`item_count` rather than `periods`/`items` on
@@ -332,7 +331,7 @@ class ImportPayrollRowRequest(BaseModel):
 
 
 class ImportPayrollRowsRequest(BaseModel):
-    """Represent the request body for POST /payroll/import/rows.
+    """Represent the request body for POST /payroll/import/json.
 
     All rows come from one payslip (e.g. one PdfImportPreviewResponse
     confirmed by a human), so employer/period/payment/contract-kind fields
@@ -346,7 +345,7 @@ class ImportPayrollRowsRequest(BaseModel):
     "actual" once declared_net_pay_clp is known, "projected" otherwise (see
     payroll.shared.payroll_status.resolve_declared_status).
 
-    mode="commit" persists everything, exactly like POST /payroll/import --
+    mode="commit" persists everything, exactly like POST /payroll/import/spreadsheet --
     and requires every row to already have a resolved concept_code; any row
     with concept_code=null makes the whole request fail with 400, nothing is
     written. mode="validate" runs the exact same pipeline on the rows that
@@ -392,7 +391,7 @@ class PdfImportPreviewResponse(BaseModel):
 
     Never persists anything -- see PreviewPdfImport / TemplatePdfPayrollExtractor.
     This is deliberately shaped so it can be copied verbatim into a POST
-    /payroll/import/rows request body (just add "mode" -- template_id is
+    /payroll/import/json request body (just add "mode" -- template_id is
     ignored there if it's still present). employment_contract_kind is a
     best-effort guess (see TemplatePdfPayrollExtractor's
     _infer_employment_contract_kind), not an authoritative value -- confirm
@@ -692,7 +691,7 @@ def to_pdf_response(report: GeneratedPayrollReportDTO) -> Response:
     )
 
 
-@router.post("/import", response_model=ImportPayrollResponse)
+@router.post("/import/spreadsheet", response_model=ImportPayrollResponse)
 async def import_payroll(
     file: UploadFile = File(...),
     mode: Literal["commit", "validate"] = Form("commit"),
@@ -705,7 +704,7 @@ async def import_payroll(
     """Import payroll.
 
     Runs on the same transactional-scope machinery as POST
-    /payroll/import/rows: the whole import + reconciliation pipeline runs
+    /payroll/import/json: the whole import + reconciliation pipeline runs
     inside one SAVEPOINT. mode="commit" (the default, unchanged behavior for
     existing callers) makes the result durable once
     is_import_fully_validated() confirms no genuine declared-vs-computed
@@ -717,7 +716,7 @@ async def import_payroll(
     ever touching the database -- sent as a `mode` form field alongside
     `file`, not JSON, since this is a multipart/form-data upload. See
     ImportPayrollResponse's docstring for the full contract, shared with
-    POST /payroll/import/rows.
+    POST /payroll/import/json.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="A payroll file name is required.")
@@ -756,7 +755,7 @@ async def import_payroll(
     )
 
 
-@router.post("/import/rows", response_model=ImportPayrollResponse)
+@router.post("/import/json", response_model=ImportPayrollResponse)
 async def import_payroll_rows(
     payload: ImportPayrollRowsRequest,
     scope: TransactionalSessionScope = Depends(get_transactional_session),
@@ -767,7 +766,7 @@ async def import_payroll_rows(
 ) -> ImportPayrollResponse:
     """Confirm already-structured payroll rows (e.g. from a PDF preview).
 
-    Reuses the exact same pipeline as POST /payroll/import
+    Reuses the exact same pipeline as POST /payroll/import/spreadsheet
     (ImportPayroll.from_rows() + ProcessImportedPayrollPeriods) against a
     TransactionalSessionScope: mode="commit" makes every write durable,
     mode="validate" runs the same computations then discards all of them.
@@ -783,7 +782,7 @@ async def import_payroll_rows(
     a 200 in commit mode always means `validated=True, saved=True` together.
     See ImportPayrollRowsRequest's docstring for the full contract.
 
-    One try/except around both steps (unlike /payroll/import's two separate
+    One try/except around both steps (unlike /payroll/import/spreadsheet's two separate
     blocks) on purpose: any failure here must resolve the scope to
     "validate" before re-raising, regardless of the requested mode -- a
     half-applied import must never be left committed.
@@ -903,7 +902,7 @@ def to_pdf_import_preview_response(
     )
 
 
-@router.post("/import/pdf-preview", response_model=PdfImportPreviewResponse)
+@router.post("/pdf-preview", response_model=PdfImportPreviewResponse)
 async def preview_pdf_import(
     file: UploadFile = File(...),
     use_case: PreviewPdfImport = Depends(get_preview_pdf_import_use_case),

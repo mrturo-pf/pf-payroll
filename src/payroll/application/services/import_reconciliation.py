@@ -1,7 +1,7 @@
 """Shared reconciliation-conflict detection for imported payroll periods.
 
 Lives in `application/` (not `interfaces/api/routes/`) specifically so both
-the HTTP routes (`/payroll/import`, `/payroll/import/rows`) and the
+the HTTP routes (`/payroll/import/spreadsheet`, `/payroll/import/json`) and the
 `payroll import` CLI command can gate a commit on the same rule without the
 CLI depending on the HTTP interface layer.
 """
@@ -44,7 +44,7 @@ def is_import_fully_validated(periods: list[ImportedPayrollPeriodDTO]) -> bool:
 
     "Pending" states (nothing to compare yet) do not count -- see
     period_has_reconciliation_conflict(). Callers that also need to gate on
-    unresolved concept_code rows (POST /payroll/import/rows only -- CSV/XLSX
+    unresolved concept_code rows (POST /payroll/import/json only -- CSV/XLSX
     import has no such partial-resolution concept) must combine that check
     separately; it isn't part of this function on purpose, since it isn't a
     property of the periods themselves.

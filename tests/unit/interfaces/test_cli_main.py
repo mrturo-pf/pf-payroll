@@ -450,7 +450,7 @@ def test_import_payroll_async_rolls_back_on_genuine_conflict(
 ) -> None:
     """A genuine declared-vs-computed conflict rolls back and raises, saving nothing.
 
-    Mirrors the guarantee POST /payroll/import and POST /payroll/import/rows
+    Mirrors the guarantee POST /payroll/import/spreadsheet and POST /payroll/import/json
     already provide at the HTTP layer: the `payroll import` CLI command must
     not persist a period it knows does not reconcile.
     """

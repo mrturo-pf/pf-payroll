@@ -13,7 +13,7 @@ import -> assign plans -> compute contributions -> compute tax -> review -> repo
 API:
 
 ```bash
-curl -X POST http://127.0.0.1:8000/payroll/import \
+curl -X POST http://127.0.0.1:8000/payroll/import/spreadsheet \
   -F "file=@tests/fixtures/sample_payroll.csv"
 ```
 
@@ -34,7 +34,7 @@ preview with those rows flagged as unresolved (`concept_code: null`) instead of 
 **Step A -- preview (read-only, never persists anything):**
 
 ```bash
-curl -X POST http://127.0.0.1:8000/payroll/import/pdf-preview \
+curl -X POST http://127.0.0.1:8000/payroll/pdf-preview \
   -H "X-API-Key: your-api-key-here" \
   -F "file=@payslip.pdf"
 ```
@@ -59,7 +59,7 @@ TemplatePdfPayrollExtractor's `_infer_employment_contract_kind`), so it can come
 `null` if that concept wasn't resolved -- fill it in by hand in that case.
 
 ```bash
-curl -X POST http://127.0.0.1:8000/payroll/import/rows \
+curl -X POST http://127.0.0.1:8000/payroll/import/json \
   -H "X-API-Key: your-api-key-here" \
   -H "Content-Type: application/json" \
   -d '{

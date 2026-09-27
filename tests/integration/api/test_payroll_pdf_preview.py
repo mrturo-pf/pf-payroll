@@ -1,4 +1,4 @@
-"""Tests for the POST /payroll/import/pdf-preview endpoint."""
+"""Tests for the POST /payroll/pdf-preview endpoint."""
 
 from decimal import Decimal
 from datetime import date
@@ -69,7 +69,7 @@ def test_preview_pdf_import_endpoint_returns_preview() -> None:
 
     try:
         response = client.post(
-            "/payroll/import/pdf-preview",
+            "/payroll/pdf-preview",
             files={
                 "file": ("payslip.pdf", b"%PDF-1.4 fake content", "application/pdf")
             },
@@ -115,7 +115,7 @@ def test_preview_pdf_import_endpoint_requires_filename() -> None:
 
     try:
         response = client.post(
-            "/payroll/import/pdf-preview",
+            "/payroll/pdf-preview",
             files={"file": ("", b"noop", "application/pdf")},
         )
     finally:
@@ -133,7 +133,7 @@ def test_preview_pdf_import_endpoint_surfaces_validation_errors() -> None:
 
     try:
         response = client.post(
-            "/payroll/import/pdf-preview",
+            "/payroll/pdf-preview",
             files={"file": ("payslip.pdf", b"noop", "application/pdf")},
         )
     finally:

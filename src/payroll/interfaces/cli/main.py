@@ -165,7 +165,7 @@ async def _import_payroll_async(file_path: Path) -> object:
     """Handle import payroll async.
 
     Runs on the same TransactionalSessionScope SAVEPOINT machinery as
-    POST /payroll/import: the whole import + reconciliation pipeline runs
+    POST /payroll/import/spreadsheet: the whole import + reconciliation pipeline runs
     inside one transaction, and only actually commits once
     is_import_fully_validated() confirms no genuine declared-vs-computed
     conflict was found. A conflict rolls everything back and fails the

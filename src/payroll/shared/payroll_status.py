@@ -16,7 +16,7 @@ def resolve_declared_status(
     a separate shared helper rather than reused there directly, so the
     already-working CSV/XLSX import path stays untouched; this covers the
     two newer callers that also need this same inference: the PDF preview
-    (infrastructure/pdf_import/extractor.py) and POST /payroll/import/rows
+    (infrastructure/pdf_import/extractor.py) and POST /payroll/import/json
     (interfaces/api/routes/payroll.py), which no longer accepts `status` as
     caller input at all -- it never appeared in the source CSV either.
     """

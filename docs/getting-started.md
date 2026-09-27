@@ -83,7 +83,7 @@ http://localhost:8000/docs
 2. Enter your `PF_PAYROLL_API_KEY` from `.env`
 3. Click **Authorize** then **Close**
 4. Try the `GET /health` endpoint (no auth required)
-5. Try the `POST /payroll/import` endpoint (requires auth)
+5. Try the `POST /payroll/import/spreadsheet` endpoint (requires auth)
 
 ### Option B: curl (Terminal)
 

@@ -174,6 +174,8 @@ def test_import_payroll_rows_endpoint_validate_mode_never_commits() -> None:
 
     assert response.status_code == 200
     body = response.json()
+    # jscpd:ignore-start -- deliberate mirror of the analogous assertions in
+    # test_payroll_import.py's own validate-mode-never-commits test.
     assert body["mode"] == "validate"
     assert body["validated"] is True
     assert body["saved"] is None
@@ -185,6 +187,7 @@ def test_import_payroll_rows_endpoint_validate_mode_never_commits() -> None:
     # ImportedPeriodRead's docstring for why Postgres itself never gives
     # this value back either (BIGSERIAL sequences are not transactional).
     assert body["periods"][0]["id"] is None
+    # jscpd:ignore-end
 
 
 def test_import_payroll_rows_endpoint_commit_rejects_unresolved_concept_code() -> None:

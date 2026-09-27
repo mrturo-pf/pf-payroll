@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING, Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, HTTPException, Path, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, UploadFile
 from fastapi.responses import Response
 from dataclasses import dataclass
 from pydantic import BaseModel, PlainSerializer
@@ -276,8 +276,9 @@ class ImportPayrollResponse(BaseModel):
     mode="validate" -> both counts describe what *would* be persisted if the
     same payload were resent with mode="commit" -- nothing was written (see
     TransactionalSessionScope / ImportedPeriodRead's docstring for why
-    `periods[].id` is also null in that case). POST /payroll/import has no
-    concept of validate-only, so it always reports mode="commit" here.
+    `periods[].id` is also null in that case). Both POST /payroll/import
+    and POST /payroll/import/rows support mode="validate"; it defaults to
+    "commit" on both so existing callers see no behavior change.
 
     Named `period_count`/`item_count` rather than `periods`/`items` on
     purpose -- `periods` below is already the actual list of period
@@ -694,6 +695,7 @@ def to_pdf_response(report: GeneratedPayrollReportDTO) -> Response:
 @router.post("/import", response_model=ImportPayrollResponse)
 async def import_payroll(
     file: UploadFile = File(...),
+    mode: Literal["commit", "validate"] = Form("commit"),
     scope: TransactionalSessionScope = Depends(get_transactional_session),
     use_case: ImportPayroll = Depends(get_transactional_import_payroll_use_case),
     process_use_case: ProcessImportedPayrollPeriods = Depends(
@@ -703,13 +705,19 @@ async def import_payroll(
     """Import payroll.
 
     Runs on the same transactional-scope machinery as POST
-    /payroll/import/rows's mode="commit": the whole import +
-    reconciliation pipeline runs inside one SAVEPOINT, and only actually
-    commits once is_import_fully_validated() confirms no genuine
-    declared-vs-computed conflict was found. A conflict rolls everything
-    back and fails the request instead of persisting partially-reconciled
-    data -- see ImportPayrollResponse's docstring for why `validated` and
-    `saved` are therefore always True together in any 200 response here.
+    /payroll/import/rows: the whole import + reconciliation pipeline runs
+    inside one SAVEPOINT. mode="commit" (the default, unchanged behavior for
+    existing callers) makes the result durable once
+    is_import_fully_validated() confirms no genuine declared-vs-computed
+    conflict was found -- a conflict rolls everything back and fails the
+    request instead of persisting partially-reconciled data.
+    mode="validate" runs the exact same pipeline (so every warning is
+    genuine, not simulated) and always rolls back regardless of the result,
+    letting a caller preview an entire CSV/XLSX file's conflicts before
+    ever touching the database -- sent as a `mode` form field alongside
+    `file`, not JSON, since this is a multipart/form-data upload. See
+    ImportPayrollResponse's docstring for the full contract, shared with
+    POST /payroll/import/rows.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="A payroll file name is required.")
@@ -717,29 +725,31 @@ async def import_payroll(
     try:
         result = await use_case.from_bytes(file.filename, await file.read())
         result = await process_use_case.execute(result)
-        if not is_import_fully_validated(result.periods):
+        validated = is_import_fully_validated(result.periods)
+        if mode == "commit" and not validated:
             message = (
                 "Cannot commit: computed contributions/net pay do not match "
-                "the declared amounts for one or more periods. Fix the "
-                "underlying file or reference data and resubmit."
+                "the declared amounts for one or more periods. Resend with "
+                'mode="validate" to inspect the warnings, or fix the '
+                "underlying file or reference data first."
             )
             raise PayrollValidationError(
                 message,
                 detail=build_reconciliation_conflict_detail(message, result.periods),
             )
         periods_read = [
-            to_imported_period_read(period, mode="commit") for period in result.periods
+            to_imported_period_read(period, mode=mode) for period in result.periods
         ]
     except PayrollError as exc:
         await scope.resolve("validate")
         raise to_http_exception(exc, default_status=400) from exc
 
-    await scope.resolve("commit")
+    await scope.resolve(mode)
 
     return ImportPayrollResponse(
-        mode="commit",
-        validated=True,
-        saved=True,
+        mode=mode,
+        validated=validated,
+        saved=True if mode == "commit" else None,
         period_count=result.imported_periods,
         item_count=result.imported_items,
         periods=periods_read,

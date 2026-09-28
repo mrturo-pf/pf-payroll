@@ -253,30 +253,45 @@ class ContributionCalculator:
         )
 
     def health(
-        self, 
-        taxable_clp: Decimal, 
-        plan: HealthPlan, 
-        cap: ContributionCap, 
-        uf_value_clp: Decimal
+        self,
+        taxable_clp: Decimal,
+        plans: list[HealthPlan],  # every plan assigned to the period, not one pre-aggregated plan
+        period_year: int,
+        period_month: int,
+        cap: ContributionCap,
+        cap_uf_value_clp: Decimal,
+        plan_uf_value_clp: Decimal,
     ) -> HealthContribution:
         # Applies the taxable-income cap (same as pension)
-        cap_clp = _quantize_clp(cap.value_uf * uf_value_clp)
+        cap_clp = _quantize_clp(cap.value_uf * cap_uf_value_clp)
         capped_base = min(taxable_clp, cap_clp)
-        base_amount = _quantize_clp(capped_base * plan.institution.mandatory_rate)
+        institution = plans[0].institution  # all plans share one institution
+        base_amount = _quantize_clp(capped_base * institution.mandatory_rate)
 
-        # Isapre: top-up over the contracted plan; Fonasa: no additional top-up
-        if plan.institution.kind is HealthInstitutionKind.ISAPRE and plan.contracted_uf > 0:
-            contracted_clp = _quantize_clp(plan.contracted_uf * uf_value_clp)
-            additional_amount = max(Decimal("0"), contracted_clp - base_amount)
+        # Informational fields: simple whole-month, day-weighted blend across plans
+        contracted_uf = prorated_contracted_uf(plans, period_year, period_month)
+
+        # Isapre: top-up over the contracted plan; Fonasa: no additional top-up.
+        # The top-up itself is NOT the naive (contracted - base) subtraction: it
+        # splits the month into sub-periods of constant plan composition and
+        # applies the mandatory-minimum comparison once PER sub-period, so a
+        # mid-month plan change that crosses the threshold partway through is
+        # priced correctly instead of an all-or-nothing whole-month subtraction.
+        if institution.kind is HealthInstitutionKind.ISAPRE and contracted_uf > 0:
+            contracted_clp = _quantize_clp(contracted_uf * plan_uf_value_clp)
+            additional_amount = _quantize_clp(prorated_additional_amount_clp(
+                plans, period_year, period_month, base_amount, plan_uf_value_clp,
+            ))
         else:
             contracted_clp, additional_amount = Decimal("0"), Decimal("0")
 
-        # See src/payroll/domain/contribution_calculator.py for the full implementation
+        # See src/payroll/domain/contribution_calculator.py and
+        # src/payroll/domain/health_plan_proration.py for the full implementation
         return HealthContribution(
-            institution_code=plan.institution.code,
-            institution_kind=plan.institution.kind,
+            institution_code=institution.code,
+            institution_kind=institution.kind,
             taxable_clp=taxable_clp, cap_clp=cap_clp, capped_base_clp=capped_base,
-            base_amount_clp=base_amount, contracted_uf=plan.contracted_uf,
+            base_amount_clp=base_amount, contracted_uf=contracted_uf,
             contracted_clp=contracted_clp, additional_amount_clp=additional_amount,
         )
 ```

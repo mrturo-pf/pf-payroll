@@ -34,6 +34,33 @@ def _plan(
     )
 
 
+def _ges_and_additional_plans() -> tuple[HealthPlan, HealthPlan]:
+    """Build the GES + Adicionales pair shared by several tests below.
+
+    Mirrors the real 2024-11..onward assignment from health-additional-uf-
+    mismatch.md: 1.70 UF combined, always below HEALTH_BASE on its own.
+    """
+    ges = _plan(
+        plan_id=1,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+        contracted_uf=Decimal("0.91"),
+    )
+    additional = _plan(
+        plan_id=2,
+        valid_from=date(2024, 11, 1),
+        valid_to=None,
+        contracted_uf=Decimal("0.79"),
+    )
+    return ges, additional
+
+
+# Shared by the sub-period proration tests below: the real 2025-02 HEALTH_BASE
+# and month-end UF value from health-additional-uf-mismatch.md.
+_BASE_AMOUNT_CLP = Decimal("237530")
+_UF_VALUE_CLP = Decimal("38647.94")
+
+
 def test_prorated_contracted_uf_returns_zero_for_empty_plan_list() -> None:
     """Test prorated contracted uf returns zero for empty plan list."""
     assert prorated_contracted_uf([], 2026, 1) == Decimal("0")
@@ -95,18 +122,7 @@ def test_prorated_contracted_uf_ignores_plan_with_no_overlap() -> None:
 
 def test_prorated_contracted_uf_sums_multiple_overlapping_plans() -> None:
     """Test multiple plans each contribute their own prorated share, summed."""
-    ges = _plan(
-        plan_id=1,
-        valid_from=date(2024, 11, 1),
-        valid_to=None,
-        contracted_uf=Decimal("0.91"),
-    )
-    additional = _plan(
-        plan_id=2,
-        valid_from=date(2024, 11, 1),
-        valid_to=None,
-        contracted_uf=Decimal("0.79"),
-    )
+    ges, additional = _ges_and_additional_plans()
     base_partial = _plan(
         plan_id=3,
         valid_from=date(2025, 2, 20),
@@ -132,11 +148,11 @@ def test_prorated_additional_matches_naive_formula_when_no_mid_month_change() ->
         valid_to=None,
         contracted_uf=Decimal("6.64"),
     )
-    base_amount = Decimal("237530")
-    uf_value = Decimal("38647.94")
 
-    naive = max(Decimal("0"), plan.contracted_uf * uf_value - base_amount)
-    actual = prorated_additional_amount_clp([plan], 2025, 2, base_amount, uf_value)
+    naive = max(Decimal("0"), plan.contracted_uf * _UF_VALUE_CLP - _BASE_AMOUNT_CLP)
+    actual = prorated_additional_amount_clp(
+        [plan], 2025, 2, _BASE_AMOUNT_CLP, _UF_VALUE_CLP
+    )
     assert actual == naive
 
 
@@ -146,23 +162,10 @@ def test_prorated_additional_is_zero_when_cost_never_reaches_threshold() -> None
     Mirrors GES + Adicionales alone (1.70 UF), which never crosses
     HEALTH_BASE regardless of how it is sliced -- additional must be 0.
     """
-    ges = _plan(
-        plan_id=1,
-        valid_from=date(2024, 11, 1),
-        valid_to=None,
-        contracted_uf=Decimal("0.91"),
-    )
-    additional = _plan(
-        plan_id=2,
-        valid_from=date(2024, 11, 1),
-        valid_to=None,
-        contracted_uf=Decimal("0.79"),
-    )
-    base_amount = Decimal("237530")
-    uf_value = Decimal("38647.94")
+    ges, additional = _ges_and_additional_plans()
 
     actual = prorated_additional_amount_clp(
-        [ges, additional], 2025, 2, base_amount, uf_value
+        [ges, additional], 2025, 2, _BASE_AMOUNT_CLP, _UF_VALUE_CLP
     )
     assert actual == Decimal("0")
 
@@ -179,36 +182,23 @@ def test_prorated_additional_prorates_across_a_mid_month_threshold_crossing() ->
     sub-period-aware formula recognizes that the last 5 days alone *did*
     exceed it and charges only for those days.
     """
-    ges = _plan(
-        plan_id=1,
-        valid_from=date(2024, 11, 1),
-        valid_to=None,
-        contracted_uf=Decimal("0.91"),
-    )
-    additional = _plan(
-        plan_id=2,
-        valid_from=date(2024, 11, 1),
-        valid_to=None,
-        contracted_uf=Decimal("0.79"),
-    )
+    ges, additional = _ges_and_additional_plans()
     base_plan = _plan(
         plan_id=3,
         valid_from=date(2025, 2, 24),
         valid_to=date(2025, 2, 28),
         contracted_uf=Decimal("4.94"),
     )
-    base_amount = Decimal("237530")
-    uf_value = Decimal("38647.94")
 
     naive_whole_month = max(
         Decimal("0"),
-        prorated_contracted_uf([ges, additional, base_plan], 2025, 2) * uf_value
-        - base_amount,
+        prorated_contracted_uf([ges, additional, base_plan], 2025, 2) * _UF_VALUE_CLP
+        - _BASE_AMOUNT_CLP,
     )
     assert naive_whole_month == Decimal("0")  # the bug: fully masked by the blend
 
     actual = prorated_additional_amount_clp(
-        [ges, additional, base_plan], 2025, 2, base_amount, uf_value
+        [ges, additional, base_plan], 2025, 2, _BASE_AMOUNT_CLP, _UF_VALUE_CLP
     )
     # Only the last 5 days (24th..28th) combine to 6.64 UF and cross the
     # prorated threshold for those days specifically -- computed
@@ -217,8 +207,8 @@ def test_prorated_additional_prorates_across_a_mid_month_threshold_crossing() ->
     days_with_base = Decimal(5)
     days_in_period = Decimal(28)
     share = days_with_base / days_in_period
-    expected = (Decimal("1.70") + Decimal("4.94")) * share * uf_value - (
-        base_amount * share
+    expected = (Decimal("1.70") + Decimal("4.94")) * share * _UF_VALUE_CLP - (
+        _BASE_AMOUNT_CLP * share
     )
     assert actual == expected
     assert actual > Decimal("0")

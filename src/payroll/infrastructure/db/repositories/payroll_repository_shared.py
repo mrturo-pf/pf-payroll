@@ -30,7 +30,10 @@ from payroll.infrastructure.db.models.payroll import (
     PayrollPeriodModel,
 )
 from payroll.infrastructure.db.models.reference_data import ContributionCapType
-from payroll.shared.constants import REVIEW_REQUIRED_CONCEPT_CODES
+from payroll.shared.constants import (
+    RECONCILIATION_TOLERANCE_CLP,
+    REVIEW_REQUIRED_CONCEPT_CODES,
+)
 
 
 def build_net_pay_warning(
@@ -38,7 +41,16 @@ def build_net_pay_warning(
     expected_net_pay_clp: Decimal | None,
     net_pay_difference_clp: Decimal | None,
 ) -> str | None:
-    """Build net pay warning."""
+    """Build net pay warning.
+
+    Uses the same shared reconciliation tolerance as PENSION_BASE/
+    PENSION_ADDITIONAL/HEALTH_BASE/HEALTH_ADDITIONAL_UF -- this is the final
+    accounting check summing every income/discount concept on the payslip,
+    so any residual already absorbed upstream by that tolerance would
+    otherwise resurface here as a leftover difference of the same size and
+    block validation anyway. See docs/investigations/health-additional-uf-
+    mismatch.md, Session 12, for the case that surfaced this.
+    """
     if declared_net_pay_clp is None:
         return None
     if expected_net_pay_clp is None or net_pay_difference_clp is None:
@@ -46,7 +58,7 @@ def build_net_pay_warning(
             "Declared net_pay will be reconciled after computed contributions "
             "and income tax are generated."
         )
-    if net_pay_difference_clp == 0:
+    if abs(net_pay_difference_clp) <= RECONCILIATION_TOLERANCE_CLP:
         return None
     return (
         "Declared net_pay does not match the fully computed payroll totals. "

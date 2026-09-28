@@ -544,14 +544,33 @@ _HEALTH_UF_ITEMS = [
 
 
 def test_build_net_pay_warning_reports_final_mismatch() -> None:
-    """Test final net pay mismatch warning content."""
+    """A 151 CLP difference already exceeds the 150 CLP reconciliation tolerance."""
     assert build_net_pay_warning(
         Decimal("1000"),
-        Decimal("900"),
-        Decimal("100"),
+        Decimal("849"),
+        Decimal("151"),
     ) == (
         "Declared net_pay does not match the fully computed payroll totals. "
-        "Difference: 100 CLP."
+        "Difference: 151 CLP."
+    )
+
+
+def test_build_net_pay_warning_within_tolerance_has_no_warning() -> None:
+    """A 150 CLP difference is rounding noise absorbed by the shared tolerance.
+
+    Same constant, same rationale as the contribution-level checks: a small
+    residual (e.g. from an approximated mid-month health plan enrollment
+    date) should not block validation on its own once it has already been
+    absorbed upstream -- otherwise it just resurfaces here as a leftover of
+    the same size. See health-additional-uf-mismatch.md, Session 12.
+    """
+    assert (
+        build_net_pay_warning(
+            Decimal("1000"),
+            Decimal("850"),
+            Decimal("150"),
+        )
+        is None
     )
 
 

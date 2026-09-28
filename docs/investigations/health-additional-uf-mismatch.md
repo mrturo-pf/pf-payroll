@@ -1094,3 +1094,37 @@ correctness improvement independent of this tolerance change), (b) the Session 1
 reference-data correction (`valid_from = 2025-02-25`), and (c) this session's
 tolerance widening to `150 CLP`, applied ecosystem-wide with the trade-off
 explicitly accepted by the user.
+
+**Correction, same session, found by testing live rather than trusting the plan
+alone:** raising `RECONCILIATION_TOLERANCE_CLP` was necessary but not sufficient.
+A live call to `POST /payroll/import/json` (`mode="validate"`) with the real
+February 2025 payslip data still returned the *period-level* `validated: false`
+even though `contribution_validation.warning` was already `null` -- because
+`period_has_reconciliation_conflict()` gates on **three independent checks**, and
+the net-pay reconciliation (`build_net_pay_warning()`, summing *every* income and
+discount concept on the payslip, not just the four contribution ones) used its
+own, separate, exact-`$0` comparison (`if net_pay_difference_clp == 0`). The same
+`$133` residual that the contribution check now absorbs was still propagating
+straight into `net_pay_difference_clp`, tripping this second, stricter gate on
+its own.
+
+Flagged the trade-off again before touching it: net-pay reconciliation is the
+final accounting check across the *entire* payslip (all income and discount
+concepts, not just health/pension), so giving it the same tolerance relaxes
+sensitivity ecosystem-wide, for every concept, not just `HEALTH_ADDITIONAL_UF`.
+User's explicit decision, with that broader blast radius understood: apply the
+same `RECONCILIATION_TOLERANCE_CLP` here too, for consistency (one shared
+constant, one shared rationale -- absorbing residuals already accepted upstream
+shouldn't resurface as a second, stricter block downstream).
+
+`build_net_pay_warning()` (`payroll_repository_shared.py`) changed from
+`if net_pay_difference_clp == 0` to
+`if abs(net_pay_difference_clp) <= RECONCILIATION_TOLERANCE_CLP`. Updated
+`test_build_net_pay_warning_reports_final_mismatch` to the new 151 CLP boundary
+and added `test_build_net_pay_warning_within_tolerance_has_no_warning` (150 CLP,
+no warning). Verified live end-to-end against the real February 2025 payload:
+`POST /payroll/import/json` (`mode="validate"`) now returns
+`"validated": true`, `"net_pay_warning": null`,
+`"contribution_validation": {"warning": null}` for the period. 366 unit tests
+pass (430 including integration, same 3 pre-existing testcontainers/Docker
+mount errors as before, unrelated to this change), ruff/mypy clean.

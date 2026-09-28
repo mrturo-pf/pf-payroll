@@ -17,6 +17,7 @@ from payroll.application.services.exchange_rates import (
     resolve_month_end_uf_exchange_rate,
 )
 from payroll.domain.contribution_calculator import ContributionCalculator
+from payroll.shared.constants import RECONCILIATION_TOLERANCE_CLP
 
 _PENSION_BASE_CODE = "PENSION_BASE"
 _PENSION_ADDITIONAL_CODE = "PENSION_ADDITIONAL"
@@ -26,12 +27,6 @@ _VALIDATION_PENDING_WARNING = (
     "Contribution values will be reconciled after pension and health plans are "
     "assigned."
 )
-# Same tolerance already used by ComplementaryInsuranceValidationService for an
-# analogous declared-vs-calculated CLP comparison: absorbs the few pesos of
-# rounding noise that naturally accumulate across a chain of quantize_clp()
-# calls (rate * capped_base, contracted_uf * uf_value, subtraction, ...)
-# without hiding a genuinely wrong reference-data value or plan assignment.
-_RECONCILIATION_TOLERANCE_CLP = Decimal("100")
 
 
 def _sum_concept_amount(
@@ -52,7 +47,7 @@ def _sum_concept_amount(
 
 def _exceeds_tolerance(declared: Decimal, expected: Decimal) -> bool:
     """Return whether a declared/expected CLP pair differs beyond rounding noise."""
-    return abs(declared - expected) > _RECONCILIATION_TOLERANCE_CLP
+    return abs(declared - expected) > RECONCILIATION_TOLERANCE_CLP
 
 
 def build_imported_contribution_validation(

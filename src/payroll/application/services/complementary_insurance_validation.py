@@ -8,7 +8,10 @@ from payroll.application.dto import (
     PayrollPeriodDetailDTO,
 )
 from payroll.application.errors import PayrollValidationError
-from payroll.shared.constants import COMPLEMENTARY_INSURANCE_VALIDATION_PENDING_PREFIX
+from payroll.shared.constants import (
+    COMPLEMENTARY_INSURANCE_VALIDATION_PENDING_PREFIX,
+    RECONCILIATION_TOLERANCE_CLP,
+)
 
 
 class ComplementaryInsuranceValidationError(PayrollValidationError):
@@ -92,7 +95,7 @@ class ComplementaryInsuranceValidationService:
         )
 
         # Validate: Compare total declared vs calculated (with tolerance)
-        tolerance = Decimal("100")
+        tolerance = RECONCILIATION_TOLERANCE_CLP
         difference = abs(computed_costs.total_cost_clp - total_declared)
 
         if difference > tolerance:

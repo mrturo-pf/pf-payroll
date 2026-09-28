@@ -1053,3 +1053,44 @@ correction and the domain code change (`health_plan_proration.py`,
 `contribution_calculator.py`, their tests) are ready but pending the
 user's explicit go-ahead, per the ecosystem-wide rule against autonomous
 commits/pushes and production data mutations.
+
+## Session 12 (2026-09-27, same day): closed by raising the shared reconciliation
+tolerance from 100 to 150 CLP, not by further domain changes
+
+The user applied Session 11's `UPDATE` to Neon (`2025-02-24` -> `2025-02-25`) and
+asked whether simply raising the reconciliation tolerance from `100` to `150 CLP`
+would be enough to make `2025-02` fully reconcile, given the remaining `$133`
+residual. Flagged the real trade-off before making the change: the constant that
+guards this (`_RECONCILIATION_TOLERANCE_CLP`, `contribution_computation.py`) is
+**shared across four different checks** -- `PENSION_BASE`, `PENSION_ADDITIONAL`,
+`HEALTH_BASE`, and `HEALTH_ADDITIONAL_UF` -- for every period, not scoped to this
+one case. Its own docstring says it exists to absorb genuine `quantize_clp()`
+rounding noise, explicitly *not* to hide a known-wrong reference-data value --
+which is exactly what this `$133` residual is (an approximated mid-month
+enrollment date, not rounding noise). Raising it permanently reduces sensitivity
+to real `$100-150 CLP` discrepancies in all four checks, ecosystem-wide, going
+forward -- not just for this one historical period.
+
+**User's explicit decision, with that trade-off understood: raise it anyway.**
+Implemented as a value change plus a small DRY fix that was already overdue: the
+tolerance existed as **three separate literal `Decimal("100")`s** in three files
+(`contribution_computation.py`, `complementary_insurance_validation.py`, and the
+`ComplementaryInsuranceValidationAuditDTO` field default in `dto.py`) that the
+code comments already described as "the same tolerance" conceptually, but which
+could silently drift apart since nothing enforced they stay equal. Consolidated
+into a single `RECONCILIATION_TOLERANCE_CLP = Decimal("150")` in
+`shared/constants.py`, imported by all three call sites.
+
+Verified end-to-end against the real numbers: `abs(2860 - 2727) = 133 <= 150` --
+`2025-02` now reconciles with **no warning**. Updated the two tests that asserted
+the exact old `100`/`101` CLP boundary
+(`test_build_imported_contribution_validation_within_tolerance_has_no_warning`,
+`..._just_over_tolerance_warns` in `test_contribution_computation.py`) to the new
+`150`/`151` boundary. Full suite: 365 passed, ruff/mypy clean.
+
+**Status: closed.** `2025-02`'s `HEALTH_ADDITIONAL_UF` residual is resolved via a
+combination of (a) the Session 11 domain fix (sub-period-aware proration, a real
+correctness improvement independent of this tolerance change), (b) the Session 11
+reference-data correction (`valid_from = 2025-02-25`), and (c) this session's
+tolerance widening to `150 CLP`, applied ecosystem-wide with the trade-off
+explicitly accepted by the user.

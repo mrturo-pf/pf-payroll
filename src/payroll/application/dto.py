@@ -16,6 +16,7 @@ from payroll.domain.contributions import (
     UnemploymentContribution,
 )
 from payroll.domain.taxes import IncomeTaxComputation
+from payroll.shared.constants import RECONCILIATION_TOLERANCE_CLP
 
 PayrollConceptKind = Literal["income", "discount"]
 PayrollStatusKind = Literal["projected", "actual", "reviewed"]
@@ -575,7 +576,7 @@ class ComplementaryInsuranceValidationAuditDTO:
         default_factory=list
     )
     difference_clp: Decimal = Decimal(0)
-    tolerance_clp: Decimal = Decimal(100)
+    tolerance_clp: Decimal = RECONCILIATION_TOLERANCE_CLP
     has_discrepancy: bool = False
 
 

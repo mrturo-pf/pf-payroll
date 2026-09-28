@@ -1,6 +1,23 @@
 """Shared constants."""
 
+from decimal import Decimal
+
 DEFAULT_CURRENCY = "CLP"
+# Shared by ContributionComputationService (PENSION_BASE, PENSION_ADDITIONAL,
+# HEALTH_BASE, HEALTH_ADDITIONAL_UF) and ComplementaryInsuranceValidationService
+# (total declared vs. calculated employer contribution) for an analogous
+# declared-vs-calculated CLP comparison: absorbs rounding noise that
+# naturally accumulates across a chain of quantize_clp() calls (rate *
+# capped_base, contracted_uf * uf_value, subtraction, ...). Raised from 100
+# to 150 on 2026-09-27 to also cover 2025-02's HEALTH_ADDITIONAL_UF residual
+# (declared $2,860 vs. computed $2,727 -- a $133 gap from not knowing the
+# exact mid-month health plan enrollment date/time-of-day, not from
+# rounding) -- see docs/investigations/health-additional-uf-mismatch.md,
+# Session 11, for the full analysis and the explicit trade-off this widening
+# accepts: every reconciliation check sharing this constant is now less
+# sensitive to genuine $100-150 CLP discrepancies, ecosystem-wide, going
+# forward, not just for that one period.
+RECONCILIATION_TOLERANCE_CLP = Decimal("150")
 MONTHLY_EXCHANGE_RATE_CODES = frozenset({"UTM"})
 UNEMPLOYMENT_INSURANCE_CONCEPT_CODE = "UNEMPLOYMENT_INSURANCE"
 HEALTH_ADDITIONAL_CONCEPT_CODE = "HEALTH_ADDITIONAL_UF"

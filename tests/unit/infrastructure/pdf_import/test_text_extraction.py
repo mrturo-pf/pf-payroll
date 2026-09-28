@@ -111,6 +111,18 @@ class TestParseWorkedDays:
         """Test parses days following antiquity date."""
         assert parse_worked_days(SAMPLE_TEXT) == 25
 
+    def test_falls_back_to_antiquity_regex_when_no_dias_trabajados_column(
+        self,
+    ) -> None:
+        """Test falls back to the older date-based pattern for older PDF layouts.
+
+        Older PDFs never had a DIAS TRABAJADOS column at all, so the
+        column-based parser must return None and the antiquity-date regex
+        must be the one that actually resolves the value.
+        """
+        text = "LUGAR DE TRABAJO ANTIGUEDAD LABORAL\nS1 01.01.2020 22\n"
+        assert parse_worked_days(text) == 22
+
     def test_returns_none_when_pattern_missing(self) -> None:
         """Test returns none when pattern missing."""
         assert parse_worked_days("nothing to see here") is None

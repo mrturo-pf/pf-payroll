@@ -61,6 +61,22 @@ _BASE_AMOUNT_CLP = Decimal("237530")
 _UF_VALUE_CLP = Decimal("38647.94")
 
 
+def _expected_ges_additional_base_excess(days_with_base: Decimal) -> Decimal:
+    """Compute the expected top-up for GES+Adicionales+Base (6.64 UF) sub-period.
+
+    Shared by both mid-month-crossing tests below: only the sub-period where
+    the Base plan is also active (whatever its length) combines to 6.64 UF
+    and crosses the mandatory-minimum threshold; the remaining sub-period
+    (GES+Adicionales alone, 1.70 UF) never does, so it never contributes.
+    Computed independently here via plain Decimal arithmetic, not by calling
+    the function under test with different inputs.
+    """
+    share = days_with_base / Decimal(28)
+    return (Decimal("1.70") + Decimal("4.94")) * share * _UF_VALUE_CLP - (
+        _BASE_AMOUNT_CLP * share
+    )
+
+
 def test_prorated_contracted_uf_returns_zero_for_empty_plan_list() -> None:
     """Test prorated contracted uf returns zero for empty plan list."""
     assert prorated_contracted_uf([], 2026, 1) == Decimal("0")
@@ -201,14 +217,59 @@ def test_prorated_additional_prorates_across_a_mid_month_threshold_crossing() ->
         [ges, additional, base_plan], 2025, 2, _BASE_AMOUNT_CLP, _UF_VALUE_CLP
     )
     # Only the last 5 days (24th..28th) combine to 6.64 UF and cross the
-    # prorated threshold for those days specifically -- computed
-    # independently here via plain Decimal arithmetic, not by calling the
-    # function under test with different inputs.
-    days_with_base = Decimal(5)
-    days_in_period = Decimal(28)
-    share = days_with_base / days_in_period
-    expected = (Decimal("1.70") + Decimal("4.94")) * share * _UF_VALUE_CLP - (
-        _BASE_AMOUNT_CLP * share
-    )
+    # prorated threshold for those days specifically.
+    expected = _expected_ges_additional_base_excess(days_with_base=Decimal(5))
     assert actual == expected
     assert actual > Decimal("0")
+
+
+def test_prorated_additional_prorates_a_plan_that_ends_mid_period() -> None:
+    """Test a plan ending strictly before period_end also opens a sub-period.
+
+    The mid-month-*start* case above never exercises the branch that adds
+    the day right after a plan's own coverage ends, because that plan's
+    valid_to happens to land exactly on period_end (the day-after boundary
+    then falls outside the period and is skipped). Mirroring it with the
+    Base plan ending on the 10th instead of starting on the 24th forces
+    that boundary to be added mid-period.
+    """
+    ges, additional = _ges_and_additional_plans()
+    base_plan = _plan(
+        plan_id=3,
+        valid_from=date(2025, 2, 1),
+        valid_to=date(2025, 2, 10),
+        contracted_uf=Decimal("4.94"),
+    )
+
+    actual = prorated_additional_amount_clp(
+        [ges, additional, base_plan], 2025, 2, _BASE_AMOUNT_CLP, _UF_VALUE_CLP
+    )
+    # Only the first 10 days (Base plan active) combine to 6.64 UF and cross
+    # the prorated threshold; the remaining 18 days never do.
+    expected = _expected_ges_additional_base_excess(days_with_base=Decimal(10))
+    assert actual == expected
+    assert actual > Decimal("0")
+
+
+def test_prorated_additional_ignores_a_plan_with_no_overlap_in_the_period() -> None:
+    """Test a plan entirely outside the period is skipped, not just zero-weighted.
+
+    Defensive counterpart to the no-overlap case in prorated_contracted_uf():
+    a stray plan the caller failed to filter out shouldn't affect the
+    sub-period boundaries at all, let alone raise.
+    """
+    ges, additional = _ges_and_additional_plans()
+    future_plan = _plan(
+        plan_id=3,
+        valid_from=date(2025, 3, 1),
+        valid_to=None,
+        contracted_uf=Decimal("9.00"),
+    )
+
+    with_future_plan = prorated_additional_amount_clp(
+        [ges, additional, future_plan], 2025, 2, _BASE_AMOUNT_CLP, _UF_VALUE_CLP
+    )
+    without_future_plan = prorated_additional_amount_clp(
+        [ges, additional], 2025, 2, _BASE_AMOUNT_CLP, _UF_VALUE_CLP
+    )
+    assert with_future_plan == without_future_plan == Decimal("0")

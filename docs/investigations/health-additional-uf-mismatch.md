@@ -21,16 +21,6 @@ reference-data changes.
 period isolated and resolved the same day (see "Resolution" below).
 Reopened same day for the full 22-period pattern ("Session 3"), then
 resolved and validated the same day ("Session 4").
-
-## Context
-
-This session shipped two fixes to `POST /payroll/import/rows`:
-
-1. `48a6314` — `build_imported_contribution_validation()` no longer nulls out
-   `expected_health_plan_additional_clp` just because a period has more than
-   one `health_plan_id` assigned (that guard predated the `contracted_uf`
-   aggregation across every assigned plan done by
-   `get_contribution_context()`, and was firing on almost every real
    import).
 2. `551cf30` — money fields on `ImportedPeriodRead` /
    `ImportedContributionValidationRead` now render as real JSON numbers
@@ -1128,3 +1118,84 @@ no warning). Verified live end-to-end against the real February 2025 payload:
 `"contribution_validation": {"warning": null}` for the period. 366 unit tests
 pass (430 including integration, same 3 pre-existing testcontainers/Docker
 mount errors as before, unrelated to this change), ruff/mypy clean.
+
+## Session 13 (2026-09-28, different day): a ghost row resurrected the exact
+bug this investigation fixed, and the fixture drifted out of sync again
+
+While diagnosing an unrelated local-vs-GCP mismatch (`pf-db`'s
+`04_seed_real.sql` was missing the historical `PAY_HLTH_PLAN` tiers this
+investigation had added directly to Neon -- see `pf-db` commit `fef3ebc`),
+a second, more serious problem surfaced from the same root cause pattern.
+
+**Root cause: `UPDATE`-based corrections silently broke this file's own
+idempotency key.** Session 4 (above) corrected the original wrong `Base`
+row (Neon `id=8` at the time) via `UPDATE ... SET valid_from = '2026-03-01'`
+instead of `DELETE` + `INSERT`. `04_seed_real.sql`'s `INSERT ... WHERE NOT
+EXISTS` idempotency check was keyed on `(valid_from, plan_name)` -- so once
+the real row's `valid_from` moved away from `2024-11-01`, that exact old key
+no longer existed, and the *next* deploy to re-run this file (any push to
+`pf-db` main re-runs `Seed real data (production)`, regardless of whether
+that push has anything to do with payroll) found no conflict and
+re-inserted the stale, already-fixed-away `Base=5.42 UF, 2024-11-01, open-
+ended` row as a brand new one (Neon `id=16` in the dump inspected this
+session). This most likely happened via an unrelated `pf-db` CI-action-
+version-bump push, not any payroll-specific change -- the landmine had
+apparently been sitting untouched in `04_seed_real.sql` since Session 4 and
+only detonated once something finally re-triggered a deploy.
+
+**Impact, confirmed empirically** against a live Neon mirror (via
+`pf-db/scripts/restore-neon-dump.sh`): `_deduce_health_plan_ids_for_month()`
+/ `get_health_plans_overlapping_month()` deliberately return *every* health
+plan overlapping a period's month (to support the Session 9 sub-period
+proration), so two overlapping `Base` tiers for the same dates get summed.
+For 2025-03 this inflated `expected_health_plan_additional_clp` from a
+correct `~19214 CLP` to `230020 CLP` (12x). Every period from 2024-11
+onward was affected while the ghost row existed.
+
+**Fix (`pf-db` commit `2b2df4a`):** added an idempotent one-time `DELETE`
+targeting the exact stale row (`plan_name='Base', valid_from='2024-11-01',
+valid_to IS NULL, contracted_uf=5.42`) ahead of the `INSERT`, and removed
+that entry from the `INSERT`'s `VALUES` list so it can never be re-created
+by this file again. Verified locally (`make seed-real`: `DELETE 1`) and via
+`POST /payroll/import/json` for 2025-03: `expected_health_plan_additional_clp`
+back to `19214`, `difference_clp: 0`, `warning: null`. Pushed and deployed
+to Neon through the normal `pf-db` CI pipeline (`Check` -> `Approval Gate`
+(explicit user approval) -> `Migrate & Seed` -> `Notify`), all green.
+
+**Lesson for future reference-data corrections in `pf-db`:** never correct
+a seeded row in Neon with a bare `UPDATE` alone. Either (a) also update
+`04_seed_real.sql`'s matching `VALUES` entry in the same change so the
+file's own idempotency key doesn't drift out from under it, or (b) if the
+old key must be preserved for some reason, add an explicit `DELETE` guard
+for the old value the same way this fix does. A `pf-db`-side improvement
+worth considering separately: `Seed real data (production)` currently
+re-runs on *every* push to `main`, including changes with nothing to do
+with reference data (like a CI action-version bump) -- that's what let a
+years-old dormant landmine detonate from an unrelated commit.
+
+**Separately, the local-only test fixture (`secrets/payroll-input.csv`,
+gitignored, never committed) also needed a follow-up.** Session 8 (above)
+deliberately zeroed `2025-02`'s `health_plan_additional` in this fixture to
+match the *pre-proration* model's `expected=$0`. Sessions 9-12 changed what
+the model expects for that period to `$2727`, but nobody revisited the
+fixture -- so `POST /payroll/import/spreadsheet` (`mode="validate"`) against
+it started reporting `2025-02` as the only unvalidated period out of 22
+(`declared=0` vs `expected=2727`), which on first glance looked like it
+could be a validation-logic divergence between the JSON and spreadsheet
+import paths. It wasn't: both paths returned the identical `expected=2727`,
+confirming they share the same domain code. Root cause was purely the
+stale fixture value. Given the choice between leaving it, matching the
+model's expected value exactly, or restoring the real declared amount, the
+user chose the real one: `health_plan_additional` back to `2860` (the real,
+Cartola-confirmed value) and `net_pay` back to `3026422` to keep the row's
+own arithmetic consistent -- `abs(2860 - 2727) = 133 <= 150`, so it now
+reconciles under the current tolerance, same as the real production period
+does. Verified: `POST /payroll/import/spreadsheet` (`mode="validate"`) now
+returns `22/22` periods validated. The user subsequently confirmed both
+import endpoints (`/payroll/import/json`, `/payroll/import/spreadsheet`)
+succeed for both `mode="validate"` and `mode="commit"`.
+
+**Status: closed**, both incidents resolved. No code changes were needed
+for either -- the domain logic was already correct in both cases; the
+landing of a reference-data correction (`pf-db`) and a test fixture value
+(`pf-payroll/secrets/`) are what had drifted.

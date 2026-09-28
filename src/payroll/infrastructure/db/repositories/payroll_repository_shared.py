@@ -286,14 +286,16 @@ class SqlAlchemyPayrollRepositoryBase:
 
         return pension_plan_model, pension_institution_model
 
-    async def _get_health_plan(
-        self,
-        plan_id: int,
-        payment_date: date,
-        *,
-        require_active: bool = False,
+    async def _fetch_health_plan_row(
+        self, plan_id: int
     ) -> tuple[HealthPlanModel, HealthInstitutionModel]:
-        """Handle get health plan."""
+        """Fetch a health plan and its institution by ID, or raise if missing.
+
+        Shared by `_get_health_plan()` (single-day validity check, for
+        explicit/new plan assignments) and `_get_assigned_health_plan()`
+        (existence-only, for plans already snapshotted on a period) -- both
+        need the exact same join/lookup, just different validation on top.
+        """
         health_result = await self._session.execute(
             select(HealthPlanModel, HealthInstitutionModel)
             .join(
@@ -305,8 +307,19 @@ class SqlAlchemyPayrollRepositoryBase:
         health_row = health_result.first()
         if health_row is None:
             raise HealthPlanNotFoundError(f"Health plan {plan_id} was not found.")
+        return health_row[0], health_row[1]
 
-        health_plan_model, health_institution_model = health_row
+    async def _get_health_plan(
+        self,
+        plan_id: int,
+        payment_date: date,
+        *,
+        require_active: bool = False,
+    ) -> tuple[HealthPlanModel, HealthInstitutionModel]:
+        """Handle get health plan."""
+        health_plan_model, health_institution_model = await self._fetch_health_plan_row(
+            plan_id
+        )
         if require_active and not health_institution_model.is_active:
             raise PayrollConflictError(
                 f"Health plan {plan_id} belongs to inactive health institution "
@@ -337,16 +350,4 @@ class SqlAlchemyPayrollRepositoryBase:
         proration exists to support (see domain/health_plan_proration.py).
         Only existence is re-verified, not validity.
         """
-        health_result = await self._session.execute(
-            select(HealthPlanModel, HealthInstitutionModel)
-            .join(
-                HealthInstitutionModel,
-                HealthPlanModel.institution_id == HealthInstitutionModel.id,
-            )
-            .where(HealthPlanModel.id == plan_id)
-        )
-        health_row = health_result.first()
-        if health_row is None:
-            raise HealthPlanNotFoundError(f"Health plan {plan_id} was not found.")
-        health_plan_model, health_institution_model = health_row
-        return health_plan_model, health_institution_model
+        return await self._fetch_health_plan_row(plan_id)

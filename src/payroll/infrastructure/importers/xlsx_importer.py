@@ -41,6 +41,7 @@ CONCEPT_MAP = {
         "discount",
         False,
     ),
+    "ccaf_loan": ("CCAF_LOAN", "discount", False),
 }
 
 # Non-concept columns every wide-format row carries, in the exact order they

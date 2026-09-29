@@ -270,3 +270,32 @@ class TestPayslipVariantConceptCoverage:
         field = match_field(template, "ANTICIPO AGUINALDO")
         assert field is not None
         assert field.concept_code == "HOLIDAY_BONUS_ADVANCE"
+
+
+class TestCcafLoanConceptCoverage:
+    """Regression test for the CCAF social-credit deduction line.
+
+    2026-09: 'CCAF LA ARAUCANA VIGENTE' showed up in a real Walmart-Chile
+    payslip (Liquidacion_202609.PDF) with no matching concept_code at all --
+    unlike the payslip-variant gaps above, this was a genuinely new domain
+    concept (CCAF_LOAN), added to pf-db's PAY_CONCEPT seed data together with
+    this template field. The pattern is deliberately not anchored to 'LA
+    ARAUCANA' specifically: an employee affiliated with a different CCAF
+    (Los Andes, Los Heroes, 18 de Septiembre) gets the same '<CCAF NAME>
+    VIGENTE' line shape.
+    """
+
+    @pytest.mark.parametrize(
+        "raw_label",
+        [
+            "CCAF LA ARAUCANA VIGENTE",
+            "CCAF LOS ANDES VIGENTE",
+        ],
+    )
+    def test_ccaf_vigente_line_maps_to_ccaf_loan(self, raw_label: str) -> None:
+        """Any '<CCAF NAME> VIGENTE' label must resolve to CCAF_LOAN."""
+        template = _load_real_shipped_template()
+        field = match_field(template, raw_label)
+        assert field is not None
+        assert field.concept_code == "CCAF_LOAN"
+        assert field.kind == "discount"

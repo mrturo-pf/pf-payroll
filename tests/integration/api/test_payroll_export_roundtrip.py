@@ -42,7 +42,7 @@ from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
 # One concept per CONCEPT_MAP kind/is_taxable combination actually declared,
 # plus both computed-only concepts -- close enough to a real multi-concept
 # payslip to exercise every branch of the inverted mapping, without needing
-# all 18 CONCEPT_MAP entries populated.
+# every CONCEPT_MAP entry populated.
 _DECLARED_CONCEPTS = (
     ("SALARY_BASE", "income", True, Decimal("1000000")),
     ("LEGAL_GRATUITY", "income", True, Decimal("250000")),

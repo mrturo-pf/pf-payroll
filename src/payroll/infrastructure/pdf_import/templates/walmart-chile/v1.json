@@ -119,6 +119,12 @@
       "concept_code": "PRIOR_SALARY_DIFFERENCE",
       "kind": "income",
       "confidence": 0.85
+    },
+    {
+      "pdf_label_pattern": "(?i)^CCAF\\s+.*VIGENTE$",
+      "concept_code": "CCAF_LOAN",
+      "kind": "discount",
+      "confidence": 0.9
     }
   ]
 }

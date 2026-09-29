@@ -5,7 +5,7 @@ This guide focuses on the payroll business flow endpoints. For the **complete AP
 ## Business flow
 
 ```text
-import -> assign plans -> compute contributions -> compute tax -> review -> report PDF
+import -> assign plans -> compute contributions -> compute tax -> review -> deflate
 ```
 
 ## 1. Import payroll
@@ -222,27 +222,7 @@ Review requires:
 
 After that, the period status becomes `reviewed`.
 
-## 6. Generate the PDF
-
-API:
-
-```bash
-curl -L http://127.0.0.1:8000/payroll/1/report.pdf --output payroll-period-1.pdf
-```
-
-CLI:
-
-```bash
-python -m payroll.interfaces.cli.main report-pdf 1 --output payroll-period-1.pdf
-```
-
-The PDF step requires:
-
-- the payroll period to exist
-- the period to already be `reviewed`
-- a payroll summary to exist
-
-## 7. Query or deflate results
+## 6. Query or deflate results
 
 Period summary and detail:
 

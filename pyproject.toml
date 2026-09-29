@@ -26,7 +26,6 @@ dependencies = [
   "structlog>=25.4",
   "typer>=0.16",
   "uvicorn[standard]>=0.35",
-  "weasyprint>=66.0",
 ]
 
 [project.optional-dependencies]
@@ -52,9 +51,6 @@ filterwarnings = [
   # deprecated in favor of anyio.from_thread.BlockingPortal. This is a
   # third-party library internal, not something we can fix here.
   "ignore:The anyio.abc.BlockingPortal alias is deprecated.*:DeprecationWarning",
-  # weasyprint warns when the optional HarfBuzz-Subset native library isn't
-  # installed; test_..._without_native_libs deliberately exercises that path.
-  "ignore:HarfBuzz-Subset will be required by future versions of WeasyPrint.*:DeprecationWarning",
 ]
 
 [tool.ruff]
@@ -80,7 +76,7 @@ min_confidence = 80
 sort_by_size = true
 
 [[tool.mypy.overrides]]
-module = ["pandas", "weasyprint"]
+module = ["pandas"]
 ignore_missing_imports = true
 
 [tool.setuptools]

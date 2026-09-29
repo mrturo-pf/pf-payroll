@@ -17,7 +17,6 @@ from typer.testing import CliRunner
 
 import payroll.interfaces.cli.main as cli_main
 from payroll.application.dto import (
-    GeneratedPayrollReportDTO,
     ImportPayrollResultDTO,
     ImportedPayrollPeriodDTO,
     PayrollPeriodDetailDTO,
@@ -322,21 +321,6 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
             """Handle execute."""
             return command
 
-    class FakeGeneratePayrollReport:
-        """Test double for Generate Payroll Report."""
-
-        def __init__(self, repository: object, renderer: object) -> None:
-            """Initialize the instance."""
-            assert repository == "payroll-repo"
-            assert renderer == "renderer"
-
-        async def execute(self, period_id: int) -> GeneratedPayrollReportDTO:
-            """Handle execute."""
-            assert period_id == 7
-            return GeneratedPayrollReportDTO(
-                period_id=7, filename="payroll-period-7.pdf", content=b"%PDF"
-            )
-
     monkeypatch.setattr(cli_main, "SessionLocal", lambda: _FakeSessionContext())
     monkeypatch.setattr(
         cli_main, "open_transactional_session", _fake_open_transactional_session
@@ -347,7 +331,6 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     monkeypatch.setattr(
         cli_main, "SqlAlchemyReferenceDataRepository", lambda session: "reference-repo"
     )
-    monkeypatch.setattr(cli_main, "WeasyPrintPayrollReportRenderer", lambda: "renderer")
     monkeypatch.setattr(cli_main, "XlsxPayrollImporter", lambda: "importer")
     monkeypatch.setattr(cli_main, "ImportPayroll", FakeImportPayroll)
     monkeypatch.setattr(
@@ -361,7 +344,6 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     monkeypatch.setattr(cli_main, "ComputeContributions", _FakeDualRepoUseCase)
     monkeypatch.setattr(cli_main, "ComputeIncomeTax", _FakeDualRepoUseCase)
     monkeypatch.setattr(cli_main, "ReviewPayrollPeriod", FakeReviewPayrollPeriod)
-    monkeypatch.setattr(cli_main, "GeneratePayrollReport", FakeGeneratePayrollReport)
 
     assert asyncio.run(cli_main._import_payroll_async(sample_file)) == (
         ImportPayrollResultDTO(imported_periods=1, imported_items=1, periods=[])
@@ -379,10 +361,6 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
         cli_main._compute_income_tax_async(7, Decimal("68000"))
     ).utm_value_clp == Decimal("68000")
     assert asyncio.run(cli_main._review_period_async(7)).period_id == 7
-    assert (
-        asyncio.run(cli_main._generate_payroll_report_async(7)).filename
-        == "payroll-period-7.pdf"
-    )
 
 
 def test_import_payroll_async_processes_periods_without_market_sync(
@@ -536,7 +514,6 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     """Test cli business commands."""
     source_file = tmp_path / "sample.csv"
     source_file.write_text("period_month,period_year,employer\n")
-    report_path = tmp_path / "report.pdf"
 
     async def fake_import_payroll_async(file_path: Path) -> object:
         """Handle fake import payroll async."""
@@ -593,17 +570,6 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         """Handle fake review period async."""
         return {"period_id": period_id, "status": "reviewed"}
 
-    async def fake_generate_payroll_report_async(
-        period_id: int,
-    ) -> GeneratedPayrollReportDTO:
-        """Handle fake generate payroll report async."""
-        assert period_id == 7
-        return GeneratedPayrollReportDTO(
-            period_id=period_id,
-            filename="payroll-period-7.pdf",
-            content=b"%PDF-test",
-        )
-
     monkeypatch.setattr(cli_main, "_import_payroll_async", fake_import_payroll_async)
     monkeypatch.setattr(
         cli_main, "_list_period_summaries_async", fake_list_period_summaries_async
@@ -622,9 +588,6 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         cli_main, "_compute_income_tax_async", fake_compute_income_tax_async
     )
     monkeypatch.setattr(cli_main, "_review_period_async", fake_review_period_async)
-    monkeypatch.setattr(
-        cli_main, "_generate_payroll_report_async", fake_generate_payroll_report_async
-    )
 
     runner = CliRunner()
 
@@ -670,44 +633,6 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     result = runner.invoke(cli_main.app, ["review", "7"])
     assert result.exit_code == 0
     assert json.loads(result.stdout)["status"] == "reviewed"
-
-    result = runner.invoke(
-        cli_main.app, ["report-pdf", "7", "--output", str(report_path)]
-    )
-    assert result.exit_code == 0
-    assert report_path.read_bytes() == b"%PDF-test"
-    assert json.loads(result.stdout) == {
-        "bytes_written": 9,
-        "filename": "payroll-period-7.pdf",
-        "output_path": str(report_path),
-        "period_id": 7,
-    }
-
-
-def test_report_pdf_uses_default_output_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Test report pdf uses default output path."""
-
-    async def fake_generate_payroll_report_async(
-        period_id: int,
-    ) -> GeneratedPayrollReportDTO:
-        """Handle fake generate payroll report async."""
-        assert period_id == 9
-        return GeneratedPayrollReportDTO(
-            period_id=9, filename="payroll-period-9.pdf", content=b"%PDF"
-        )
-
-    monkeypatch.setattr(
-        cli_main, "_generate_payroll_report_async", fake_generate_payroll_report_async
-    )
-    monkeypatch.chdir(tmp_path)
-
-    result = CliRunner().invoke(cli_main.app, ["report-pdf", "9"])
-
-    assert result.exit_code == 0
-    assert (tmp_path / "payroll-period-9.pdf").read_bytes() == b"%PDF"
-    assert json.loads(result.stdout)["output_path"] == "payroll-period-9.pdf"
 
 
 def _sample_pdf_preview(

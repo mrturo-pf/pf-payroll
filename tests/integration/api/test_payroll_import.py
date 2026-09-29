@@ -18,7 +18,6 @@ from payroll.application.errors import (
     PayrollValidationError,
 )
 from payroll.application.dto import (
-    GeneratedPayrollReportDTO,
     AssignPlansResultDTO,
     ComputeContributionsResultDTO,
     DeflateAmountsResultDTO,
@@ -42,7 +41,6 @@ from payroll.interfaces.api.dependencies import (
     get_compute_contributions_use_case,
     get_deflate_amounts_use_case,
     get_compute_income_tax_use_case,
-    get_generate_payroll_report_use_case,
     get_review_payroll_period_use_case,
     get_transactional_import_payroll_use_case,
     get_transactional_process_imported_payroll_periods_use_case,
@@ -54,7 +52,6 @@ from payroll.interfaces.api.routes.payroll import (
     compute_contributions,
     compute_income_tax,
     deflate_amounts,
-    get_payroll_report,
     import_payroll,
     review_payroll_period,
 )
@@ -275,19 +272,6 @@ class FakeReviewPayrollPeriod:
             period_id=5,
             payment_date=date(2026, 1, 31),
             status="reviewed",
-        )
-
-
-class FakeGeneratePayrollReport:
-    """Test double for Generate Payroll Report."""
-
-    async def execute(self, period_id: int) -> GeneratedPayrollReportDTO:
-        """Handle execute."""
-        assert period_id == 5
-        return GeneratedPayrollReportDTO(
-            period_id=5,
-            filename="payroll-period-5.pdf",
-            content=b"%PDF-fake",
         )
 
 
@@ -714,27 +698,6 @@ def test_review_payroll_period_endpoint() -> None:
     }
 
 
-def test_payroll_report_endpoint_returns_pdf() -> None:
-    """Test payroll report endpoint returns pdf."""
-    app.dependency_overrides[get_generate_payroll_report_use_case] = lambda: (
-        FakeGeneratePayrollReport()
-    )
-    client = TestClient(app, headers={"X-API-Key": "test-key"})
-
-    try:
-        response = client.get("/payroll/5/report.pdf")
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    assert response.headers["content-type"] == "application/pdf"
-    assert (
-        response.headers["content-disposition"]
-        == 'attachment; filename="payroll-period-5.pdf"'
-    )
-    assert response.content == b"%PDF-fake"
-
-
 def test_assign_plans_endpoint_surfaces_domain_errors() -> None:
     """Test assign plans endpoint surfaces domain errors."""
 
@@ -779,34 +742,6 @@ def test_review_payroll_period_endpoint_surfaces_domain_errors() -> None:
     assert response.status_code == 409
     assert response.json() == {
         "detail": "period must have computed items before review"
-    }
-
-
-def test_payroll_report_endpoint_surfaces_domain_errors() -> None:
-    """Test payroll report endpoint surfaces domain errors."""
-
-    class ErrorGeneratePayrollReport:
-        """Represent the error generate payroll report."""
-
-        async def execute(self, period_id: int) -> GeneratedPayrollReportDTO:
-            """Handle execute."""
-            raise PayrollConflictError(
-                "period must be reviewed before generating a report"
-            )
-
-    app.dependency_overrides[get_generate_payroll_report_use_case] = lambda: (
-        ErrorGeneratePayrollReport()
-    )
-    client = TestClient(app, headers={"X-API-Key": "test-key"})
-
-    try:
-        response = client.get("/payroll/5/report.pdf")
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 409
-    assert response.json() == {
-        "detail": "period must be reviewed before generating a report"
     }
 
 
@@ -1014,24 +949,6 @@ async def test_review_payroll_period_endpoint_maps_value_errors_in_handler() -> 
         await review_payroll_period(
             period_id=1,
             use_case=ErrorReviewPayrollPeriod(),
-        )
-
-
-@pytest.mark.asyncio
-async def test_payroll_report_endpoint_maps_value_errors_in_handler() -> None:
-    """Test payroll report endpoint maps value errors in handler."""
-
-    class ErrorGeneratePayrollReport:
-        """Represent the error generate payroll report."""
-
-        async def execute(self, period_id: int) -> GeneratedPayrollReportDTO:
-            """Handle execute."""
-            raise PayrollValidationError("bad report payload")
-
-    with pytest.raises(HTTPException, match="bad report payload"):
-        await get_payroll_report(
-            period_id=1,
-            use_case=ErrorGeneratePayrollReport(),
         )
 
 

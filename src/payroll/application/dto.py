@@ -464,15 +464,6 @@ class PayrollPeriodRangeDTO(PayrollPeriodRangeFields):
 
 
 @dataclass(frozen=True, slots=True)
-class GeneratedPayrollReportDTO:
-    """Represent Generated Payroll Report DTO."""
-
-    period_id: int
-    filename: str
-    content: bytes
-
-
-@dataclass(frozen=True, slots=True)
 class ComputeIncomeTaxCommandDTO:
     """Represent Compute Income Tax Command DTO."""
 

@@ -18,7 +18,6 @@ from payroll.application.dto import (
     AssignPlansCommandDTO,
     ComputeContributionsCommandDTO,
     ComputeIncomeTaxCommandDTO,
-    GeneratedPayrollReportDTO,
     ImportedPayrollPeriodDTO,
     PdfImportPreviewDTO,
     ReviewPayrollPeriodCommandDTO,
@@ -31,7 +30,6 @@ from payroll.application.services.import_reconciliation import (
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
-from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.application.use_cases.preview_pdf_import import PreviewPdfImport
@@ -45,9 +43,6 @@ from payroll.infrastructure.http.pf_rates_client import PfRatesClient
 from payroll.infrastructure.http.income_tax_bracket_client import IncomeTaxBracketClient
 from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
 from payroll.infrastructure.pdf_import.extractor import TemplatePdfPayrollExtractor
-from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import (
-    WeasyPrintPayrollReportRenderer,
-)
 from payroll.infrastructure.db.repositories.complementary_insurance_repository import (
     SqlAlchemyComplementaryInsuranceRepository,
 )
@@ -286,16 +281,6 @@ async def _review_period_async(period_id: int) -> object:
         )
 
 
-async def _generate_payroll_report_async(period_id: int) -> GeneratedPayrollReportDTO:
-    """Handle generate payroll report async."""
-    async with _open_session() as session:
-        use_case = GeneratePayrollReport(
-            SqlAlchemyPayrollRepository(session),
-            WeasyPrintPayrollReportRenderer(),
-        )
-        return await use_case.execute(period_id)
-
-
 async def _template_test_async(file_path: Path) -> PdfImportPreviewDTO:
     """Preview a PDF against the current templates -- no DB, no persistence."""
     use_case = PreviewPdfImport(TemplatePdfPayrollExtractor())
@@ -388,29 +373,6 @@ def compute_tax(
 def review(period_id: int) -> None:
     """Review."""
     _emit_json(_run_command(_review_period_async(period_id)))
-
-
-@app.command("report-pdf")
-def report_pdf(
-    period_id: int,
-    output: Annotated[
-        Path | None, typer.Option("--output", dir_okay=False, writable=True)
-    ] = None,
-) -> None:
-    """Handle report pdf."""
-    report: GeneratedPayrollReportDTO = _run_command(
-        _generate_payroll_report_async(period_id)
-    )
-    output_path = output or Path(report.filename)
-    output_path.write_bytes(report.content)
-    _emit_json(
-        {
-            "period_id": report.period_id,
-            "filename": report.filename,
-            "output_path": str(output_path),
-            "bytes_written": len(report.content),
-        }
-    )
 
 
 @app.command("template-test")

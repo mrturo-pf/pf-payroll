@@ -7,7 +7,6 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, UploadFile
-from fastapi.responses import Response
 from dataclasses import dataclass
 from pydantic import BaseModel, PlainSerializer
 
@@ -19,7 +18,6 @@ from payroll.application.services.import_reconciliation import (
 )
 from payroll.application.dto import (
     AssignPlansCommandDTO,
-    GeneratedPayrollReportDTO,
     ImportedComplementaryInsuranceValidationDTO,
     ImportedContributionValidationDTO,
     ImportedPayrollPeriodDTO,
@@ -47,7 +45,6 @@ from payroll.interfaces.api.dependencies import (
     get_compute_contributions_use_case,
     get_deflate_amounts_use_case,
     get_compute_income_tax_use_case,
-    get_generate_payroll_report_use_case,
     get_payroll_queries,
     get_preview_pdf_import_use_case,
     get_review_payroll_period_use_case,
@@ -62,9 +59,6 @@ if TYPE_CHECKING:
     from payroll.application.use_cases.preview_pdf_import import PreviewPdfImport
     from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
     from payroll.application.use_cases.deflate_amounts import DeflateAmounts
-    from payroll.application.use_cases.generate_payroll_report import (
-        GeneratePayrollReport,
-    )
     from payroll.application.use_cases.import_payroll import ImportPayroll
     from payroll.application.use_cases.process_imported_payroll_periods import (
         ProcessImportedPayrollPeriods,
@@ -752,15 +746,6 @@ def to_deflated_amount_read(amount: DeflatedAmountDTO) -> DeflatedAmountRead:
     )
 
 
-def to_pdf_response(report: GeneratedPayrollReportDTO) -> Response:
-    """Convert to pdf response."""
-    return Response(
-        content=report.content,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{report.filename}"'},
-    )
-
-
 def count_validated_periods(periods_read: list[ImportedPeriodRead]) -> tuple[int, int]:
     """Split a periods_read list into (validated_count, unvalidated_count).
 
@@ -1145,21 +1130,6 @@ async def get_payroll_period(
         else None,
         health_institution_is_active=detail.health_institution_is_active,
     )
-
-
-@router.get(
-    "/{period_id}/report.pdf",
-    responses={200: {"content": {"application/pdf": {}}}},
-)
-async def get_payroll_report(
-    period_id: int = Path(..., gt=0),
-    use_case: GeneratePayrollReport = Depends(get_generate_payroll_report_use_case),
-) -> Response:
-    """Get payroll report."""
-    try:
-        return to_pdf_response(await use_case.execute(period_id))
-    except PayrollError as exc:
-        raise to_http_exception(exc, default_status=400) from exc
 
 
 @router.post("/{period_id}/assign-plans", response_model=AssignPlansResponse)

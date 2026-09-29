@@ -15,9 +15,6 @@ from payroll.application.ports.repositories import (
 )
 from payroll.infrastructure.http.pf_rates_client import PfRatesClient
 from payroll.infrastructure.http.income_tax_bracket_client import IncomeTaxBracketClient
-from payroll.infrastructure.reporting.weasyprint_payroll_report_renderer import (
-    WeasyPrintPayrollReportRenderer,
-)
 from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
 
 # Use cases
@@ -25,7 +22,6 @@ from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
-from payroll.application.use_cases.generate_payroll_report import GeneratePayrollReport
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.application.use_cases.preview_pdf_import import PreviewPdfImport
@@ -196,13 +192,6 @@ def get_payroll_queries(
 ) -> PayrollQueries:
     """Get payroll queries."""
     return PayrollQueries(repository)
-
-
-def get_generate_payroll_report_use_case(
-    repository: PayrollRepository = Depends(get_payroll_repository),
-) -> GeneratePayrollReport:
-    """Get generate payroll report use case."""
-    return GeneratePayrollReport(repository, WeasyPrintPayrollReportRenderer())
 
 
 def get_assign_plans_use_case(

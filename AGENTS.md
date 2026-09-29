@@ -10,7 +10,7 @@ Four layers; dependency flows inward only (interfaces → application → domain
 interfaces/      # FastAPI, Typer CLI (adapters in)
 application/     # Use cases, ports (Protocols), DTOs, services
 domain/          # Entities, value objects, domain services — no I/O
-infrastructure/  # SQLAlchemy, importers, WeasyPrint, rate providers (adapters out)
+infrastructure/  # SQLAlchemy, importers, rate providers (adapters out)
 shared/          # Cross-cutting utilities (dates, constants)
 ```
 

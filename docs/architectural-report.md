@@ -41,7 +41,7 @@ A ports-and-adapters (hexagonal) architecture is used to isolate Chilean tax and
 ┌──────────────────────────▼─────────────────────────────────────┐
 │                Infrastructure (Adapters Out)                   │
 │   PostgreSQL (SQLAlchemy) │ Excel/CSV │ PDF │ Rate Providers   │
-│    Alembic Migrations      │ WeasyPrint Reports │ structlog    │
+│    Alembic Migrations      │ PDF Import Adapter │ structlog    │
 └────────────────────────────────────────────────────────────────┘
 ```
 

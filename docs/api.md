@@ -40,7 +40,6 @@ optional BCCh credentials) and the startup background sync — see
 | `POST` | `/payroll/{period_id}/compute-contributions` | Computes pension, health, and unemployment insurance discounts. |
 | `POST` | `/payroll/{period_id}/compute-tax` | Computes Chilean monthly income tax withholding. |
 | `POST` | `/payroll/{period_id}/review` | Marks a payroll period as `reviewed` once required computed items exist. |
-| `GET` | `/payroll/{period_id}/report.pdf` | Generates a PDF payroll report for a `reviewed` payroll period. |
 | `POST` | `/payroll/{period_id}/deflate` | Converts nominal payroll totals into real CLP using an economic index such as `IPC_CL`. |
 
 ### Reference data
@@ -86,6 +85,5 @@ Available commands:
 | `compute-contributions <period_id> <pension_plan_id> <health_plan_id> [--uf-value-clp]` | Computes social-security discounts. |
 | `compute-tax <period_id> [--utm-value-clp]` | Computes income tax withholding. |
 | `review <period_id>` | Marks a period as reviewed. |
-| `report-pdf <period_id> [--output]` | Writes the payroll PDF to disk. |
 
 All CLI commands emit JSON except `health`.

@@ -6,22 +6,7 @@ import pytest
 
 from payroll.application.dto import ExportPayrollFiltersDTO, PayrollPeriodDetailDTO
 from payroll.application.use_cases.export_payroll import ExportPayroll
-
-
-class FakePayrollRepository:
-    """Test double recording the filters it was called with."""
-
-    def __init__(self, periods: list[PayrollPeriodDetailDTO]) -> None:
-        """Initialize the instance."""
-        self.periods = periods
-        self.received_filters: ExportPayrollFiltersDTO | None = None
-
-    async def list_period_details(
-        self, filters: ExportPayrollFiltersDTO
-    ) -> list[PayrollPeriodDetailDTO]:
-        """Record filters and return the canned periods."""
-        self.received_filters = filters
-        return self.periods
+from tests.helpers.export_fakes import FakePayrollRepository
 
 
 class FakeExporter:

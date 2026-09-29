@@ -19,6 +19,7 @@ from payroll.domain.contributions import (
     PensionContribution,
     UnemploymentContribution,
 )
+from tests.helpers.period_detail_builders import build_acme_period_detail
 
 
 def _period_detail(
@@ -27,25 +28,10 @@ def _period_detail(
     health_plan_ids: tuple[int, ...] | None = None,
 ) -> PayrollPeriodDetailDTO:
     """Build a period detail for validation tests."""
-    return PayrollPeriodDetailDTO(
-        id=1,
-        employer_id=1,
-        employer_name="ACME",
-        employer_tax_id="76000000-1",
-        employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        worked_days=30,
-        status="actual",
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
-        pension_plan_id=1,
-        health_plan_id=2,
-        health_plan_ids=health_plan_ids,
-        health_institution_is_active=None,
+    return build_acme_period_detail(
         items=items,
+        employer_tax_id="76000000-1",
+        health_plan_ids=health_plan_ids,
         summary=PayrollSummaryDTO(
             period_id=1,
             employer_id=1,

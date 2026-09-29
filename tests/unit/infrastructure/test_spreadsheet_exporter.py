@@ -11,7 +11,6 @@ from payroll.application.dto import (
     PayrollPeriodDetailDTO,
     PayrollSummaryDTO,
 )
-from payroll.domain.contributions import EmploymentContractKind
 from payroll.infrastructure.exporters.spreadsheet_exporter import (
     MONEY_NUMBER_FORMAT,
     CsvPayrollExporter,
@@ -26,6 +25,7 @@ from payroll.infrastructure.importers.xlsx_importer import (
     COMPUTED_ONLY_CONCEPT_COLUMNS,
     wide_columns,
 )
+from tests.helpers.period_detail_builders import build_acme_period_detail
 
 
 def _build_detail(
@@ -76,25 +76,7 @@ def _build_detail(
             declared_net_pay_clp=net_pay,
         )
     )
-    return PayrollPeriodDetailDTO(
-        id=1,
-        employer_id=1,
-        employer_name="ACME",
-        employer_tax_id="76.123.456-7",
-        employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        worked_days=30,
-        status="actual",
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
-        pension_plan_id=1,
-        health_plan_id=2,
-        items=items,
-        summary=summary,
-    )
+    return build_acme_period_detail(items=items, summary=summary)
 
 
 def test_wide_columns_matches_concept_map_count() -> None:

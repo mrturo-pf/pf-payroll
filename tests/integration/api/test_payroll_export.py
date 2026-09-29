@@ -19,6 +19,7 @@ from payroll.domain.contributions import EmploymentContractKind
 from payroll.infrastructure.importers.xlsx_importer import wide_columns
 from payroll.interfaces.api.dependencies import get_payroll_repository
 from payroll.interfaces.api.main import app
+from tests.helpers.export_fakes import FakePayrollRepository
 
 
 def _build_detail(period_id: int, employer: str = "ACME") -> PayrollPeriodDetailDTO:
@@ -58,22 +59,6 @@ def _build_detail(period_id: int, employer: str = "ACME") -> PayrollPeriodDetail
         ],
         summary=summary,
     )
-
-
-class FakePayrollRepository:
-    """Test double recording the filters GET /payroll/spreadsheet was called with."""
-
-    def __init__(self, periods: list[PayrollPeriodDetailDTO]) -> None:
-        """Initialize the instance."""
-        self.periods = periods
-        self.received_filters: ExportPayrollFiltersDTO | None = None
-
-    async def list_period_details(
-        self, filters: ExportPayrollFiltersDTO
-    ) -> list[PayrollPeriodDetailDTO]:
-        """Record filters and return the canned periods."""
-        self.received_filters = filters
-        return self.periods
 
 
 def _client() -> TestClient:

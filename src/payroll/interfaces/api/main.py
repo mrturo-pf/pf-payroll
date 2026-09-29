@@ -8,6 +8,9 @@ from fastapi.responses import JSONResponse
 from payroll.application.errors import PayrollError
 from payroll.interfaces.api.routes.health import router as health_router
 from payroll.interfaces.api.routes.payroll import router as payroll_router
+from payroll.interfaces.api.routes.payroll_export import (
+    router as payroll_export_router,
+)
 from payroll.interfaces.api.routes.reference_data import router as reference_data_router
 from payroll.interfaces.api.security import verify_api_key
 
@@ -20,6 +23,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Payroll API", lifespan=lifespan)
 app.include_router(health_router)
+# payroll_export_router's static "/payroll/spreadsheet" and
+# "/payroll/spreadsheet/template" paths must be registered *before*
+# payroll_router's dynamic "/payroll/{period_id}" -- Starlette matches
+# routes in registration order, and a single-segment path param with no
+# type converter matches any string, "spreadsheet" included. Swapping this
+# order would make GET /payroll/spreadsheet 422 on int("spreadsheet")
+# instead of ever reaching the export route.
+app.include_router(payroll_export_router, dependencies=[Depends(verify_api_key)])
 app.include_router(payroll_router, dependencies=[Depends(verify_api_key)])
 app.include_router(reference_data_router, dependencies=[Depends(verify_api_key)])
 

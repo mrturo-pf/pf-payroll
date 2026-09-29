@@ -15,6 +15,9 @@ from payroll.application.ports.repositories import (
 )
 from payroll.infrastructure.http.pf_rates_client import PfRatesClient
 from payroll.infrastructure.http.income_tax_bracket_client import IncomeTaxBracketClient
+from payroll.infrastructure.exporters.spreadsheet_exporter import (
+    get_exporter_for_format,
+)
 from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
 
 # Use cases
@@ -22,6 +25,7 @@ from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
+from payroll.application.use_cases.export_payroll import ExportPayroll
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.application.use_cases.preview_pdf_import import PreviewPdfImport
@@ -231,3 +235,18 @@ def get_deflate_amounts_use_case(
 ) -> DeflateAmounts:
     """Get deflate amounts use case."""
     return DeflateAmounts(repository, get_market_data_repository())
+
+
+def build_export_payroll_use_case(
+    repository: PayrollRepository, spreadsheet_format: str
+) -> ExportPayroll:
+    """Build the export use case for a given repository/format combination.
+
+    Deliberately a plain function, not resolved via Depends() like the
+    other *_use_case factories in this module: `spreadsheet_format` is a
+    plain per-request value (the export route's own `format` query
+    parameter, already validated as Literal["csv", "xlsx"]), not something
+    FastAPI needs to inject. Call this directly from the route body with a
+    repository obtained via Depends(get_payroll_repository).
+    """
+    return ExportPayroll(repository, get_exporter_for_format(spreadsheet_format))

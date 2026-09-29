@@ -76,7 +76,7 @@ min_confidence = 80
 sort_by_size = true
 
 [[tool.mypy.overrides]]
-module = ["pandas"]
+module = ["pandas", "openpyxl", "openpyxl.*"]
 ignore_missing_imports = true
 
 [tool.setuptools]

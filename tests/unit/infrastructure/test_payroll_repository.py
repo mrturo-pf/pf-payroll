@@ -12,6 +12,7 @@ from helpers.db_fakes import (
     FakeScalarResult,
     assert_get_session_lifecycle,
 )
+from payroll.application.dto import ExportPayrollFiltersDTO
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
@@ -1890,6 +1891,77 @@ async def test_sa_payroll_repository_returns_none_for_missing_period_detail() ->
     repository = SqlAlchemyPayrollRepository(FakeSession([FakeResult(first_row=None)]))  # type: ignore[arg-type]
 
     assert await repository.get_period_detail(99) is None
+
+
+@pytest.mark.asyncio
+async def test_list_period_details_returns_one_entry_per_matching_period_id() -> None:
+    """list_period_details() fans out get_period_detail() over each matched id.
+
+    Uses an employer with an explicit ended_at (skips the "find next
+    employer" query) and no health plan rows (skips the health-institution
+    query) so each period's get_period_detail() call consumes exactly four
+    queued results, keeping this test's FakeSession queue simple and honest
+    about what it is asserting: fan-out and ordering, not get_period_detail
+    itself (already covered by the tests above).
+    """
+    employer = build_acme_employer(ended_at=date(2026, 1, 15))
+    period_one = build_period(period_id=1, employer_id=1)
+    period_two = build_period(period_id=2, employer_id=1)
+    session = FakeSession(
+        [
+            FakeResult(scalar_rows=[1, 2]),  # id lookup query
+            FakeResult(first_row=(period_one, employer)),
+            FakeResult(scalar_rows=[]),
+            FakeResult(joined_rows=[]),
+            FakeResult(first_row=None),
+            FakeResult(first_row=(period_two, employer)),
+            FakeResult(scalar_rows=[]),
+            FakeResult(joined_rows=[]),
+            FakeResult(first_row=None),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    results = await repository.list_period_details(ExportPayrollFiltersDTO())
+
+    assert [detail.id for detail in results] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_list_period_details_skips_ids_get_period_detail_no_longer_finds() -> (
+    None
+):
+    """A period deleted between the id lookup and the detail fetch is silently skipped.
+
+    Mirrors get_period_detail()'s own None-for-missing behavior rather than
+    raising -- a race between the id query and the per-period detail fetch
+    is not this method's concern to surface as an error.
+    """
+    session = FakeSession(
+        [
+            FakeResult(scalar_rows=[404]),
+            FakeResult(first_row=None),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    results = await repository.list_period_details(ExportPayrollFiltersDTO())
+
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_list_period_details_with_no_matches_returns_empty_list() -> None:
+    """No matching period ids means no fan-out queries at all."""
+    session = FakeSession([FakeResult(scalar_rows=[])])
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    results = await repository.list_period_details(
+        ExportPayrollFiltersDTO(employer="NOBODY")
+    )
+
+    assert results == []
+    assert len(session.executed) == 1, "should not fan out when there are no ids"
 
 
 @pytest.mark.asyncio

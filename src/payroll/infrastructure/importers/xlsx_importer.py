@@ -43,6 +43,76 @@ CONCEPT_MAP = {
     ),
 }
 
+# Non-concept columns every wide-format row carries, in the exact order they
+# appear in a real export/template -- CONCEPT_MAP-derived columns are
+# inserted between PREFIX_COLUMNS and NET_PAY_COLUMN (see wide_columns()).
+# Shared by the importer (read side, via to_long_format()/parse_period()) and
+# the exporter/template writer (write side, infrastructure/exporters/) so
+# both directions of the pipeline agree on the column shape from one place.
+PREFIX_COLUMNS = (
+    "period_month",
+    "period_year",
+    "employer",
+    "payment_date",
+    "worked_days",
+    "employment_contract_kind",
+)
+NET_PAY_COLUMN = "net_pay"
+
+# Concepts a persisted period can carry that have no CONCEPT_MAP column --
+# both are computed by their own use case (ComputeIncomeTax,
+# ComputeUnemploymentInsurance), never declared via the wide import format.
+# The real export (never the blank template) appends one extra column per
+# entry, in dict order, after NET_PAY_COLUMN. See
+# docs/proposals/spreadsheet-export-design-recommendation.md, Item 1, for why
+# these two specifically and why the importer must keep ignoring them on
+# re-import rather than rejecting or persisting them.
+COMPUTED_ONLY_CONCEPT_COLUMNS = {
+    "INCOME_TAX": "income_tax",
+    "UNEMPLOYMENT_INSURANCE": "unemployment_insurance",
+}
+
+
+def wide_columns() -> list[str]:
+    """Return the canonical wide-format column order (prefix, concepts, net_pay).
+
+    The single source of truth for column shape/order shared by the real
+    export, the blank template, and (indirectly, via CONCEPT_MAP) this
+    importer -- never hand-copy this list elsewhere. Excludes the
+    computed-only columns (see COMPUTED_ONLY_CONCEPT_COLUMNS): those only
+    ever appear on a real export of an already-computed period, never on the
+    blank template meant to be filled in for a brand-new import.
+    """
+    return [*PREFIX_COLUMNS, *CONCEPT_MAP.keys(), NET_PAY_COLUMN]
+
+
+def inverted_concept_map() -> dict[str, str]:
+    """Build concept_code -> wide column name, the formal inverse of CONCEPT_MAP.
+
+    Computed once from CONCEPT_MAP here rather than hand-copied by the
+    exporter -- two independently maintained mappings that *should* always
+    agree but are free to drift apart is exactly the anti-pattern this
+    feature exists to avoid (see the design recommendation's "Important
+    constraints" section).
+    """
+    return {code: column for column, (code, _kind, _is_taxable) in CONCEPT_MAP.items()}
+
+
+def money_columns() -> list[str]:
+    """Return every wide-format column that holds a Decimal CLP amount.
+
+    Single source of truth for "which columns are money, as opposed to
+    metadata" (period/employer/dates/contract kind) -- used by the XLSX
+    exporter to apply locale-agnostic numeric formatting only where it
+    actually makes sense. Excludes PREFIX_COLUMNS on purpose.
+    """
+    return [
+        *CONCEPT_MAP.keys(),
+        NET_PAY_COLUMN,
+        *COMPUTED_ONLY_CONCEPT_COLUMNS.values(),
+    ]
+
+
 CONTRACT_KIND_ALIASES = {
     "indefinite": EmploymentContractKind.INDEFINITE,
     "indefinido": EmploymentContractKind.INDEFINITE,

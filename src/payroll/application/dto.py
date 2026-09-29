@@ -572,6 +572,21 @@ class ComplementaryInsuranceValidationAuditDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class ExportPayrollFiltersDTO:
+    """Represent Export Payroll Filters DTO.
+
+    All optional; omitting every field means "export every persisted
+    period", mirroring GET /payroll/summary's own no-filter "return
+    everything" behavior. Only fields with a concrete precedent as an
+    existing filter elsewhere in this API are included here (YAGNI).
+    """
+
+    employer: str | None = None
+    period_year: int | None = None
+    period_month: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ComputeComplementaryInsuranceResultDTO:
     """Represent Compute Complementary Insurance Result DTO."""
 

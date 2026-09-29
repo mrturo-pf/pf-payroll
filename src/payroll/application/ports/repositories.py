@@ -16,6 +16,7 @@ from payroll.application.dto import (
     ContributionCapDTO,
     ContributionComputationContextDTO,
     EmployerPaymentRuleDTO,
+    ExportPayrollFiltersDTO,
     HealthInstitutionDTO,
     HealthPlanDTO,
     ImportPayrollResultDTO,
@@ -146,6 +147,17 @@ class PayrollRepository(Protocol):
 
     async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
         """List period summaries."""
+        ...
+
+    async def list_period_details(
+        self, filters: ExportPayrollFiltersDTO
+    ) -> list[PayrollPeriodDetailDTO]:
+        """List full period detail (items included) for periods matching the filters.
+
+        Backs the bulk spreadsheet export -- unlike list_period_summaries(),
+        every returned entry carries its full items list, same shape as
+        get_period_detail() for one period.
+        """
         ...
 
     async def list_period_ranges(

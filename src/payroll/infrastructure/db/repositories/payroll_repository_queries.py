@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 
 from payroll.application.dto import (
+    ExportPayrollFiltersDTO,
     PayrollItemDetailDTO,
     PayrollPeriodDetailDTO,
     PayrollPeriodRangeDTO,
@@ -534,6 +535,43 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             health_plan_ids=health_plan_ids or None,
             health_institution_is_active=health_institution_is_active,
         )
+
+    async def list_period_details(
+        self, filters: ExportPayrollFiltersDTO
+    ) -> list[PayrollPeriodDetailDTO]:
+        """List full period detail (items included) for periods matching filters.
+
+        Reuses get_period_detail() per matching period id rather than a
+        bespoke bulk query with its own joins: at today's volume (dozens of
+        periods for a single employer, per the design brief's own "Expected
+        volume" note) the extra round trips per period are not a real cost,
+        and this keeps the bulk and single-period code paths from ever
+        describing a period's shape differently (DRY). Revisit only if
+        export volume genuinely grows past that (YAGNI).
+        """
+        query = select(PayrollPeriodModel.id).join(
+            EmployerModel, PayrollPeriodModel.employer_id == EmployerModel.id
+        )
+        if filters.employer is not None:
+            query = query.where(EmployerModel.name == filters.employer)
+        if filters.period_year is not None:
+            query = query.where(PayrollPeriodModel.period_year == filters.period_year)
+        if filters.period_month is not None:
+            query = query.where(PayrollPeriodModel.period_month == filters.period_month)
+        query = query.order_by(
+            PayrollPeriodModel.period_year.asc(),
+            PayrollPeriodModel.period_month.asc(),
+            EmployerModel.name.asc(),
+        )
+        result = await self._session.execute(query)
+        period_ids = list(result.scalars().all())
+
+        details: list[PayrollPeriodDetailDTO] = []
+        for period_id in period_ids:
+            detail = await self.get_period_detail(period_id)
+            if detail is not None:
+                details.append(detail)
+        return details
 
     async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
         """List period summaries."""

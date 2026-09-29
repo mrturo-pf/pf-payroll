@@ -54,7 +54,7 @@ optional BCCh credentials) and the startup background sync — see
 | `GET` | `/reference-data/payroll-concepts` | Lists seeded payroll concepts. |
 
 Currencies and income tax brackets are **not** served by pf-payroll; fetch them from
-pf-rates' `GET /currencies` and `GET /income-tax-brackets` (see
+pf-rates' `GET /monetary-units` and `GET /income-tax-brackets` (see
 [pf-rates' API Reference](../../pf-rates/docs/api.md)).
 
 ## CLI

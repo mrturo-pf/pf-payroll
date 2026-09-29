@@ -1965,6 +1965,25 @@ async def test_list_period_details_with_no_matches_returns_empty_list() -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_period_details_applies_period_year_and_month_filters() -> None:
+    """period_year and period_month filters are both applied to the id query.
+
+    Only asserts the call completes and returns an empty result for a
+    FakeSession with no queued ids -- get_period_detail()'s own SQL shape
+    is already covered elsewhere; this test's only job is to exercise the
+    period_year/period_month WHERE-clause branches themselves.
+    """
+    session = FakeSession([FakeResult(scalar_rows=[])])
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    results = await repository.list_period_details(
+        ExportPayrollFiltersDTO(period_year=2026, period_month=1)
+    )
+
+    assert results == []
+
+
+@pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_lists_period_summaries() -> None:
     """Test sqlalchemy payroll repository lists period summaries."""
     employer = EmployerModel(id=1, name="ACME", started_at=date(2020, 1, 1))

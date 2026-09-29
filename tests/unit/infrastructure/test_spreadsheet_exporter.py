@@ -6,6 +6,7 @@ from io import BytesIO
 
 from openpyxl import load_workbook
 
+from helpers.period_detail_builders import build_acme_period_detail
 from payroll.application.dto import (
     PayrollItemDetailDTO,
     PayrollPeriodDetailDTO,
@@ -25,7 +26,6 @@ from payroll.infrastructure.importers.xlsx_importer import (
     COMPUTED_ONLY_CONCEPT_COLUMNS,
     wide_columns,
 )
-from tests.helpers.period_detail_builders import build_acme_period_detail
 
 
 def _build_detail(

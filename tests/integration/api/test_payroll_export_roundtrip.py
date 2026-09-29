@@ -25,6 +25,7 @@ from decimal import Decimal
 
 import pytest
 
+from helpers.period_detail_builders import build_acme_period_detail
 from payroll.application.dto import (
     PayrollItemDetailDTO,
     PayrollPeriodDetailDTO,
@@ -37,7 +38,6 @@ from payroll.infrastructure.exporters.spreadsheet_exporter import (
     export_columns,
 )
 from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
-from tests.helpers.period_detail_builders import build_acme_period_detail
 
 # One concept per CONCEPT_MAP kind/is_taxable combination actually declared,
 # plus both computed-only concepts -- close enough to a real multi-concept

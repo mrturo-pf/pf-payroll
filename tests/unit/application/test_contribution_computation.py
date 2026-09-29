@@ -3,6 +3,7 @@
 from datetime import date
 from decimal import Decimal
 
+from helpers.period_detail_builders import build_acme_period_detail
 from payroll.application.dto import (
     ComputeContributionsResultDTO,
     PayrollItemDetailDTO,
@@ -19,7 +20,6 @@ from payroll.domain.contributions import (
     PensionContribution,
     UnemploymentContribution,
 )
-from tests.helpers.period_detail_builders import build_acme_period_detail
 
 
 def _period_detail(

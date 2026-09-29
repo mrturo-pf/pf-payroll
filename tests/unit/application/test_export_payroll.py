@@ -4,9 +4,9 @@ from datetime import date
 
 import pytest
 
+from helpers.export_fakes import FakePayrollRepository
 from payroll.application.dto import ExportPayrollFiltersDTO, PayrollPeriodDetailDTO
 from payroll.application.use_cases.export_payroll import ExportPayroll
-from tests.helpers.export_fakes import FakePayrollRepository
 
 
 class FakeExporter:

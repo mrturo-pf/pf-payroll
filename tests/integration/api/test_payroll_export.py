@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from fastapi.testclient import TestClient
 
+from helpers.export_fakes import FakePayrollRepository
 from payroll.application.dto import (
     ExportPayrollFiltersDTO,
     PayrollItemDetailDTO,
@@ -19,7 +20,6 @@ from payroll.domain.contributions import EmploymentContractKind
 from payroll.infrastructure.importers.xlsx_importer import wide_columns
 from payroll.interfaces.api.dependencies import get_payroll_repository
 from payroll.interfaces.api.main import app
-from tests.helpers.export_fakes import FakePayrollRepository
 
 
 def _build_detail(period_id: int, employer: str = "ACME") -> PayrollPeriodDetailDTO:

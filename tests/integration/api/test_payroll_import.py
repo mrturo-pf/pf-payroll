@@ -390,7 +390,8 @@ def test_payroll_import_endpoint_rejects_commit_on_genuine_conflict() -> None:
     A period with a genuine declared-vs-computed net_pay mismatch (i.e.
     expected_net_pay_clp is actually populated, unlike the "pending"
     projected-period case exercised by test_payroll_import_endpoint) must
-    roll everything back and fail the whole request instead of persisting
+    roll everything back and fail the whole request (422,
+    PayrollImportNotValidatedError) instead of persisting
     partially-reconciled data.
     """
     scope = FakeTransactionalSessionScope()
@@ -405,7 +406,7 @@ def test_payroll_import_endpoint_rejects_commit_on_genuine_conflict() -> None:
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 400
+    assert response.status_code == 422
     # jscpd:ignore-start -- deliberate mirror of the analogous assertions in
     # test_payroll_import_json.py's own genuine-conflict test.
     detail = response.json()["detail"]
@@ -483,18 +484,17 @@ def test_payroll_import_endpoint_validate_mode_never_commits() -> None:
     # jscpd:ignore-end
 
 
-def test_payroll_import_endpoint_validate_mode_reports_conflict_without_failing() -> (
+def test_payroll_import_endpoint_validate_mode_rejects_genuine_conflict_with_422() -> (
     None
 ):
-    """mode="validate" surfaces a genuine conflict as a 200, not a 400.
+    """mode="validate" surfaces a genuine conflict as a 422, not a 200.
 
-    Unlike mode="commit" (see
-    test_payroll_import_endpoint_rejects_commit_on_genuine_conflict, which
-    hard-fails on the exact same conflicting period), mode="validate" always
-    rolls back but never raises on a reconciliation conflict -- it reports
-    `validated=False` and the period's own net_pay_warning instead, letting
-    a caller preview every conflict in one shot rather than fixing them one
-    HTTP 400 at a time.
+    mode="commit" (see test_payroll_import_endpoint_rejects_commit_on_genuine_conflict)
+    and mode="validate" both always roll back, and both now raise the exact
+    same PayrollImportNotValidatedError (422) instead of either the old
+    "200 with validated=False" shape (validate) or a plain 400
+    (commit's old status) -- carrying the same conflicting_periods detail
+    either way so a caller can still preview every conflict in one shot.
     """
     scope = FakeTransactionalSessionScope()
     _override_import_dependencies(scope, FakeImportPayrollWithConflict())
@@ -509,13 +509,13 @@ def test_payroll_import_endpoint_validate_mode_reports_conflict_without_failing(
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["mode"] == "validate"
-    assert body["validated"] is False
-    assert body["saved"] is None
-    assert body["periods"][0]["id"] is None
-    assert body["periods"][0]["net_pay_difference_clp"] == 50000
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "Import validation failed" in detail["message"]
+    assert len(detail["conflicting_periods"]) == 1
+    conflicting = detail["conflicting_periods"][0]
+    assert conflicting["id"] is None  # rolled back -- see ImportedPeriodRead
+    assert conflicting["net_pay_difference_clp"] == 50000
     assert scope.resolved_with == ["validate"]
 
 

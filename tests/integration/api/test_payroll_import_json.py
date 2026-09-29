@@ -227,7 +227,7 @@ def test_import_payroll_rows_endpoint_validate_mode_never_commits() -> None:
 
 
 def test_import_payroll_rows_endpoint_commit_rejects_unresolved_concept_code() -> None:
-    """mode="commit" fails outright (400) if any row has no concept_code.
+    """mode="commit" fails outright (422) if any row has no concept_code.
 
     Per the design recommendation (section 3), commit must reject explicitly
     -- unlike validate (see the tests below), which reports these rows back
@@ -245,19 +245,28 @@ def test_import_payroll_rows_endpoint_commit_rejects_unresolved_concept_code() -
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 400
-    assert "(0, 0)" in response.json()["detail"]
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "(0, 0)" in detail["message"]
+    assert detail["unresolved_rows"] == [
+        {"period_index": 0, "row_index": 0, "amount_clp": "1000000"}
+    ]
     assert fake_import.called_with is None
     assert scope.resolved_with == ["validate"]
 
 
-def test_import_payroll_rows_endpoint_validate_reports_unresolved_rows() -> None:
-    """mode="validate" never fails on unresolved concept_code -- it warns.
+def test_import_payroll_rows_endpoint_validate_rejects_unresolved_rows_with_422() -> (
+    None
+):
+    """mode="validate" rejects unresolved concept_code with 422, not 200.
 
-    Resolved rows still run through the exact same pipeline (so their
-    computed contributions/warnings are genuine), while unresolved rows are
-    excluded from that pipeline and reported back via `unresolved_rows`
-    instead, identified by their (period_index, row_index) position.
+    Resolved rows still run through the exact same pipeline first (so their
+    computed contributions/warnings are genuine -- see fake_import.called_with
+    below), but by explicit product decision the request as a whole then
+    fails with PayrollImportNotValidatedError (422) instead of the old "200
+    with validated=False" shape, reporting the unresolved row(s) back via
+    `unresolved_rows` in the error detail, identified by their
+    (period_index, row_index) position.
     """
     scope = FakeTransactionalSessionScope()
     fake_import = _override_happy_path(scope)
@@ -272,12 +281,10 @@ def test_import_payroll_rows_endpoint_validate_reports_unresolved_rows() -> None
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["validated"] is False
-    assert body["saved"] is None
-    assert body["period_count"] == 1
-    assert body["unresolved_rows"] == [
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "Import validation failed" in detail["message"]
+    assert detail["unresolved_rows"] == [
         {"period_index": 0, "row_index": 1, "amount_clp": "5000"}
     ]
     assert fake_import.called_with is not None
@@ -321,11 +328,14 @@ def test_import_payroll_rows_endpoint_accepts_multiple_periods() -> None:
 
 
 def test_import_payroll_rows_endpoint_reports_unresolved_rows_across_periods() -> None:
-    """unresolved_rows' period_index correctly points at the offending block.
+    """unresolved_rows' period_index points at the offending block in the 422 detail.
 
-    Also asserts the per-period `validated` field + the top-level
-    validated_period_count/unvalidated_period_count summary pinpoint the
-    exact same offending period, not just "something in this batch failed".
+    Even when it's mixed with a clean period. mode="validate" fails the
+    whole batch (422, PayrollImportNotValidatedError) once *any* period has
+    an unresolved row, even though this batch also has a genuinely clean
+    period alongside it -- see PayrollImportNotValidatedError's docstring
+    for why the whole request fails rather than a 200 breaking down
+    per-period pass/fail as it used to.
     """
     scope = FakeTransactionalSessionScope()
     _override_happy_path(scope)
@@ -343,15 +353,12 @@ def test_import_payroll_rows_endpoint_reports_unresolved_rows_across_periods() -
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["unresolved_rows"] == [
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["unresolved_rows"] == [
         {"period_index": 1, "row_index": 1, "amount_clp": "5000"}
     ]
-    assert body["validated_period_count"] == 1
-    assert body["unvalidated_period_count"] == 1
-    assert body["periods"][0]["validated"] is True
-    assert body["periods"][1]["validated"] is False
+    assert detail["conflicting_periods"] == []
 
 
 def test_import_payroll_rows_endpoint_rejects_empty_periods_list() -> None:
@@ -403,7 +410,8 @@ def test_import_payroll_rows_endpoint_rejects_commit_on_genuine_conflict() -> No
     Every row resolved a concept_code (so the earlier, cheap
     unresolved-rows check never fires), but the reconciliation pipeline
     finds a genuine net_pay mismatch -- this must roll everything back and
-    fail the request instead of committing partially-reconciled data.
+    fail the request (422, PayrollImportNotValidatedError) instead of
+    committing partially-reconciled data.
     """
 
     class ConflictingImportPayrollFromRows:
@@ -455,7 +463,7 @@ def test_import_payroll_rows_endpoint_rejects_commit_on_genuine_conflict() -> No
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 400
+    assert response.status_code == 422
     # jscpd:ignore-start -- deliberate mirror of the analogous assertions in
     # test_payroll_import.py's own genuine-conflict test.
     detail = response.json()["detail"]
@@ -475,7 +483,9 @@ def test_import_payroll_rows_endpoint_validate_all_unresolved_skips_pipeline() -
 
     from_rows([]) would otherwise raise "rows must not be empty" -- a
     confusing error for what is really "nothing was resolved yet". The route
-    short-circuits to an explicit empty result instead.
+    short-circuits to an explicit empty result instead, then still fails the
+    request with 422 (PayrollImportNotValidatedError) since nothing was
+    validated -- see PayrollImportNotValidatedError's docstring.
     """
     scope = FakeTransactionalSessionScope()
     fake_import = _override_happy_path(scope)
@@ -489,21 +499,13 @@ def test_import_payroll_rows_endpoint_validate_all_unresolved_skips_pipeline() -
     finally:
         app.dependency_overrides.clear()
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body == {
-        "mode": "validate",
-        "validated": False,
-        "saved": None,
-        "period_count": 0,
-        "item_count": 0,
-        "validated_period_count": 0,
-        "unvalidated_period_count": 0,
-        "periods": [],
-        "unresolved_rows": [
-            {"period_index": 0, "row_index": 0, "amount_clp": "1000000"}
-        ],
-    }
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert "Import validation failed" in detail["message"]
+    assert detail["conflicting_periods"] == []
+    assert detail["unresolved_rows"] == [
+        {"period_index": 0, "row_index": 0, "amount_clp": "1000000"}
+    ]
     assert fake_import.called_with is None
     assert scope.resolved_with == ["validate"]
 

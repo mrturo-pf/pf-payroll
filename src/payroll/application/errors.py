@@ -49,6 +49,49 @@ class PayrollDependencyConfigurationError(PayrollError):
     status_code = 503
 
 
+class PayrollImportNotValidatedError(PayrollError):
+    """Raised by the import endpoints when the result is not fully validated.
+
+    Scoped to POST /payroll/import/spreadsheet and POST /payroll/import/json
+    only, and raised identically regardless of `mode`: mode="commit" needs
+    every row resolved and every period reconciled before it ever writes
+    anything, and mode="validate" needs the exact same two conditions before
+    it can tell the caller "this would be safe to commit" -- so in both
+    cases, "not validated" is the same underlying fact about the payroll
+    data itself, not about what the endpoint was asked to do with it. Using
+    one error class/status for both keeps that fact reported consistently
+    instead of splitting it across two different codes depending on mode.
+
+    422 (Unprocessable Entity), not the plain 400 most other
+    PayrollValidationError call sites use: the request is syntactically
+    well-formed (valid JSON/CSV, right shape, required fields present --
+    any failure of *that* kind is still a plain 400 from elsewhere in these
+    routes), it just fails a business-level reconciliation rule once
+    genuinely evaluated. That distinction is exactly what RFC 4918 carved
+    422 out for. Deliberately still a 4xx, not a 5xx: this is a fact about
+    the caller's payroll data, not a server-side failure -- it is fully
+    deterministic (the same input reliably produces the same outcome), so a
+    5xx would misleadingly invite automatic retries/alerting for a
+    condition retrying can never fix.
+
+    The structured detail (which periods/rows are the problem) travels in
+    `detail`, same as any other PayrollError -- see
+    build_reconciliation_conflict_detail() and its `unresolved_rows`
+    extension in the /payroll/import/json route.
+
+    A direct consequence: `ImportPayrollResponse.saved` can never be
+    `False`. `saved=False` would describe "we attempted mode="commit" and
+    the write did not persist" -- but that is exactly this error's trigger
+    condition, so it is always raised (422) before any response is built
+    instead. `saved` only ever ends up `True` (mode="commit", validated) or
+    `None` (mode="validate", nothing attempted); there is no 5xx anywhere
+    in this pair for a "saved" failure to report, because that state does
+    not exist.
+    """
+
+    status_code = 422
+
+
 class PayrollPeriodNotFoundError(PayrollNotFoundError):
     """Raised when a payroll period cannot be found."""
 

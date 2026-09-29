@@ -10,7 +10,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, UploadF
 from dataclasses import dataclass
 from pydantic import BaseModel, PlainSerializer
 
-from payroll.application.errors import PayrollError, PayrollValidationError
+from payroll.application.errors import (
+    PayrollError,
+    PayrollImportNotValidatedError,
+    PayrollValidationError,
+)
 from payroll.application.services.import_reconciliation import (
     conflicting_reconciliation_periods,
     is_import_fully_validated,
@@ -307,22 +311,32 @@ class ImportPayrollResponse(BaseModel):
     objects, so a same-named count field would collide with it.
 
     `validated` and `saved` both describe the *returned* result, not a
-    promise about what was attempted -- for mode="commit", a genuine
-    declared-vs-computed conflict (see _period_has_reconciliation_conflict())
-    makes the whole request fail with an HTTP error instead of persisting
-    anything, so a 200 response in commit mode always has `validated=True`
-    and `saved=True` together. "Pending" reconciliation states (a projected
-    period awaiting plan assignment, a temporary market-data gap) do *not*
-    count as conflicts and never block a commit -- there's nothing wrong,
-    just nothing to compare yet, so `validated=True` there does not mean
-    "fully reconciled", only "no known conflict".
+    promise about what was attempted -- a genuine declared-vs-computed
+    conflict (see _period_has_reconciliation_conflict()) makes the whole
+    request fail with a 422 (PayrollImportNotValidatedError) instead of
+    reaching this response, in *either* mode -- see its own docstring for
+    why 422 rather than the plain 400 most other business-rule violations
+    in this codebase use. So a 200 response, in either mode,
+    always has `validated=True`. "Pending" reconciliation states (a
+    projected period awaiting plan assignment, a temporary market-data gap)
+    do *not* count as conflicts and never block either mode -- there's
+    nothing wrong, just nothing to compare yet, so `validated=True` there
+    does not mean "fully reconciled", only "no known conflict".
     - `validated`: True when every row got a resolved concept_code and no
       period has a genuine net-pay/contribution/complementary-insurance
-      conflict. See is_import_fully_validated().
+      conflict. See is_import_fully_validated(). Always True by the time a
+      200 is reached (see above) -- kept as an explicit field rather than
+      dropped, so a caller doesn't have to infer it from the HTTP status
+      alone, and because periods[].validated (below) still varies even when
+      this top-level field can't.
     - `saved`: True once the write is durable (mode="commit"), `None` when
       mode="validate" -- nothing was persisted, so "was it saved" does not
-      apply. Never False: a failed commit raises an HTTP error instead of
-      reaching this response.
+      apply. **Never False** -- not merely unlikely, but structurally
+      unreachable: `saved=False` would mean "we tried to commit and it did
+      not persist", but that exact scenario -- an unvalidated commit -- is
+      precisely what the 422 above rejects before this response is ever
+      built. There is no code path that returns 200 with `saved=False`; do
+      not write client code that branches on it.
 
     validated_period_count plus unvalidated_period_count are a quick
     summary over periods[].validated (they always sum to len(periods)) so a
@@ -414,12 +428,17 @@ class ImportPayrollJsonRequest(BaseModel):
     mode="commit" persists everything, exactly like POST /payroll/import/spreadsheet --
     and requires every row in every period to already have a resolved
     concept_code; any row with concept_code=null makes the whole request
-    fail with 400, nothing is written. mode="validate" runs the exact same
+    fail with 422, nothing is written. mode="validate" runs the exact same
     pipeline on the rows that *do* have a resolved concept_code -- so
-    contributions, taxes and net-pay warnings are genuinely computed -- while
-    rows still missing a concept_code are reported back via
-    `unresolved_rows` instead of failing the request, then everything is
-    discarded via TransactionalSessionScope.resolve("validate"). `mode`
+    contributions, taxes and net-pay warnings are genuinely computed -- then
+    everything is discarded via TransactionalSessionScope.resolve("validate").
+    If any row was still missing a concept_code, or the computed result has
+    a genuine declared-vs-computed conflict, the request fails with the
+    same 422 (PayrollImportNotValidatedError) reporting `unresolved_rows` /
+    conflicting periods in the error detail -- see
+    PayrollImportNotValidatedError's docstring for why 422 instead of a 200
+    a caller would otherwise have to inspect, or the plain 400 most other
+    business-rule violations in this codebase use. `mode`
     applies to the whole batch; there is no per-period mode.
 
     Known side effect, in both modes: ProcessImportedPayrollPeriods calls
@@ -781,7 +800,10 @@ async def import_payroll(
     genuine, not simulated) and always rolls back regardless of the result,
     letting a caller preview an entire CSV/XLSX file's conflicts before
     ever touching the database -- sent as a `mode` form field alongside
-    `file`, not JSON, since this is a multipart/form-data upload. See
+    `file`, not JSON, since this is a multipart/form-data upload. Raises a
+    422 (PayrollImportNotValidatedError) if the result is not fully
+    validated, in *either* mode -- see PayrollImportNotValidatedError's
+    docstring for why 422 instead of a plain 400. See
     ImportPayrollResponse's docstring for the full contract, shared with
     POST /payroll/import/json.
     """
@@ -792,14 +814,22 @@ async def import_payroll(
         result = await use_case.from_bytes(file.filename, await file.read())
         result = await process_use_case.execute(result)
         validated = is_import_fully_validated(result.periods)
-        if mode == "commit" and not validated:
-            message = (
-                "Cannot commit: computed contributions/net pay do not match "
-                "the declared amounts for one or more periods. Resend with "
-                'mode="validate" to inspect the warnings, or fix the '
-                "underlying file or reference data first."
-            )
-            raise PayrollValidationError(
+        if not validated:
+            if mode == "commit":
+                message = (
+                    "Cannot commit: computed contributions/net pay do not match "
+                    "the declared amounts for one or more periods. Resend with "
+                    'mode="validate" to inspect the warnings, or fix the '
+                    "underlying file or reference data first."
+                )
+            else:
+                message = (
+                    "Import validation failed: computed contributions/net pay "
+                    "do not match the declared amounts for one or more "
+                    "periods. See conflicting_periods in this error's detail "
+                    "for specifics."
+                )
+            raise PayrollImportNotValidatedError(
                 message,
                 detail=build_reconciliation_conflict_detail(message, result.periods),
             )
@@ -875,15 +905,19 @@ async def import_payroll_rows(
     _reject_duplicate_period_keys().
 
     Rows with an unresolved concept_code are split out before either use
-    case runs: mode="commit" rejects the whole request outright (400) if any
-    remain, while mode="validate" simply excludes them from the computed
-    pipeline and reports them back via `unresolved_rows` (each entry
-    identified by `period_index` + `row_index`) -- letting a caller iterate
-    (fix a few rows, validate again) without a hard failure each time.
-    mode="commit" also rejects (400, nothing persisted) if the pipeline
-    finds a genuine declared-vs-computed conflict once it runs -- see
-    is_import_fully_validated() and ImportPayrollResponse's docstring for why
-    a 200 in commit mode always means `validated=True, saved=True` together.
+    case runs: mode="commit" rejects the whole request outright (422,
+    PayrollImportNotValidatedError) if any remain, while mode="validate"
+    excludes them from the computed pipeline so the rest of the batch still
+    gets genuine warnings, then raises the same 422 reporting them back via
+    `unresolved_rows` in the error detail (each entry identified by
+    `period_index` + `row_index`) -- a caller iterates by inspecting that
+    detail, fixing a few rows, and resending.
+    mode="commit" also rejects (422, nothing persisted) if the pipeline
+    finds a genuine declared-vs-computed conflict once it runs, and
+    mode="validate" raises the same 422 as above for that case too -- see
+    is_import_fully_validated(), PayrollImportNotValidatedError's docstring,
+    and ImportPayrollResponse's docstring for why a 200 response (in either
+    mode) always means `validated=True`.
     See ImportPayrollJsonRequest's docstring for the full contract.
 
     One try/except around every step (unlike /payroll/import/spreadsheet's two separate
@@ -908,11 +942,21 @@ async def import_payroll_rows(
         _reject_duplicate_period_keys(payload.periods)
 
         if unresolved and payload.mode == "commit":
-            raise PayrollValidationError(
+            message = (
                 "Cannot commit: row(s) at (period_index, row_index) "
                 f"{[(item.period_index, item.row_index) for item in unresolved]} "
                 'have no resolved concept_code. Resend with mode="validate" to '
                 "preview the rest, or resolve them first."
+            )
+            raise PayrollImportNotValidatedError(
+                message,
+                detail={
+                    "message": message,
+                    "conflicting_periods": [],
+                    "unresolved_rows": [
+                        item.model_dump(mode="json") for item in unresolved
+                    ],
+                },
             )
 
         rows = [
@@ -973,10 +1017,23 @@ async def import_payroll_rows(
                 'mode="validate" to inspect the warnings, or fix the '
                 "underlying data first."
             )
-            raise PayrollValidationError(
+            raise PayrollImportNotValidatedError(
                 message,
                 detail=build_reconciliation_conflict_detail(message, result.periods),
             )
+        if payload.mode == "validate" and not validated:
+            message = (
+                "Import validation failed: one or more rows have no resolved "
+                "concept_code, and/or computed contributions/net pay do not "
+                "match the declared amounts for one or more periods. See "
+                "unresolved_rows and conflicting_periods in this error's "
+                "detail for specifics."
+            )
+            detail = build_reconciliation_conflict_detail(message, result.periods)
+            detail["unresolved_rows"] = [
+                item.model_dump(mode="json") for item in unresolved
+            ]
+            raise PayrollImportNotValidatedError(message, detail=detail)
     except PayrollError as exc:
         await scope.resolve("validate")
         raise to_http_exception(exc, default_status=400) from exc

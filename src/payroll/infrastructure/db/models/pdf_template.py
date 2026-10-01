@@ -76,13 +76,17 @@ class PdfTemplateFieldModel(Base):
     )
     pdf_label_pattern: Mapped[str] = mapped_column(String(500))
     # No `kind` column -- it would duplicate PAY_CONCEPT.kind with no
-    # referential integrity tying the two copies together (concept_code is
-    # already a FK into PAY_CONCEPT(code), which already owns `kind`). The
-    # repository always resolves kind from PAY_CONCEPT via concept_code at
-    # read time. See pf-db migration 0010.
-    concept_code: Mapped[str] = mapped_column(
-        String(40), ForeignKey("PAY_CONCEPT.code")
-    )
+    # referential integrity tying the two copies together. The repository
+    # always resolves kind from PAY_CONCEPT via concept_id at read time. See
+    # pf-db migration 0010.
+    # concept_id, not concept_code: every other table referencing PAY_CONCEPT
+    # does so by its surrogate id (PAY_ITEM.concept_id) -- a VARCHAR FK to
+    # PAY_CONCEPT(code) was an unintentional inconsistency, fixed in pf-db
+    # migration 0011. concept_code remains the business-facing identifier at
+    # every application layer above this model (DTOs, requests/responses,
+    # the PDF-matching engine); only this storage column changed, resolved
+    # at the repository boundary exactly like kind already is.
+    concept_id: Mapped[int] = mapped_column(ForeignKey("PAY_CONCEPT.id"))
     confidence: Mapped[Decimal] = mapped_column(Numeric(3, 2), default=Decimal("0.90"))
 
     template: Mapped[PdfTemplateModel] = relationship(back_populates="fields")

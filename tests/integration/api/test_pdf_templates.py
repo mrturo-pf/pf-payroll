@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from fastapi.testclient import TestClient
 
-from payroll.application.dto import PdfTemplateDTO, PdfTemplateFieldDTO
+from payroll.application.dto import ConceptRef, PdfTemplateDTO, PdfTemplateFieldDTO
 from payroll.application.errors import PayrollValidationError
 from payroll.interfaces.api.dependencies import get_template_repository
 from payroll.interfaces.api.main import app
@@ -92,9 +92,12 @@ class FakeTemplateRepository:
         self._by_id[template_id] = deactivated
         return deactivated
 
-    async def resolve_concept_kinds(self, codes: set[str]) -> dict[str, str]:
+    async def resolve_concepts(self, codes: set[str]) -> dict[str, ConceptRef]:
         """Fake PAY_CONCEPT lookup -- a fixed, known-good map."""
-        known = {"SALARY_BASE": "income", "INCOME_TAX": "discount"}
+        known = {
+            "SALARY_BASE": ConceptRef(id=1, kind="income"),
+            "INCOME_TAX": ConceptRef(id=2, kind="discount"),
+        }
         return {code: known[code] for code in codes if code in known}
 
 
@@ -367,9 +370,9 @@ def test_update_template_not_found_is_404() -> None:
 class FailingUpdateTemplateRepository:
     """Test double whose update_template() always raises a PayrollError."""
 
-    async def resolve_concept_kinds(self, codes: set[str]) -> dict[str, str]:
+    async def resolve_concepts(self, codes: set[str]) -> dict[str, ConceptRef]:
         """Resolve everything OK -- the failure under test is update_template itself."""
-        return {code: "income" for code in codes}
+        return {code: ConceptRef(id=1, kind="income") for code in codes}
 
     async def update_template(
         self, template_id: str, template: PdfTemplateDTO

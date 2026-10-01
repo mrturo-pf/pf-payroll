@@ -6,11 +6,14 @@ one concrete class satisfying two Protocols, mirroring how
 `SqlAlchemyReferenceDataRepository` already satisfies both
 `EmployerPaymentRuleReader` and the fuller `ReferenceDataRepository`.
 
-Neither `PdfTemplateFieldModel.kind` nor an unconditional
-`PdfTemplateModel.employer_name` exist anymore (see pf-db migration 0010) --
-both used to duplicate data already owned by `PAY_CONCEPT`/`PAY_EMPLOYER` with
-no referential integrity tying the copies together. This repository is the
-one place that resolves both, fresh, on every read.
+None of `PdfTemplateFieldModel.kind`, an unconditional `PdfTemplateModel
+.employer_name`, nor `PdfTemplateFieldModel.concept_code` exist anymore (see
+pf-db migrations 0010/0011) -- all three used to duplicate data already
+owned by `PAY_CONCEPT`/`PAY_EMPLOYER` (the first two with no referential
+integrity tying the copies together; the third as a plain inconsistency
+with every other FK into `PAY_CONCEPT` in the schema, which all reference
+its surrogate `id`). This repository is the one place that resolves all of
+them, fresh, on every read and write.
 """
 
 from decimal import Decimal
@@ -21,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from payroll.application.dto import (
-    PayrollConceptKind,
+    ConceptRef,
     PdfTemplateDTO,
     PdfTemplateFieldDTO,
 )
@@ -41,14 +44,16 @@ _INTEGRITY_ERROR_MESSAGE = (
 
 def _to_dto(
     model: PdfTemplateModel,
-    concept_kinds: dict[str, PayrollConceptKind],
+    concepts_by_id: dict[int, tuple[str, str]],
     employer_names: dict[int, str],
 ) -> PdfTemplateDTO:
     """Map a PdfTemplateModel (fields eagerly loaded) to a PdfTemplateDTO.
 
-    `concept_kinds`/`employer_names` are pre-resolved batches (see
+    `concepts_by_id`/`employer_names` are pre-resolved batches (see
     `_dto_lookup_dicts()`) -- this function does no I/O of its own, so it
-    stays trivially testable without a session.
+    stays trivially testable without a session. `concepts_by_id` maps
+    `concept_id -> (code, kind)`: one lookup resolves both values a field
+    needs, since both live on the same `PAY_CONCEPT` row.
     """
     employer_name = model.employer_name
     if employer_name is None and model.employer_id is not None:
@@ -65,32 +70,13 @@ def _to_dto(
             PdfTemplateFieldDTO(
                 id=field.id,
                 pdf_label_pattern=field.pdf_label_pattern,
-                concept_code=field.concept_code,
-                kind=concept_kinds[field.concept_code],
+                concept_code=concepts_by_id[field.concept_id][0],
+                kind=concepts_by_id[field.concept_id][1],  # type: ignore[arg-type]
                 confidence=float(field.confidence),
             )
             for field in model.fields
         ],
     )
-
-
-def _to_field_models(fields: list[PdfTemplateFieldDTO]) -> list[PdfTemplateFieldModel]:
-    """Build fresh PdfTemplateFieldModel rows from a list of field DTOs.
-
-    `field.kind` is intentionally ignored here -- PdfTemplateFieldModel has no
-    `kind` column to set (see module docstring). Whatever kind the caller put
-    on the DTO (routes always resolve it from PAY_CONCEPT before constructing
-    one, see `pdf_templates.py`) is informational only on the way in; `_to_dto`
-    re-resolves the real value on every way out.
-    """
-    return [
-        PdfTemplateFieldModel(
-            pdf_label_pattern=field.pdf_label_pattern,
-            concept_code=field.concept_code,
-            confidence=Decimal(str(field.confidence)),
-        )
-        for field in fields
-    ]
 
 
 class SqlAlchemyTemplateRepository:
@@ -122,8 +108,8 @@ class SqlAlchemyTemplateRepository:
             statement = statement.where(PdfTemplateModel.is_active.is_(True))
         result = await self._session.execute(statement)
         models = list(result.scalars().all())
-        concept_kinds, employer_names = await self._dto_lookup_dicts(models)
-        return [_to_dto(model, concept_kinds, employer_names) for model in models]
+        concepts_by_id, employer_names = await self._dto_lookup_dicts(models)
+        return [_to_dto(model, concepts_by_id, employer_names) for model in models]
 
     async def get_template(
         self, template_id: str, *, include_inactive: bool = False
@@ -140,8 +126,8 @@ class SqlAlchemyTemplateRepository:
         model = result.scalar_one_or_none()
         if model is None:
             return None
-        concept_kinds, employer_names = await self._dto_lookup_dicts([model])
-        return _to_dto(model, concept_kinds, employer_names)
+        concepts_by_id, employer_names = await self._dto_lookup_dicts([model])
+        return _to_dto(model, concepts_by_id, employer_names)
 
     async def create_template(self, template: PdfTemplateDTO) -> PdfTemplateDTO:
         """Create a new template (and its fields). Raises on duplicate template_id."""
@@ -152,7 +138,7 @@ class SqlAlchemyTemplateRepository:
             employer_match_pattern=template.employer_match_pattern,
             version=template.version,
             is_active=True,
-            fields=_to_field_models(template.fields),
+            fields=await self._to_field_models(template.fields),
         )
         self._session.add(model)
         await self._commit_or_raise()
@@ -177,7 +163,7 @@ class SqlAlchemyTemplateRepository:
         # Reassigning the relationship (cascade="all, delete-orphan") deletes
         # every previous field row and inserts the new ones in one flush --
         # no hand-rolled DELETE statement needed.
-        model.fields = _to_field_models(template.fields)
+        model.fields = await self._to_field_models(template.fields)
         await self._commit_or_raise()
         return await self.get_template(template_id, include_inactive=True)
 
@@ -190,17 +176,49 @@ class SqlAlchemyTemplateRepository:
         await self._session.commit()
         return await self.get_template(template_id, include_inactive=True)
 
-    async def resolve_concept_kinds(
-        self, codes: set[str]
-    ) -> dict[str, PayrollConceptKind]:
-        """Resolve each code's real PAY_CONCEPT.kind, keyed by concept_code."""
+    async def resolve_concepts(self, codes: set[str]) -> dict[str, ConceptRef]:
+        """Resolve each code's real PAY_CONCEPT id + kind, keyed by concept_code."""
         if not codes:
             return {}
-        statement = select(PayrollConceptModel.code, PayrollConceptModel.kind).where(
-            PayrollConceptModel.code.in_(codes)
-        )
+        statement = select(
+            PayrollConceptModel.code, PayrollConceptModel.id, PayrollConceptModel.kind
+        ).where(PayrollConceptModel.code.in_(codes))
         result = await self._session.execute(statement)
-        return {code: kind.value for code, kind in result.all()}
+        return {
+            code: ConceptRef(id=concept_id, kind=kind.value)
+            for code, concept_id, kind in result.all()
+        }
+
+    async def _to_field_models(
+        self, fields: list[PdfTemplateFieldDTO]
+    ) -> list[PdfTemplateFieldModel]:
+        """Build fresh PdfTemplateFieldModel rows, resolving id from concept_code.
+
+        Re-resolves independently of any earlier resolution the caller (the
+        `/payroll/templates` routes) already did -- this repository stays
+        correct even if invoked without that pre-validation (e.g. from a
+        test, or a future non-HTTP caller), raising the same
+        PayrollValidationError a route would instead of leaning solely on
+        the FK IntegrityError fallback. `field.kind` is intentionally
+        ignored -- PdfTemplateFieldModel has no `kind` column to set (see
+        module docstring); `_to_dto()` re-resolves the real value on every
+        way out.
+        """
+        codes = {field.concept_code for field in fields}
+        concepts = await self.resolve_concepts(codes)
+        unknown = codes - concepts.keys()
+        if unknown:
+            raise PayrollValidationError(
+                f"Unknown concept_code(s): {', '.join(sorted(unknown))}."
+            )
+        return [
+            PdfTemplateFieldModel(
+                pdf_label_pattern=field.pdf_label_pattern,
+                concept_id=concepts[field.concept_code].id,
+                confidence=Decimal(str(field.confidence)),
+            )
+            for field in fields
+        ]
 
     async def _load_employer_names(self, employer_ids: set[int]) -> dict[int, str]:
         """Resolve PAY_EMPLOYER.name for a set of ids, to fill a NULL employer_name."""
@@ -212,9 +230,30 @@ class SqlAlchemyTemplateRepository:
         result = await self._session.execute(statement)
         return {employer_id: name for employer_id, name in result.all()}
 
+    async def _load_concepts_by_id(
+        self, concept_ids: set[int]
+    ) -> dict[int, tuple[str, str]]:
+        """Resolve (code, kind) for a set of PAY_CONCEPT ids, for the read path.
+
+        The mirror image of resolve_concepts() (which looks up by code, for
+        the write path) -- purely internal to this repository's own
+        _to_dto() mapping, so it returns a plain tuple rather than the
+        public ConceptRef (which is shaped for the by-code write lookup and
+        would be redundant here: the dict key already *is* the id).
+        """
+        if not concept_ids:
+            return {}
+        statement = select(
+            PayrollConceptModel.id, PayrollConceptModel.code, PayrollConceptModel.kind
+        ).where(PayrollConceptModel.id.in_(concept_ids))
+        result = await self._session.execute(statement)
+        return {
+            concept_id: (code, kind.value) for concept_id, code, kind in result.all()
+        }
+
     async def _dto_lookup_dicts(
         self, models: list[PdfTemplateModel]
-    ) -> tuple[dict[str, PayrollConceptKind], dict[int, str]]:
+    ) -> tuple[dict[int, tuple[str, str]], dict[int, str]]:
         """Batch-resolve everything _to_dto() needs for a set of models.
 
         Shared by list_templates()/get_template() (get_template just passes a
@@ -222,15 +261,15 @@ class SqlAlchemyTemplateRepository:
         templates/fields are involved, not N+1, and the resolution logic
         lives in exactly one place.
         """
-        codes = {field.concept_code for model in models for field in model.fields}
+        concept_ids = {field.concept_id for model in models for field in model.fields}
         employer_ids = {
             model.employer_id
             for model in models
             if model.employer_name is None and model.employer_id is not None
         }
-        concept_kinds = await self.resolve_concept_kinds(codes)
+        concepts_by_id = await self._load_concepts_by_id(concept_ids)
         employer_names = await self._load_employer_names(employer_ids)
-        return concept_kinds, employer_names
+        return concepts_by_id, employer_names
 
     async def _get_model(self, template_id: str) -> PdfTemplateModel | None:
         """Fetch the raw model (fields included) by template_id, active or not.

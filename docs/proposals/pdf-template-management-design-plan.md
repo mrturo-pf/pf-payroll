@@ -478,3 +478,180 @@ real functional regression, not just a cleanup.
   directions. 491 tests passing, 100% coverage, ruff/mypy both clean. Docs (`api.md`,
   `payroll-workflow.md`, `architectural-report.md`) and the root Postman collection
   updated in the same session.
+- **2026-10-01 (second follow-up)** -- `PAY_PDF_TEMPLATE_FIELD.concept_code` replaced
+  with `concept_id` (migration `0011`), fixing the one FK into `PAY_CONCEPT` in the
+  whole schema that didn't use its surrogate `id` like every sibling table does. Full
+  writeup, live Alembic upgrade/downgrade/upgrade round trip against real Postgres, and
+  file list in the "Second follow-up" section below. 500 tests passing, 100% coverage,
+  ruff/format/mypy/vulture/jscpd all clean. Zero `api.md`/Postman changes needed -- the
+  client-facing `concept_code` contract never changed, confirming the fix landed
+  exactly at the repository boundary.
+
+## Second follow-up: `PAY_PDF_TEMPLATE_FIELD.concept_code` → `concept_id`
+
+A second round of review (prompted by the same instinct that caught the `kind`/
+`employer_name` duplication: "does this column actually need to exist, or does it
+just copy data another table already owns?") turned up one more schema
+inconsistency, orthogonal to the first one.
+
+### Finding: `concept_code` was the only FK into `PAY_CONCEPT` using the business key
+
+Every other table that needs to point at a `PAY_CONCEPT` row does so through the
+surrogate integer primary key -- `PAY_ITEM.concept_id BIGINT REFERENCES
+PAY_CONCEPT(id)` is the established, and only other, example in the schema.
+`PAY_PDF_TEMPLATE_FIELD.concept_code`, added in migration `0009`, was a
+one-off: a `VARCHAR(40)` FK into `PAY_CONCEPT(code)` (the business key) instead.
+Nothing about PDF templates specifically needed that difference -- it looks like an
+oversight from treating `concept_code` as "the identifier" at the application
+layer (which it correctly is) without noticing that every sibling table still
+stores the surrogate `id` underneath. This is purely a storage-layer
+inconsistency, not an application-facing one: `concept_code` was, and remains,
+the only identifier any DTO, request, response, or the PDF-matching engine
+(`CONCEPT_MAP`) ever sees.
+
+### Decision: storage changes to `concept_id`; the API contract does not change at all
+
+Unlike the `kind`/`employer_name` fix, this one required **zero** changes to
+`docs/api.md` or the Postman collection -- confirmation that the fix belongs
+exactly at the repository boundary and nowhere else. Clients still send and
+receive `concept_code` in every request/response body; only the column
+`PdfTemplateFieldModel` maps to, and what `PAY_PDF_TEMPLATE_FIELD` actually
+stores, changed from `concept_code` to `concept_id`.
+
+### pf-db implementation
+
+- `alembic/versions/0011_pdf_template_field_concept_id.py`, revising `0010`:
+  adds nullable `concept_id`, backfills it with `UPDATE ... FROM PAY_CONCEPT`
+  joining on the old `concept_code`, sets `NOT NULL` + the new FK
+  (`fk_pay_pdf_template_field_concept_id` → `PAY_CONCEPT(id)`), drops
+  `concept_code`, and adds `idx_pay_pdf_template_field_concept_id`. `downgrade()`
+  reverses the same join in the other direction (code ← id) before restoring the
+  old `NOT NULL REFERENCES PAY_CONCEPT(code)` shape -- no data loss either way,
+  exactly like migration `0010`'s round trip.
+- `db/01_schema.sql`: `PAY_PDF_TEMPLATE_FIELD.concept_id BIGINT NOT NULL REFERENCES
+  PAY_CONCEPT(id)` replaces `concept_code`; added the matching index.
+- `db/04_seed_real.sql`: the `VALUES` literal still spells out human-readable
+  codes (`'SALARY_BASE'`, etc. -- there's no reason to hand-maintain raw
+  integers in a seed file humans read), but the `INSERT` now joins that literal
+  against `PAY_CONCEPT` and writes `c.id`, not the code itself.
+- `docs/tables.md`: `PAY_PDF_TEMPLATE_FIELD`'s schema block and prose updated to
+  describe `concept_id`/the new index/the "every other table already does this"
+  rationale.
+
+### pf-payroll implementation
+
+- `PdfTemplateFieldModel.concept_code: Mapped[str]` → `concept_id: Mapped[int]`
+  (`ForeignKey("PAY_CONCEPT.id")`).
+- `application/dto.py`: added `ConceptRef` (`id: int`, `kind: PayrollConceptKind`)
+  -- the one DTO shaped specifically for the by-code concept lookup a write needs
+  (both the concept's real id, to store, and its kind, for the response). DTOs
+  that cross the `TemplateRepository` port boundary stayed otherwise unchanged;
+  `PdfTemplateFieldDTO.concept_code`/`.kind` are still exactly what every
+  route/test already expected.
+- `application/ports/template_repository.py`: `resolve_concept_kinds(codes) ->
+  dict[str, PayrollConceptKind]` renamed/widened to `resolve_concepts(codes) ->
+  dict[str, ConceptRef]` -- one lookup now serves both the write path (needs
+  `.id`) and what used to need a separate kind-only lookup, instead of two
+  near-identical Protocol methods.
+- `infrastructure/db/repositories/template_repository.py`:
+  - `resolve_concepts()` queries `(code, id, kind)`, keyed by code -- the write
+    path's lookup.
+  - New private `_load_concepts_by_id()` queries `(id, code, kind)`, keyed by
+    id -- the mirror-image lookup the *read* path (`_to_dto()`) needs, since a
+    loaded `PdfTemplateFieldModel` only carries `concept_id`, not the code. Kept
+    separate from the public `resolve_concepts()` (different key direction,
+    different DTO shape needed) rather than overloading one method for both
+    directions.
+  - `_to_field_models()` (now an async instance method, since it needs the
+    session to resolve codes) calls `resolve_concepts()` and raises
+    `PayrollValidationError` on any code with no match -- unchanged
+    400-on-unknown-code behavior, just re-homed from "trust the FK
+    IntegrityError" to "reject explicitly before ever building the model", same
+    as it already did for the `kind` fix.
+  - `_dto_lookup_dicts()` now calls `_load_concepts_by_id()` instead of a
+    code-keyed kind lookup; `_to_dto()`'s second parameter is
+    `concepts_by_id: dict[int, tuple[str, str]]` (both code and kind, since a
+    single `PAY_CONCEPT` row lookup resolves both at once for the read path).
+  - Both lookups remain batched (one query per `list_templates()`/
+    `get_template()` call, not per-row) -- the N+1 guard from the original
+    recommendation is preserved unchanged.
+- `interfaces/api/routes/pdf_templates.py`: `_resolve_field_dtos()` now calls
+  `repository.resolve_concepts()` and reads `.kind` off the returned
+  `ConceptRef` -- the only call-site change; request/response shapes and the
+  400-on-unknown-code behavior are byte-for-byte identical to before.
+
+### Live PostgreSQL validation (this session, not simulated)
+
+With the `pf-db` `.venv` repaired (see the root `AGENTS.md`/kennel memory on the
+`SSL_CERT_FILE`-unrelated `uv`/Artifactory proxy fix), this round trip was run
+for real, through actual Alembic, not hand-run SQL:
+
+1. `make db-reset` (fresh, empty Postgres) → `alembic upgrade head`: the full
+   `0001`→`0011` chain applied cleanly in one run, including `0009`/`0010`/`0011`
+   back-to-back against a database that had never seen any of them before.
+2. `make seed-real`: all 20 `walmart-chile-v1` fields inserted successfully,
+   joining the seed's literal codes to real `PAY_CONCEPT.id` values.
+3. Direct query confirmed `\d "PAY_PDF_TEMPLATE_FIELD"` shows `concept_id
+   BIGINT NOT NULL` with `fk_pay_pdf_template_field_concept_id` and the new
+   index, no `concept_code` column at all; joining `concept_id` back to
+   `PAY_CONCEPT` resolved all 20 codes/kinds correctly (e.g. `concept_id=1` →
+   `SALARY_BASE`/`income`).
+4. `alembic downgrade 0010`: `concept_code` column restored, correctly
+   backfilled for all 20 rows from the live `concept_id` values (verified by
+   query) -- no data loss.
+5. `alembic upgrade head` again: `concept_id` restored, all 20 rows re-verified
+   against `PAY_CONCEPT` a second time -- a genuine two-way round trip on a
+   real, previously-migrated-forward-and-back database, not a fresh load each
+   time.
+
+### Tests and quality checks
+
+- Rewrote `tests/unit/infrastructure/db/repositories/test_template_repository.py`
+  end to end: every mocked `session.execute()` call sequence had to be split out
+  by the exact row shape each of `resolve_concepts()` (code, id, kind) vs.
+  `_load_concepts_by_id()` (id, code, kind) actually selects -- reusing one
+  `MagicMock` `return_value` across calls with conflicting tuple-unpack orders
+  would have silently produced wrong dicts instead of a visible failure (mocks
+  don't type-check tuple unpacking). Added
+  `test_resolve_concepts_maps_code_to_ref`,
+  `test_resolve_concepts_empty_codes_short_circuits`,
+  `test_load_concepts_by_id_empty_ids_short_circuits`,
+  `test_to_field_models_rejects_unknown_concept_code`.
+- `tests/integration/api/test_pdf_templates.py`: both fakes'
+  `resolve_concept_kinds()` renamed to `resolve_concepts()`, now returning
+  `ConceptRef` instances instead of bare kind strings. No other test needed to
+  change -- confirms the API contract really is untouched by this fix.
+- Full suite: **500 tests passing, 100% coverage**; `ruff check`/`ruff format
+  --check`/`mypy`/`vulture`/`jscpd` (`make duplicate-code-src`) all clean on
+  `pf-payroll`; `ruff check alembic/` clean on `pf-db` (via the now-repaired
+  `.venv`).
+
+### Files touched (second follow-up session)
+
+**New (`pf-db`):**
+- `alembic/versions/0011_pdf_template_field_concept_id.py`
+
+**Modified (`pf-db`):**
+- `db/01_schema.sql` (`concept_code` → `concept_id` + new index)
+- `db/04_seed_real.sql` (`INSERT` now joins seed literals to `PAY_CONCEPT.id`)
+- `docs/tables.md` (`PAY_PDF_TEMPLATE_FIELD` section updated)
+
+**Modified (`pf-payroll`):**
+- `src/payroll/infrastructure/db/models/pdf_template.py` (`concept_code` →
+  `concept_id` column)
+- `src/payroll/application/dto.py` (new `ConceptRef` dataclass)
+- `src/payroll/application/ports/template_repository.py`
+  (`resolve_concept_kinds()` → `resolve_concepts()`)
+- `src/payroll/infrastructure/db/repositories/template_repository.py` (new
+  `_load_concepts_by_id()`; `resolve_concepts()` returns `ConceptRef`;
+  `_to_field_models()`/`_to_dto()`/`_dto_lookup_dicts()` updated for the new
+  key direction)
+- `src/payroll/interfaces/api/routes/pdf_templates.py` (`_resolve_field_dtos()`
+  updated call-site only)
+- `tests/unit/infrastructure/db/repositories/test_template_repository.py`
+  (rewritten; see above)
+- `tests/integration/api/test_pdf_templates.py` (both fakes updated; see above)
+
+No `docs/api.md` or Postman changes -- confirmed the API contract is untouched by
+this fix.
+

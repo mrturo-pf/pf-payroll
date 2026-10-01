@@ -171,8 +171,8 @@ async def _resolve_field_dtos(
     earlier and clearer than letting the FK constraint fail during commit.
     """
     codes = {field.concept_code for field in fields}
-    concept_kinds = await repository.resolve_concept_kinds(codes)
-    unknown = codes - concept_kinds.keys()
+    concepts = await repository.resolve_concepts(codes)
+    unknown = codes - concepts.keys()
     if unknown:
         raise PayrollValidationError(
             f"Unknown concept_code(s): {', '.join(sorted(unknown))}."
@@ -182,7 +182,7 @@ async def _resolve_field_dtos(
             id=None,
             pdf_label_pattern=field.pdf_label_pattern,
             concept_code=field.concept_code,
-            kind=concept_kinds[field.concept_code],
+            kind=concepts[field.concept_code].kind,
             confidence=field.confidence,
         )
         for field in fields

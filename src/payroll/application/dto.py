@@ -233,6 +233,24 @@ class PdfImportPreviewDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class ConceptRef:
+    """Minimal PAY_CONCEPT projection needed to resolve a template field.
+
+    Returned by `TemplateRepository.resolve_concepts()`, keyed by
+    `concept_code` -- carries exactly what a write needs (`id`, to store in
+    `PAY_PDF_TEMPLATE_FIELD.concept_id`) and what a client-facing response
+    needs (`kind`, since `PdfTemplateFieldDTO`/the API never store it, only
+    ever resolve it fresh from `PAY_CONCEPT`). The one DTO allowed to cross
+    the `TemplateRepository` port boundary for this lookup -- see pf-db
+    migration 0011 for why the storage column is `concept_id`, not
+    `concept_code`.
+    """
+
+    id: int
+    kind: PayrollConceptKind
+
+
+@dataclass(frozen=True, slots=True)
 class PdfTemplateFieldDTO:
     """Represent one label-to-concept mapping rule within a PDF template.
 

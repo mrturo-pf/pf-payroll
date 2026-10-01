@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from payroll.application.dto import PayrollConceptKind, PdfTemplateDTO
+from payroll.application.dto import ConceptRef, PdfTemplateDTO
 
 
 class TemplateReader(Protocol):
@@ -65,17 +65,17 @@ class TemplateRepository(Protocol):
         """
         ...
 
-    async def resolve_concept_kinds(
-        self, codes: set[str]
-    ) -> dict[str, PayrollConceptKind]:
-        """Resolve each code's real PAY_CONCEPT.kind, keyed by concept_code.
+    async def resolve_concepts(self, codes: set[str]) -> dict[str, ConceptRef]:
+        """Resolve each code's real PAY_CONCEPT id + kind, keyed by concept_code.
 
         A code with no matching PAY_CONCEPT row is simply absent from the
-        result (never raises) -- callers (the /payroll/templates routes) use
-        a missing key to reject an unknown concept_code with a clear 400
-        before ever attempting to write a field row, rather than relying on
-        an IntegrityError from the FK constraint. This is the only source of
-        truth for a field's kind -- PAY_PDF_TEMPLATE_FIELD has no kind column
-        of its own (see pf-db migration 0010).
+        result (never raises) -- callers (the /payroll/templates routes, and
+        this repository's own write path) use a missing key to reject an
+        unknown concept_code with a clear 400 before ever attempting to
+        write a field row, rather than relying on an IntegrityError from the
+        FK constraint. This is the only source of truth for a field's kind,
+        and the only way to resolve the concept_code a write request carries
+        into the concept_id the storage column actually holds -- see pf-db
+        migrations 0010 (kind) and 0011 (concept_id).
         """
         ...

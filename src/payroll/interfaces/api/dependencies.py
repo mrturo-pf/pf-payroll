@@ -13,6 +13,10 @@ from payroll.application.ports.repositories import (
     PayrollRepository,
     ReferenceDataRepository,
 )
+from payroll.application.ports.template_repository import (
+    TemplateReader,
+    TemplateRepository,
+)
 from payroll.infrastructure.http.pf_rates_client import PfRatesClient
 from payroll.infrastructure.http.income_tax_bracket_client import IncomeTaxBracketClient
 from payroll.infrastructure.exporters.spreadsheet_exporter import (
@@ -38,6 +42,7 @@ from payroll.interfaces.repositories import (
     SqlAlchemyComplementaryInsuranceRepository,
     SqlAlchemyPayrollRepository,
     SqlAlchemyReferenceDataRepository,
+    SqlAlchemyTemplateRepository,
 )
 from payroll.infrastructure.pdf_import.extractor import TemplatePdfPayrollExtractor
 from payroll.config import settings
@@ -99,6 +104,25 @@ def get_complementary_insurance_repository(
 ) -> ComplementaryInsuranceRepository:
     """Get complementary insurance repository."""
     return SqlAlchemyComplementaryInsuranceRepository(session)
+
+
+def get_template_repository(
+    session: AsyncSession = Depends(get_session),
+) -> TemplateRepository:
+    """Get the full PDF template repository (CRUD), used by /payroll/templates."""
+    return SqlAlchemyTemplateRepository(session)
+
+
+def get_template_reader(
+    session: AsyncSession = Depends(get_session),
+) -> TemplateReader:
+    """Get a read-only PDF template reader, used by PreviewPdfImport.
+
+    Same concrete class as get_template_repository() -- SqlAlchemyTemplateRepository
+    satisfies both Protocols -- but resolved through its own dependency so
+    PreviewPdfImport's wiring only ever declares the narrower port it needs.
+    """
+    return SqlAlchemyTemplateRepository(session)
 
 
 def get_import_payroll_use_case(
@@ -164,16 +188,20 @@ def get_transactional_process_imported_payroll_periods_use_case(
 
 def get_preview_pdf_import_use_case(
     reference_data: EmployerPaymentRuleReader = Depends(get_reference_data_repository),
+    template_reader: TemplateReader = Depends(get_template_reader),
 ) -> PreviewPdfImport:
     """Get preview pdf import use case.
 
-    Takes a read-only ReferenceDataRepository so it can resolve the real
-    employer payment-date rule once template matching reveals which
-    employer produced the PDF -- reads only, never writes. PreviewPdfImport
-    still takes no PayrollRepository at all, so it can never persist
-    anything nor trigger ProcessImportedPayrollPeriods.
+    Takes a required read-only TemplateReader (templates are the entire
+    point of the extractor) and an optional read-only ReferenceDataRepository
+    so it can resolve the real employer payment-date rule once template
+    matching reveals which employer produced the PDF -- reads only, never
+    writes. PreviewPdfImport still takes no PayrollRepository at all, so it
+    can never persist anything nor trigger ProcessImportedPayrollPeriods.
     """
-    return PreviewPdfImport(TemplatePdfPayrollExtractor(), reference_data)
+    return PreviewPdfImport(
+        TemplatePdfPayrollExtractor(), template_reader, reference_data
+    )
 
 
 def get_process_imported_payroll_periods_use_case(

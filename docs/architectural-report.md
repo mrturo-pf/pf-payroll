@@ -324,27 +324,34 @@ def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:
 
 ### 5.1 Alternative ingestion: payslip PDF
 
-An alternative to Excel/CSV: extraction based on versioned JSON templates
-(`infrastructure/pdf_import/templates/`), never OCR/LLM. `POST /payroll/pdf-preview`
-accepts a batch of one or more payslip PDFs and returns one preview per file, in
-upload order; `POST /payroll/import/json` then confirms one or more payslips' (possibly
-hand-edited) rows at a time. Both routes share the
-`PreviewPdfImport` use case, which deliberately receives no repository -- that's the
-architectural guarantee that the preview can never write to the database.
-Full design and implementation detail in
-[`docs/proposals/pdf-import-action-plan.md`](proposals/pdf-import-action-plan.md).
+An alternative to Excel/CSV: extraction based on versioned templates stored in pf-db's
+`PAY_PDF_TEMPLATE`/`PAY_PDF_TEMPLATE_FIELD` tables (managed via `POST`/`GET`/`PUT`/
+`DELETE /payroll/templates*`, not a git-tracked file), never OCR/LLM. `POST
+/payroll/pdf-preview` accepts a batch of one or more payslip PDFs and returns one
+preview per file, in upload order; `POST /payroll/import/json` then confirms one or
+more payslips' (possibly hand-edited) rows at a time. Both routes share the
+`PreviewPdfImport` use case, which deliberately receives no `PayrollRepository` --
+that's the architectural guarantee that the preview can never *write* to the database
+(it does read from it now, via a required `TemplateReader` and an optional
+`EmployerPaymentRuleReader` -- "no persistence" only ever meant "no writes"). Full
+design and implementation detail in
+[`docs/proposals/pdf-import-action-plan.md`](proposals/pdf-import-action-plan.md) and
+[`docs/proposals/pdf-template-management-design-plan.md`](proposals/pdf-template-management-design-plan.md).
 
 ```python
 # src/payroll/infrastructure/pdf_import/extractor.py
 class TemplatePdfPayrollExtractor(PdfPayrollExtractor):
-    """Extracts a payroll PDF preview using versioned JSON templates.
+    """Extracts a payroll PDF preview using versioned templates read from pf-db.
 
     Never raises: any failure (unparsable PDF, no template match, no detail
     rows found) degrades to an emptier PdfImportPreviewDTO rather than an
-    exception.
+    exception. Stateless -- the caller (PreviewPdfImport) fetches the active
+    templates via TemplateReader and passes them in per call.
     """
 
-    def extract_preview(self, filename: str, content: bytes) -> PdfImportPreviewDTO:
+    def extract_preview(
+        self, filename: str, content: bytes, templates: list[PdfTemplateDTO]
+    ) -> PdfImportPreviewDTO:
         raw_text = extract_raw_text(content)
         detail_lines = find_detail_lines(raw_text)
         template = select_template(self._templates, raw_text, labels)

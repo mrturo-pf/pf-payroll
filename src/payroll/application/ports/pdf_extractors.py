@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from payroll.application.dto import PdfImportPreviewDTO
+from payroll.application.dto import PdfImportPreviewDTO, PdfTemplateDTO
 
 
 class PdfPayrollExtractor(Protocol):
@@ -16,6 +16,13 @@ class PdfPayrollExtractor(Protocol):
     and this extractor is never wired to a PayrollRepository.
     """
 
-    def extract_preview(self, filename: str, content: bytes) -> PdfImportPreviewDTO:
-        """Extract a preview from PDF bytes."""
+    def extract_preview(
+        self, filename: str, content: bytes, templates: list[PdfTemplateDTO]
+    ) -> PdfImportPreviewDTO:
+        """Extract a preview from PDF bytes, matching against the given templates.
+
+        `templates` is supplied by the caller (PreviewPdfImport, via
+        TemplateReader) rather than loaded by the implementation itself --
+        this port has no storage/database access of its own.
+        """
         ...

@@ -27,7 +27,8 @@ python -m payroll.interfaces.cli.main import-payroll tests/fixtures/sample_payro
 
 Instead of a CSV/XLSX file, one or more payslip PDFs can be turned into payroll
 periods through a two-step preview/confirm flow. Extraction is template-based
-(versioned JSON templates in `infrastructure/pdf_import/templates/`), never OCR/LLM --
+(versioned templates stored in pf-db's `PAY_PDF_TEMPLATE`/`PAY_PDF_TEMPLATE_FIELD`
+tables, managed via `POST`/`GET`/`PUT`/`DELETE /payroll/templates*`), never OCR/LLM --
 a PDF matching no known template, or containing rows a template doesn't recognize,
 still contributes a usable preview with those rows flagged as unresolved
 (`concept_code: null`) instead of failing the whole request.
@@ -53,9 +54,10 @@ curl -X POST http://127.0.0.1:8000/payroll/pdf-preview \
   -F "files=@payslip-employee-b.pdf"
 ```
 
-Before wiring a new employer's template, iterate on it locally with the CLI helper
-(no DB, no persistence, no API key needed) -- it prints which template matched (if any)
-and exactly which rows are still unresolved:
+Before wiring a new employer's template (create it via `POST /payroll/templates` --
+see [`docs/api.md`](api.md)), iterate on it locally with the CLI helper -- it opens a
+read-only DB session to fetch the current active templates, then prints which one
+matched (if any) and exactly which rows are still unresolved:
 
 ```bash
 python -m payroll.interfaces.cli.main template-test payslip.pdf

@@ -43,14 +43,11 @@ from payroll.infrastructure.http.pf_rates_client import PfRatesClient
 from payroll.infrastructure.http.income_tax_bracket_client import IncomeTaxBracketClient
 from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
 from payroll.infrastructure.pdf_import.extractor import TemplatePdfPayrollExtractor
-from payroll.infrastructure.db.repositories.complementary_insurance_repository import (
+from payroll.interfaces.repositories import (
     SqlAlchemyComplementaryInsuranceRepository,
-)
-from payroll.infrastructure.db.repositories.payroll_repository import (
     SqlAlchemyPayrollRepository,
-)
-from payroll.infrastructure.db.repositories.reference_data_repository import (
     SqlAlchemyReferenceDataRepository,
+    SqlAlchemyTemplateRepository,
 )
 from payroll.interfaces.session import (
     SessionLocal,
@@ -282,9 +279,20 @@ async def _review_period_async(period_id: int) -> object:
 
 
 async def _template_test_async(file_path: Path) -> PdfImportPreviewDTO:
-    """Preview a PDF against the current templates -- no DB, no persistence."""
-    use_case = PreviewPdfImport(TemplatePdfPayrollExtractor())
-    return await use_case.execute(file_path.name, file_path.read_bytes())
+    """Preview a PDF against the current active templates -- no persistence.
+
+    Reads the active templates from pf-db (PAY_PDF_TEMPLATE*) via the same
+    TemplateReader the HTTP endpoint uses -- templates no longer live in a
+    git-tracked file this command could read without a database. This is a
+    genuine behavior change from before templates moved to pf-db: this
+    command used to need zero DB access at all. See
+    docs/proposals/pdf-template-management-design-plan.md for why.
+    """
+    async with _open_session() as session:
+        use_case = PreviewPdfImport(
+            TemplatePdfPayrollExtractor(), SqlAlchemyTemplateRepository(session)
+        )
+        return await use_case.execute(file_path.name, file_path.read_bytes())
 
 
 @app.callback()

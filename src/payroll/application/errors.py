@@ -118,3 +118,7 @@ class EconomicIndexNotFoundError(PayrollNotFoundError):
 
 class IncomeTaxBracketNotFoundError(PayrollNotFoundError):
     """Raised when no income tax bracket matches the requested period/base."""
+
+
+class PdfTemplateNotFoundError(PayrollNotFoundError):
+    """Raised when a PDF template cannot be found by its template_id."""

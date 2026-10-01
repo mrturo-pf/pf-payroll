@@ -4,9 +4,27 @@ import pytest
 
 from datetime import date
 
-from payroll.application.dto import EmployerPaymentRuleDTO, PdfImportPreviewDTO
+from payroll.application.dto import (
+    EmployerPaymentRuleDTO,
+    PdfImportPreviewDTO,
+    PdfTemplateDTO,
+)
 from payroll.application.errors import PayrollValidationError
 from payroll.application.use_cases.preview_pdf_import import PreviewPdfImport
+
+
+class FakeTemplateReader:
+    """Test double for TemplateReader."""
+
+    def __init__(self, templates: list[PdfTemplateDTO] | None = None) -> None:
+        """Initialize the instance."""
+        self._templates = templates or []
+        self.call_count = 0
+
+    async def list_active_templates(self) -> list[PdfTemplateDTO]:
+        """List active templates."""
+        self.call_count += 1
+        return self._templates
 
 
 class FakePdfPayrollExtractor:
@@ -14,11 +32,13 @@ class FakePdfPayrollExtractor:
 
     def __init__(self) -> None:
         """Initialize the instance."""
-        self.calls: list[tuple[str, bytes]] = []
+        self.calls: list[tuple[str, bytes, list[PdfTemplateDTO]]] = []
 
-    def extract_preview(self, filename: str, content: bytes) -> PdfImportPreviewDTO:
+    def extract_preview(
+        self, filename: str, content: bytes, templates: list[PdfTemplateDTO]
+    ) -> PdfImportPreviewDTO:
         """Extract preview."""
-        self.calls.append((filename, content))
+        self.calls.append((filename, content, templates))
         return PdfImportPreviewDTO(
             employer="ACME",
             period_year=2026,
@@ -53,20 +73,38 @@ class TestPreviewPdfImport:
 
     @pytest.mark.asyncio
     async def test_delegates_to_extractor_port(self) -> None:
-        """Test delegates to extractor port."""
+        """Test delegates to extractor port, forwarding the active templates."""
         extractor = FakePdfPayrollExtractor()
-        use_case = PreviewPdfImport(extractor)
+        template_reader = FakeTemplateReader(
+            templates=[
+                PdfTemplateDTO(
+                    id=1,
+                    template_id="acme-v1",
+                    employer_id=None,
+                    employer_name="ACME",
+                    employer_match_pattern="(?i)acme",
+                    version=1,
+                    is_active=True,
+                    fields=[],
+                )
+            ]
+        )
+        use_case = PreviewPdfImport(extractor, template_reader)
 
         result = await use_case.execute("payslip.pdf", b"content")
 
-        assert extractor.calls == [("payslip.pdf", b"content")]
+        assert len(extractor.calls) == 1
+        filename, content, templates = extractor.calls[0]
+        assert (filename, content) == ("payslip.pdf", b"content")
+        assert [t.template_id for t in templates] == ["acme-v1"]
+        assert template_reader.call_count == 1
         assert result.employer == "ACME"
         assert result.template_id == "acme-v1"
 
     @pytest.mark.asyncio
     async def test_raises_when_filename_is_empty(self) -> None:
         """Test raises when filename is empty."""
-        use_case = PreviewPdfImport(FakePdfPayrollExtractor())
+        use_case = PreviewPdfImport(FakePdfPayrollExtractor(), FakeTemplateReader())
 
         with pytest.raises(PayrollValidationError):
             await use_case.execute("", b"content")
@@ -74,7 +112,7 @@ class TestPreviewPdfImport:
     @pytest.mark.asyncio
     async def test_keeps_generic_guess_without_reference_data(self) -> None:
         """Test keeps the extractor's generic guess when no reader is given."""
-        use_case = PreviewPdfImport(FakePdfPayrollExtractor())
+        use_case = PreviewPdfImport(FakePdfPayrollExtractor(), FakeTemplateReader())
 
         result = await use_case.execute("payslip.pdf", b"content")
 
@@ -84,7 +122,9 @@ class TestPreviewPdfImport:
     async def test_keeps_generic_guess_when_employer_rule_unknown(self) -> None:
         """Test keeps the generic guess when the employer isn't registered."""
         reader = FakeEmployerPaymentRuleReader(rule=None)
-        use_case = PreviewPdfImport(FakePdfPayrollExtractor(), reader)
+        use_case = PreviewPdfImport(
+            FakePdfPayrollExtractor(), FakeTemplateReader(), reader
+        )
 
         result = await use_case.execute("payslip.pdf", b"content")
 
@@ -106,7 +146,7 @@ class TestPreviewPdfImport:
         )
         reader = FakeEmployerPaymentRuleReader(rule=rule)
         extractor = FakePdfPayrollExtractor()
-        use_case = PreviewPdfImport(extractor, reader)
+        use_case = PreviewPdfImport(extractor, FakeTemplateReader(), reader)
 
         result = await use_case.execute("payslip.pdf", b"content")
 
@@ -124,7 +164,7 @@ class TestPreviewPdfImport:
             """Extractor double returning an employer-less preview."""
 
             def extract_preview(
-                self, filename: str, content: bytes
+                self, filename: str, content: bytes, templates: list[PdfTemplateDTO]
             ) -> PdfImportPreviewDTO:
                 """Extract preview."""
                 return PdfImportPreviewDTO(
@@ -140,7 +180,7 @@ class TestPreviewPdfImport:
                 )
 
         reader = FakeEmployerPaymentRuleReader(rule=None)
-        use_case = PreviewPdfImport(UnresolvedExtractor(), reader)
+        use_case = PreviewPdfImport(UnresolvedExtractor(), FakeTemplateReader(), reader)
 
         result = await use_case.execute("payslip.pdf", b"content")
 

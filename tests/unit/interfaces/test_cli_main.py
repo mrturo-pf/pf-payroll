@@ -664,12 +664,18 @@ def test_template_test_async_delegates_to_preview_use_case(
     pdf_path.write_bytes(b"%PDF-fake")
     preview = _sample_pdf_preview()
 
+    @asynccontextmanager
+    async def fake_open_session() -> AsyncIterator[object]:
+        """Fake _open_session -- never actually queried by the fake reader below."""
+        yield object()
+
     class FakePreviewPdfImport:
         """Test double for PreviewPdfImport."""
 
-        def __init__(self, extractor: object) -> None:
+        def __init__(self, extractor: object, template_reader: object) -> None:
             """Initialize the instance."""
             assert isinstance(extractor, cli_main.TemplatePdfPayrollExtractor)
+            assert isinstance(template_reader, cli_main.SqlAlchemyTemplateRepository)
 
         async def execute(self, filename: str, content: bytes) -> PdfImportPreviewDTO:
             """Handle execute."""
@@ -677,6 +683,7 @@ def test_template_test_async_delegates_to_preview_use_case(
             assert content == b"%PDF-fake"
             return preview
 
+    monkeypatch.setattr(cli_main, "_open_session", fake_open_session)
     monkeypatch.setattr(cli_main, "PreviewPdfImport", FakePreviewPdfImport)
 
     assert asyncio.run(cli_main._template_test_async(pdf_path)) is preview

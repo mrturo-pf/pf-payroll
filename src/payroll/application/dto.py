@@ -233,6 +233,44 @@ class PdfImportPreviewDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class PdfTemplateFieldDTO:
+    """Represent one label-to-concept mapping rule within a PDF template.
+
+    Plain, JSON-serializable data -- no compiled `re.Pattern` -- this is the
+    only shape allowed to cross the application/infrastructure boundary for
+    templates; `infrastructure/pdf_import/templates.py`'s `TemplateField`
+    (compiled regex) is built *from* this, never the other way around.
+    """
+
+    id: int | None
+    pdf_label_pattern: str
+    concept_code: str
+    kind: PayrollConceptKind
+    confidence: float = 0.9
+
+
+@dataclass(frozen=True, slots=True)
+class PdfTemplateDTO:
+    """Represent a full payroll PDF template, fields included.
+
+    `id`/field `id`s are `None` for a not-yet-persisted template (a create
+    request); always populated for anything read back from storage.
+    `employer_id` is a nullable, admin-only reference -- never read by
+    `select_template()`/`match_field()`, which keep matching purely against
+    `employer_match_pattern` (a regex over the raw PDF text), unchanged.
+    """
+
+    id: int | None
+    template_id: str
+    employer_id: int | None
+    employer_name: str
+    employer_match_pattern: str
+    version: int
+    is_active: bool
+    fields: list[PdfTemplateFieldDTO] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
 class ImportedContributionValidationDTO:
     """Represent imported contribution validation results."""
 

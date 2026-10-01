@@ -6,6 +6,7 @@ from payroll.application.errors import PayrollValidationError
 from payroll.application.dto import PdfImportPreviewDTO
 from payroll.application.ports.pdf_extractors import PdfPayrollExtractor
 from payroll.application.ports.repositories import EmployerPaymentRuleReader
+from payroll.application.ports.template_repository import TemplateReader
 from payroll.shared.dates import resolve_payment_date
 
 
@@ -20,22 +21,32 @@ class PreviewPdfImport:
     which employer produced the PDF -- "no persistence" only ever meant "no
     writes", never "no reads": a read cannot corrupt state, so there is no
     architectural reason to forbid it here.
+
+    `template_reader` is required, unlike `reference_data` below.
+    `EmployerPaymentRuleReader` is a genuine nice-to-have (falls back to a
+    generic payment-date guess when absent); templates are the entire point
+    of the extractor -- without them every row comes back unresolved. Making
+    it optional would silently degrade the endpoint's core behavior instead
+    of failing loudly at wiring time (no silent fallbacks).
     """
 
     def __init__(
         self,
         extractor: PdfPayrollExtractor,
+        template_reader: TemplateReader,
         reference_data: EmployerPaymentRuleReader | None = None,
     ) -> None:
         """Initialize the instance."""
         self._extractor = extractor
+        self._template_reader = template_reader
         self._reference_data = reference_data
 
     async def execute(self, filename: str, content: bytes) -> PdfImportPreviewDTO:
         """Extract a preview from the given PDF bytes."""
         if not filename:
             raise PayrollValidationError("A PDF file name is required.")
-        preview = self._extractor.extract_preview(filename, content)
+        templates = await self._template_reader.list_active_templates()
+        preview = self._extractor.extract_preview(filename, content, templates)
         return await self._with_real_payment_date(preview)
 
     async def _with_real_payment_date(

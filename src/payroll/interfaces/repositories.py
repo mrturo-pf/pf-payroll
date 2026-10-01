@@ -9,9 +9,13 @@ from payroll.infrastructure.db.repositories.payroll_repository import (
 from payroll.infrastructure.db.repositories.reference_data_repository import (
     SqlAlchemyReferenceDataRepository,
 )
+from payroll.infrastructure.db.repositories.template_repository import (
+    SqlAlchemyTemplateRepository,
+)
 
 __all__ = [
     "SqlAlchemyComplementaryInsuranceRepository",
     "SqlAlchemyPayrollRepository",
     "SqlAlchemyReferenceDataRepository",
+    "SqlAlchemyTemplateRepository",
 ]

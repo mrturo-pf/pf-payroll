@@ -1,68 +1,63 @@
-"""Tests for payroll PDF template loading and matching."""
-
-import json
-from pathlib import Path
+"""Tests for payroll PDF template compilation and matching."""
 
 import pytest
 
+from payroll.application.dto import PdfTemplateDTO, PdfTemplateFieldDTO
 from payroll.infrastructure.pdf_import.templates import (
     MIN_TEMPLATE_MATCH_SCORE,
     Template,
-    load_templates,
+    compile_templates,
     match_field,
     select_template,
 )
 
 
-def _write_template(directory: Path, name: str, payload: dict) -> Path:
-    """Write a template JSON payload to disk and return its path."""
-    path = directory / name
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    return path
-
-
-def _acme_payload(version: int = 1, fields: list[dict] | None = None) -> dict:
-    """Build a minimal, valid template payload for tests."""
-    return {
-        "template_id": f"acme-v{version}",
-        "employer_name": "ACME",
-        "version": version,
-        "employer_match": {"name_pattern": "(?i)acme"},
-        "fields": fields
+def _acme_dto(
+    version: int = 1, fields: list[PdfTemplateFieldDTO] | None = None
+) -> PdfTemplateDTO:
+    """Build a minimal, valid template DTO for tests."""
+    return PdfTemplateDTO(
+        id=version,
+        template_id=f"acme-v{version}",
+        employer_id=None,
+        employer_name="ACME",
+        employer_match_pattern="(?i)acme",
+        version=version,
+        is_active=True,
+        fields=fields
         if fields is not None
         else [
-            {
-                "pdf_label_pattern": "(?i)^SUELDO$",
-                "concept_code": "SALARY_BASE",
-                "kind": "income",
-                "confidence": 0.9,
-            },
-            {
-                "pdf_label_pattern": "(?i)IMPUESTO",
-                "concept_code": "INCOME_TAX",
-                "kind": "discount",
-                "confidence": 0.9,
-            },
-            {
-                "pdf_label_pattern": "(?i)SALUD",
-                "concept_code": "HEALTH_BASE",
-                "kind": "discount",
-                "confidence": 0.6,
-            },
+            PdfTemplateFieldDTO(
+                id=1,
+                pdf_label_pattern="(?i)^SUELDO$",
+                concept_code="SALARY_BASE",
+                kind="income",
+                confidence=0.9,
+            ),
+            PdfTemplateFieldDTO(
+                id=2,
+                pdf_label_pattern="(?i)IMPUESTO",
+                concept_code="INCOME_TAX",
+                kind="discount",
+                confidence=0.9,
+            ),
+            PdfTemplateFieldDTO(
+                id=3,
+                pdf_label_pattern="(?i)SALUD",
+                concept_code="HEALTH_BASE",
+                kind="discount",
+                confidence=0.6,
+            ),
         ],
-    }
+    )
 
 
-class TestLoadTemplates:
-    """Tests for load_templates."""
+class TestCompileTemplates:
+    """Tests for compile_templates."""
 
-    def test_loads_and_compiles_every_json_file_recursively(
-        self, tmp_path: Path
-    ) -> None:
-        """Test loads and compiles every json file recursively."""
-        _write_template(tmp_path / "acme", "v1.json", _acme_payload())
-        templates = load_templates(tmp_path)
+    def test_compiles_every_dto_given(self) -> None:
+        """Test compiles every dto given."""
+        templates = compile_templates([_acme_dto()])
         assert len(templates) == 1
         template = templates[0]
         assert isinstance(template, Template)
@@ -71,68 +66,62 @@ class TestLoadTemplates:
         assert template.version == 1
         assert len(template.fields) == 3
 
-    def test_defaults_confidence_when_omitted(self, tmp_path: Path) -> None:
-        """Test defaults confidence when omitted."""
-        payload = _acme_payload(
+    def test_defaults_confidence_when_dto_omits_it(self) -> None:
+        """PdfTemplateFieldDTO.confidence defaults to 0.9, as the old JSON did."""
+        dto = _acme_dto(
             fields=[
-                {
-                    "pdf_label_pattern": "(?i)^SUELDO$",
-                    "concept_code": "SALARY_BASE",
-                    "kind": "income",
-                }
+                PdfTemplateFieldDTO(
+                    id=1,
+                    pdf_label_pattern="(?i)^SUELDO$",
+                    concept_code="SALARY_BASE",
+                    kind="income",
+                )
             ]
         )
-        _write_template(tmp_path / "acme", "v1.json", payload)
-        template = load_templates(tmp_path)[0]
+        template = compile_templates([dto])[0]
         assert template.fields[0].confidence == 0.9
 
-    def test_returns_empty_list_when_directory_missing(self, tmp_path: Path) -> None:
-        """Test returns empty list when directory missing."""
-        assert load_templates(tmp_path / "does-not-exist") == []
-
-    def test_uses_default_templates_directory_when_none_given(self) -> None:
-        """The shipped walmart-chile template loads via the default path."""
-        templates = load_templates()
-        assert any(t.template_id == "walmart-chile-v1" for t in templates)
+    def test_returns_empty_list_for_empty_input(self) -> None:
+        """Test returns empty list for empty input."""
+        assert compile_templates([]) == []
 
 
 class TestSelectTemplate:
     """Tests for select_template."""
 
     @pytest.fixture
-    def templates(self, tmp_path: Path) -> list[Template]:
-        """Load a v1/v2 ACME template pair for scoring tests."""
-        _write_template(tmp_path / "acme", "v1.json", _acme_payload(version=1))
-        _write_template(
-            tmp_path / "acme",
-            "v2.json",
-            _acme_payload(
-                version=2,
-                fields=[
-                    {
-                        "pdf_label_pattern": "(?i)^SUELDO$",
-                        "concept_code": "SALARY_BASE",
-                        "kind": "income",
-                    },
-                    {
-                        "pdf_label_pattern": "(?i)IMPUESTO",
-                        "concept_code": "INCOME_TAX",
-                        "kind": "discount",
-                    },
-                    {
-                        "pdf_label_pattern": "(?i)SALUD",
-                        "concept_code": "HEALTH_BASE",
-                        "kind": "discount",
-                    },
-                    {
-                        "pdf_label_pattern": "(?i)GRATIFICACION",
-                        "concept_code": "LEGAL_GRATUITY",
-                        "kind": "income",
-                    },
-                ],
-            ),
+    def templates(self) -> list[Template]:
+        """Compile a v1/v2 ACME template pair for scoring tests."""
+        v2 = _acme_dto(
+            version=2,
+            fields=[
+                PdfTemplateFieldDTO(
+                    id=1,
+                    pdf_label_pattern="(?i)^SUELDO$",
+                    concept_code="SALARY_BASE",
+                    kind="income",
+                ),
+                PdfTemplateFieldDTO(
+                    id=2,
+                    pdf_label_pattern="(?i)IMPUESTO",
+                    concept_code="INCOME_TAX",
+                    kind="discount",
+                ),
+                PdfTemplateFieldDTO(
+                    id=3,
+                    pdf_label_pattern="(?i)SALUD",
+                    concept_code="HEALTH_BASE",
+                    kind="discount",
+                ),
+                PdfTemplateFieldDTO(
+                    id=4,
+                    pdf_label_pattern="(?i)GRATIFICACION",
+                    concept_code="LEGAL_GRATUITY",
+                    kind="income",
+                ),
+            ],
         )
-        return load_templates(tmp_path)
+        return compile_templates([_acme_dto(version=1), v2])
 
     def test_returns_none_when_no_employer_matches(
         self, templates: list[Template]
@@ -155,10 +144,9 @@ class TestSelectTemplate:
         assert result is not None
         assert result.version == 2
 
-    def test_picks_only_candidate_when_scores_tie(self, tmp_path: Path) -> None:
+    def test_picks_only_candidate_when_scores_tie(self) -> None:
         """Test picks only candidate when scores tie."""
-        _write_template(tmp_path / "acme", "v1.json", _acme_payload(version=1))
-        templates = load_templates(tmp_path)
+        templates = compile_templates([_acme_dto(version=1)])
         labels = ["SUELDO", "IMPUESTO", "SALUD BASE"]
         result = select_template(templates, "ACME S.A.", labels)
         assert result is not None
@@ -168,28 +156,149 @@ class TestSelectTemplate:
 class TestMatchField:
     """Tests for match_field."""
 
-    def test_returns_first_matching_field(self, tmp_path: Path) -> None:
+    def test_returns_first_matching_field(self) -> None:
         """Test returns first matching field."""
-        _write_template(tmp_path / "acme", "v1.json", _acme_payload())
-        template = load_templates(tmp_path)[0]
+        template = compile_templates([_acme_dto()])[0]
         field = match_field(template, "SUELDO")
         assert field is not None
         assert field.concept_code == "SALARY_BASE"
 
-    def test_returns_none_when_nothing_matches(self, tmp_path: Path) -> None:
+    def test_returns_none_when_nothing_matches(self) -> None:
         """Test returns none when nothing matches."""
-        _write_template(tmp_path / "acme", "v1.json", _acme_payload())
-        template = load_templates(tmp_path)[0]
+        template = compile_templates([_acme_dto()])[0]
         assert match_field(template, "UNKNOWN LABEL") is None
 
 
+def _corporative_chile_v1_dto() -> PdfTemplateDTO:
+    """Build the real, shipped walmart-chile-v1 template as a hardcoded fixture.
+
+    This is a Python-literal mirror of the former
+    infrastructure/pdf_import/templates/walmart-chile/v1.json (deleted --
+    templates now live in pf-db's PAY_PDF_TEMPLATE*, see
+    docs/proposals/pdf-template-management-design-plan.md), and of the
+    identical data seeded by pf-db's db/04_seed_real.sql. Kept here, not
+    read from a live database, so this remains a DB-free *unit* test of the
+    matching logic -- the real SQL query against the seeded row gets its own
+    separate *integration* test.
+    """
+    return PdfTemplateDTO(
+        id=1,
+        template_id="walmart-chile-v1",
+        employer_id=None,
+        employer_name="WALMART-CHILE",
+        employer_match_pattern=r"(?i)walmart-chile|walmart\s+chile",
+        version=1,
+        is_active=True,
+        fields=[
+            PdfTemplateFieldDTO(1, r"(?i)^SUELDO$", "SALARY_BASE", "income", 0.9),
+            PdfTemplateFieldDTO(
+                2, r"(?i)GRATIFICACION\s+LEGAL", "LEGAL_GRATUITY", "income", 0.9
+            ),
+            PdfTemplateFieldDTO(
+                3,
+                r"(?i)ASIGNACI[OÓ]N\s+TRAB\.?\s+H[IÍ]BRIDO",
+                "TELEWORK_REFUND",
+                "income",
+                0.6,
+            ),
+            PdfTemplateFieldDTO(
+                4,
+                r"(?i)APORTE\s+SEGURO\s+DE\s+SALUD",
+                "HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION",
+                "income",
+                0.75,
+            ),
+            PdfTemplateFieldDTO(5, r"(?i)^IMPUESTO$", "INCOME_TAX", "discount", 0.9),
+            PdfTemplateFieldDTO(
+                6,
+                r"(?i)COT\.\s*SEG\.\s*CES\.",
+                "UNEMPLOYMENT_INSURANCE",
+                "discount",
+                0.9,
+            ),
+            PdfTemplateFieldDTO(
+                7, r"(?i)ESENCIAL\s+LEGAL", "HEALTH_BASE", "discount", 0.6
+            ),
+            PdfTemplateFieldDTO(
+                8, r"(?i)COMISI[OÓ]N\s+AFP", "PENSION_ADDITIONAL", "discount", 0.9
+            ),
+            PdfTemplateFieldDTO(
+                9, r"(?i)FONDO\s+RETIRO\s+AFP", "PENSION_BASE", "discount", 0.6
+            ),
+            PdfTemplateFieldDTO(
+                10, r"(?i)ESENCIAL\s+ADICIONAL", "HEALTH_ADDITIONAL_UF", "discount", 0.6
+            ),
+            PdfTemplateFieldDTO(
+                11,
+                r"(?i)SEGURO\s+(DENTAL|DE\s+SALUD|CATASTR[OÓ]FICO)",
+                "HEALTH_INSURANCE",
+                "discount",
+                0.9,
+            ),
+            PdfTemplateFieldDTO(12, r"(?i)^AGUINALDO", "HOLIDAY_BONUS", "income", 0.85),
+            PdfTemplateFieldDTO(
+                13,
+                r"(?i)ANTICIPO\s+AGUINALDO",
+                "HOLIDAY_BONUS_ADVANCE",
+                "discount",
+                0.9,
+            ),
+            PdfTemplateFieldDTO(
+                14,
+                r"(?i)BONO\s+POR\s+DISPONIBILIDAD",
+                "AVAILABILITY_BONUS",
+                "income",
+                0.9,
+            ),
+            PdfTemplateFieldDTO(
+                15,
+                r"(?i)REAJUSTE\s+GRATI\.?\s*MENSUAL",
+                "LEGAL_GRATUITY_ADJUSTMENT",
+                "income",
+                0.85,
+            ),
+            PdfTemplateFieldDTO(
+                16, r"(?i)INCENTIVO\s+VACACIONES", "VACATION_INCENTIVE", "income", 0.9
+            ),
+            PdfTemplateFieldDTO(
+                17,
+                r"(?i)ANTICIPO\s+BONO\s+VACACIONES",
+                "VACATION_BONUS_ADVANCE",
+                "discount",
+                0.9,
+            ),
+            PdfTemplateFieldDTO(
+                18,
+                r"(?i)DSCTO\s+LICEN[\s-]*AUSEN\s+MES\s+ANT",
+                "PRIOR_MONTH_LEAVE_ABSENCE_DISCOUNT",
+                "discount",
+                0.85,
+            ),
+            PdfTemplateFieldDTO(
+                19,
+                r"(?i)DIF\.?\s*SUELDO\s+MES\s+ANTERIOR",
+                "PRIOR_SALARY_DIFFERENCE",
+                "income",
+                0.85,
+            ),
+            PdfTemplateFieldDTO(
+                20, r"(?i)^CCAF\s+.*VIGENTE$", "CCAF_LOAN", "discount", 0.9
+            ),
+        ],
+    )
+
+
 def _load_real_shipped_template(template_id: str = "walmart-chile-v1") -> Template:
-    """Load a real shipped template by id, shared by every regression test below."""
-    return next(t for t in load_templates() if t.template_id == template_id)
+    """Compile the real shipped template fixture, shared by every test below."""
+    return next(
+        t
+        for t in compile_templates([_corporative_chile_v1_dto()])
+        if t.template_id == template_id
+    )
 
 
 class TestAfpCommissionRegression:
-    """Regression tests for the real shipped walmart-chile-v1.json mapping.
+    """Regression tests for the real shipped walmart-chile-v1 mapping.
 
     AFP commission ("COMISIÓN AFP") is a pension-contribution line item in
     Chile (and, per INCOME_TAX_DEDUCTIBLE_CONCEPT_CODES, tax-deductible),

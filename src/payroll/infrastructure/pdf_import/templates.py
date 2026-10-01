@@ -1,22 +1,24 @@
 """Payroll PDF templates: employer-specific label -> concept_code mapping.
 
-Templates are plain JSON files versioned in git under `templates/<employer
-slug>/v<N>.json` -- never in the database (see docs/proposals -- this is
-config, curated by a human per employer/format, not application data).
+Templates are compiled from `PdfTemplateDTO` instances read out of pf-db's
+`PAY_PDF_TEMPLATE` / `PAY_PDF_TEMPLATE_FIELD` tables (via the
+`TemplateReader` port, see `application/ports/template_repository.py`) --
+no longer from git-tracked JSON files. Management (create/modify/logical
+delete) happens through `POST`/`PUT`/`DELETE /payroll/templates*` (see
+`interfaces/api/routes/pdf_templates.py`), not by hand-editing a file in
+this repo. See
+`docs/proposals/pdf-template-management-design-recommendation.md` for why
+this moved, and `-design-plan.md` for the migration itself.
 """
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
-from pathlib import Path
 
-from payroll.application.dto import PayrollConceptKind
+from payroll.application.dto import PayrollConceptKind, PdfTemplateDTO
 
 MIN_TEMPLATE_MATCH_SCORE = 3
-
-_DEFAULT_TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,32 +42,36 @@ class Template:
     fields: tuple[TemplateField, ...]
 
 
-def _load_template_file(path: Path) -> Template:
-    """Load and compile a single template JSON file."""
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return Template(
-        template_id=payload["template_id"],
-        employer_name=payload["employer_name"],
-        version=payload["version"],
-        employer_match=re.compile(payload["employer_match"]["name_pattern"]),
-        fields=tuple(
-            TemplateField(
-                pattern=re.compile(field["pdf_label_pattern"]),
-                concept_code=field["concept_code"],
-                kind=field["kind"],
-                confidence=field.get("confidence", 0.9),
-            )
-            for field in payload["fields"]
-        ),
-    )
+def compile_templates(dtos: list[PdfTemplateDTO]) -> list[Template]:
+    """Compile a list of PdfTemplateDTO into matchable Template objects.
 
-
-def load_templates(templates_dir: Path | None = None) -> list[Template]:
-    """Load every template JSON file found (recursively) under a directory."""
-    directory = templates_dir or _DEFAULT_TEMPLATES_DIR
-    if not directory.is_dir():
-        return []
-    return [_load_template_file(path) for path in sorted(directory.rglob("*.json"))]
+    The direct replacement for the former `load_templates()` +
+    `_load_template_file()` pair: same compilation responsibility (raw
+    pattern strings -> `re.Pattern`), different input source (DTOs from a
+    DB read via `TemplateReader`, not JSON files from disk). Regex validity
+    is already guaranteed by the time a DTO reaches here -- every pattern
+    was compile-checked by a Pydantic validator at write time (see
+    `interfaces/api/routes/pdf_templates.py`), so `re.compile()` below is
+    never expected to raise for data that went through that endpoint.
+    """
+    return [
+        Template(
+            template_id=dto.template_id,
+            employer_name=dto.employer_name,
+            version=dto.version,
+            employer_match=re.compile(dto.employer_match_pattern),
+            fields=tuple(
+                TemplateField(
+                    pattern=re.compile(field.pdf_label_pattern),
+                    concept_code=field.concept_code,
+                    kind=field.kind,
+                    confidence=field.confidence,
+                )
+                for field in dto.fields
+            ),
+        )
+        for dto in dtos
+    ]
 
 
 def _template_score(template: Template, labels: list[str]) -> int:

@@ -7,6 +7,10 @@ from payroll.infrastructure.db.models.payroll import (
     PayrollPeriodModel,
     PayrollSummaryModel,
 )
+from payroll.infrastructure.db.models.pdf_template import (
+    PdfTemplateFieldModel,
+    PdfTemplateModel,
+)
 from payroll.infrastructure.db.models.reference_data import (
     ContributionCapModel,
     HealthInstitutionModel,
@@ -26,6 +30,8 @@ __all__ = [
     "PayrollPeriodModel",
     "PayrollPeriodHealthPlanModel",
     "PayrollSummaryModel",
+    "PdfTemplateFieldModel",
+    "PdfTemplateModel",
     "PensionInstitutionModel",
     "PensionPlanModel",
 ]

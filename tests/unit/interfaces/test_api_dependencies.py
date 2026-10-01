@@ -20,6 +20,8 @@ from payroll.interfaces.api.dependencies import (
     get_transactional_payroll_repository,
     get_preview_pdf_import_use_case,
     get_process_imported_payroll_periods_use_case,
+    get_template_reader,
+    get_template_repository,
     get_transactional_process_imported_payroll_periods_use_case,
 )
 
@@ -29,6 +31,25 @@ def test_get_complementary_insurance_repository() -> None:
     session = MagicMock()
     repository = get_complementary_insurance_repository(session)
     assert repository is not None
+
+
+def test_get_template_repository() -> None:
+    """Test getting the full CRUD template repository."""
+    session = MagicMock()
+    repository = get_template_repository(session)
+    assert repository is not None
+
+
+def test_get_template_reader() -> None:
+    """Test getting the read-only template reader.
+
+    Same concrete class as get_template_repository() -- see that
+    function's own docstring -- but resolved through its own dependency
+    provider, so this covers that provider function's body too.
+    """
+    session = MagicMock()
+    reader = get_template_reader(session)
+    assert reader is not None
 
 
 def test_get_process_imported_payroll_periods_use_case_is_instantiable() -> None:
@@ -52,7 +73,10 @@ def test_get_deflate_amounts_use_case_is_instantiable() -> None:
 def test_get_preview_pdf_import_use_case_is_instantiable() -> None:
     """Test that the preview pdf import use case can be created."""
     reference_data = MagicMock()
-    use_case = get_preview_pdf_import_use_case(reference_data=reference_data)
+    template_reader = MagicMock()
+    use_case = get_preview_pdf_import_use_case(
+        reference_data=reference_data, template_reader=template_reader
+    )
     assert isinstance(use_case, PreviewPdfImport)
 
 

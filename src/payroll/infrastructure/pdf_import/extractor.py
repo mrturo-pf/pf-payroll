@@ -4,19 +4,19 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 
 from payroll.application.dto import (
     PayrollConceptKind,
     PdfImportPreviewDTO,
     PdfImportPreviewRowDTO,
+    PdfTemplateDTO,
 )
 from payroll.application.ports.pdf_extractors import PdfPayrollExtractor
 from payroll.domain.contributions import EmploymentContractKind
 from payroll.infrastructure.logging.logger import logger
 from payroll.infrastructure.pdf_import.templates import (
     Template,
-    load_templates,
+    compile_templates,
     match_field,
     select_template,
 )
@@ -36,28 +36,31 @@ _FALLBACK_KIND: PayrollConceptKind = "income"
 
 
 class TemplatePdfPayrollExtractor(PdfPayrollExtractor):
-    """Extracts a payroll PDF preview using versioned JSON templates.
+    """Extracts a payroll PDF preview using versioned templates read from pf-db.
 
     Never raises: any failure (unparsable PDF, no template match, no detail
     rows found) degrades to an emptier PdfImportPreviewDTO rather than an
-    exception, per the endpoint 1 contract.
+    exception, per the endpoint 1 contract. Stateless -- templates used to
+    be loaded once at construction time from a git-tracked JSON directory;
+    the caller (PreviewPdfImport) now fetches the current active templates
+    via TemplateReader and passes them in per call instead.
     """
 
-    def __init__(self, templates_dir: Path | None = None) -> None:
-        """Initialize the instance, loading all templates once."""
-        self._templates: list[Template] = load_templates(templates_dir)
-
-    def extract_preview(self, filename: str, content: bytes) -> PdfImportPreviewDTO:
+    def extract_preview(
+        self, filename: str, content: bytes, templates: list[PdfTemplateDTO]
+    ) -> PdfImportPreviewDTO:
         """Extract a preview from PDF bytes."""
         try:
-            return self._extract_preview(content)
+            return self._extract_preview(content, templates)
         except Exception:  # noqa: BLE001 -- extraction must never raise
             logger.warning(
                 "pdf_import.extraction_unexpected_failure", filename=filename
             )
             return _empty_preview()
 
-    def _extract_preview(self, content: bytes) -> PdfImportPreviewDTO:
+    def _extract_preview(
+        self, content: bytes, templates: list[PdfTemplateDTO]
+    ) -> PdfImportPreviewDTO:
         raw_text = extract_raw_text(content)
         if raw_text is None:
             return _empty_preview()
@@ -70,7 +73,8 @@ class TemplatePdfPayrollExtractor(PdfPayrollExtractor):
         ]
         labels = [parsed[0] for _, parsed in resolved_lines]
 
-        template = select_template(self._templates, raw_text, labels)
+        compiled = compile_templates(templates)
+        template = select_template(compiled, raw_text, labels)
         column_boundary = find_income_discount_column_boundary(raw_text)
 
         rows = [

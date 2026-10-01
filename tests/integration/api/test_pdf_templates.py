@@ -92,6 +92,11 @@ class FakeTemplateRepository:
         self._by_id[template_id] = deactivated
         return deactivated
 
+    async def resolve_concept_kinds(self, codes: set[str]) -> dict[str, str]:
+        """Fake PAY_CONCEPT lookup -- a fixed, known-good map."""
+        known = {"SALARY_BASE": "income", "INCOME_TAX": "discount"}
+        return {code: known[code] for code in codes if code in known}
+
 
 def _client() -> TestClient:
     return TestClient(app, headers={"X-API-Key": "test-key"})
@@ -117,7 +122,6 @@ def _sample_create_body(template_id: str = "acme-v1") -> dict:
             {
                 "pdf_label_pattern": "(?i)^SUELDO$",
                 "concept_code": "SALARY_BASE",
-                "kind": "income",
                 "confidence": 0.9,
             }
         ],
@@ -168,6 +172,46 @@ def test_create_template_rejects_empty_fields_list() -> None:
 
     body = _sample_create_body()
     body["fields"] = []
+
+    try:
+        response = client.post("/payroll/templates", json=body)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+
+
+def test_create_template_rejects_unknown_concept_code() -> None:
+    """A concept_code with no matching PAY_CONCEPT row is a 400, not a silent guess.
+
+    This is the server-side half of the kind-derivation fix: the client no
+    longer sends `kind` at all (see pf-db migration 0010), so the only way to
+    reject a bad concept_code is resolving it -- never trusting a client-sent
+    kind that could have silently contradicted it.
+    """
+    repository = FakeTemplateRepository()
+    app.dependency_overrides[get_template_repository] = lambda: repository
+    client = _client()
+
+    body = _sample_create_body()
+    body["fields"][0]["concept_code"] = "NOT_A_REAL_CODE"
+
+    try:
+        response = client.post("/payroll/templates", json=body)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+
+
+def test_create_template_rejects_missing_employer_name_and_id() -> None:
+    """At least one of employer_name/employer_id is required (pf-db CHECK mirror)."""
+    repository = FakeTemplateRepository()
+    app.dependency_overrides[get_template_repository] = lambda: repository
+    client = _client()
+
+    body = _sample_create_body()
+    del body["employer_name"]
 
     try:
         response = client.post("/payroll/templates", json=body)
@@ -322,6 +366,10 @@ def test_update_template_not_found_is_404() -> None:
 
 class FailingUpdateTemplateRepository:
     """Test double whose update_template() always raises a PayrollError."""
+
+    async def resolve_concept_kinds(self, codes: set[str]) -> dict[str, str]:
+        """Resolve everything OK -- the failure under test is update_template itself."""
+        return {code: "income" for code in codes}
 
     async def update_template(
         self, template_id: str, template: PdfTemplateDTO

@@ -17,6 +17,7 @@ import re
 from dataclasses import dataclass
 
 from payroll.application.dto import PayrollConceptKind, PdfTemplateDTO
+from payroll.application.errors import PayrollValidationError
 
 MIN_TEMPLATE_MATCH_SCORE = 3
 
@@ -42,6 +43,36 @@ class Template:
     fields: tuple[TemplateField, ...]
 
 
+def _compile_template(dto: PdfTemplateDTO) -> Template:
+    """Compile one PdfTemplateDTO into a Template.
+
+    Split out of compile_templates() for mypy narrowing: `employer_name` is
+    only `None` on PdfTemplateDTO's not-yet-persisted write-input shape (see
+    that dataclass's docstring) -- every DTO reaching this function came
+    from a `TemplateReader` read, where the repository always resolves it.
+    """
+    employer_name = dto.employer_name
+    if employer_name is None:  # pragma: no cover -- repository always resolves this
+        raise PayrollValidationError(
+            f"Template {dto.template_id!r} has no resolvable employer_name."
+        )
+    return Template(
+        template_id=dto.template_id,
+        employer_name=employer_name,
+        version=dto.version,
+        employer_match=re.compile(dto.employer_match_pattern),
+        fields=tuple(
+            TemplateField(
+                pattern=re.compile(field.pdf_label_pattern),
+                concept_code=field.concept_code,
+                kind=field.kind,
+                confidence=field.confidence,
+            )
+            for field in dto.fields
+        ),
+    )
+
+
 def compile_templates(dtos: list[PdfTemplateDTO]) -> list[Template]:
     """Compile a list of PdfTemplateDTO into matchable Template objects.
 
@@ -54,24 +85,7 @@ def compile_templates(dtos: list[PdfTemplateDTO]) -> list[Template]:
     `interfaces/api/routes/pdf_templates.py`), so `re.compile()` below is
     never expected to raise for data that went through that endpoint.
     """
-    return [
-        Template(
-            template_id=dto.template_id,
-            employer_name=dto.employer_name,
-            version=dto.version,
-            employer_match=re.compile(dto.employer_match_pattern),
-            fields=tuple(
-                TemplateField(
-                    pattern=re.compile(field.pdf_label_pattern),
-                    concept_code=field.concept_code,
-                    kind=field.kind,
-                    confidence=field.confidence,
-                )
-                for field in dto.fields
-            ),
-        )
-        for dto in dtos
-    ]
+    return [_compile_template(dto) for dto in dtos]
 
 
 def _template_score(template: Template, labels: list[str]) -> int:

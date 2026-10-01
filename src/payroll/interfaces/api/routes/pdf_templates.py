@@ -13,13 +13,16 @@ full rationale. Kept in its own router module for the same cohesion reason
 from __future__ import annotations
 
 import re
-from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from payroll.application.dto import PdfTemplateDTO, PdfTemplateFieldDTO
-from payroll.application.errors import PayrollError, PdfTemplateNotFoundError
+from payroll.application.errors import (
+    PayrollError,
+    PayrollValidationError,
+    PdfTemplateNotFoundError,
+)
 from payroll.application.ports.template_repository import TemplateRepository
 from payroll.interfaces.api.dependencies import get_template_repository
 from payroll.interfaces.api.errors import to_http_exception
@@ -43,11 +46,16 @@ def _compiles_as_regex(value: str) -> str:
 
 
 class TemplateFieldRequest(BaseModel):
-    """Represent one label-to-concept mapping rule in a create/update request."""
+    """Represent one label-to-concept mapping rule in a create/update request.
+
+    No `kind` field -- it would duplicate PAY_CONCEPT.kind with no way for
+    this schema to guarantee the two stay in sync. The server always resolves
+    kind from `concept_code` instead (see `_resolve_field_dtos()` below); a
+    `concept_code` with no matching PAY_CONCEPT row is a 400, not a bad guess.
+    """
 
     pdf_label_pattern: str
     concept_code: str
-    kind: Literal["income", "discount"]
     confidence: float = 0.9
 
     @field_validator("pdf_label_pattern")
@@ -59,9 +67,16 @@ class TemplateFieldRequest(BaseModel):
 
 
 class TemplateWriteRequest(BaseModel):
-    """Share the fields common to create and update requests."""
+    """Share the fields common to create and update requests.
 
-    employer_name: str
+    `employer_name` is optional: omit it when `employer_id` is given and the
+    canonical PAY_EMPLOYER.name should be used as the display name (resolved
+    fresh on every read, never copied into the row -- see pf-db migration
+    0010). At least one of the two must be provided, so a template can always
+    resolve *some* display name.
+    """
+
+    employer_name: str | None = None
     employer_match_pattern: str
     version: int = 1
     employer_id: int | None = None
@@ -73,6 +88,13 @@ class TemplateWriteRequest(BaseModel):
         """Delegate to _compiles_as_regex (cls unused -- required by @classmethod)."""
         del cls
         return _compiles_as_regex(value)
+
+    @model_validator(mode="after")
+    def _require_employer_name_or_id(self) -> TemplateWriteRequest:
+        """Mirror pf-db's chk_pay_pdf_template_employer_ref CHECK constraint."""
+        if self.employer_id is None and self.employer_name is None:
+            raise ValueError("Provide employer_name, employer_id, or both.")
+        return self
 
 
 class TemplateCreateRequest(TemplateWriteRequest):
@@ -114,13 +136,15 @@ def _to_read_model(dto: PdfTemplateDTO) -> TemplateRead:
     `dto.id`/`field.id` are typed `int | None` on PdfTemplateDTO (`None` only
     for a not-yet-persisted create request, see that dataclass's docstring)
     -- always set here, since every DTO reaching this function came back
-    from a repository read.
+    from a repository read. `dto.employer_name` is `str | None` for the same
+    reason -- always resolved (never None) by the time a repository read
+    reaches here.
     """
     return TemplateRead(
         id=dto.id,  # type: ignore[arg-type]
         template_id=dto.template_id,
         employer_id=dto.employer_id,
-        employer_name=dto.employer_name,
+        employer_name=dto.employer_name,  # type: ignore[arg-type]
         employer_match_pattern=dto.employer_match_pattern,
         version=dto.version,
         is_active=dto.is_active,
@@ -137,14 +161,28 @@ def _to_read_model(dto: PdfTemplateDTO) -> TemplateRead:
     )
 
 
-def _to_field_dtos(fields: list[TemplateFieldRequest]) -> list[PdfTemplateFieldDTO]:
-    """Map request field models to PdfTemplateFieldDTO (id always None pre-persist)."""
+async def _resolve_field_dtos(
+    fields: list[TemplateFieldRequest], repository: TemplateRepository
+) -> list[PdfTemplateFieldDTO]:
+    """Resolve each field's kind from PAY_CONCEPT, never trusting a client value.
+
+    Raises PayrollValidationError (-> 400) for any concept_code with no
+    matching PAY_CONCEPT row, before ever attempting to write a field --
+    earlier and clearer than letting the FK constraint fail during commit.
+    """
+    codes = {field.concept_code for field in fields}
+    concept_kinds = await repository.resolve_concept_kinds(codes)
+    unknown = codes - concept_kinds.keys()
+    if unknown:
+        raise PayrollValidationError(
+            f"Unknown concept_code(s): {', '.join(sorted(unknown))}."
+        )
     return [
         PdfTemplateFieldDTO(
             id=None,
             pdf_label_pattern=field.pdf_label_pattern,
             concept_code=field.concept_code,
-            kind=field.kind,
+            kind=concept_kinds[field.concept_code],
             confidence=field.confidence,
         )
         for field in fields
@@ -157,17 +195,18 @@ async def create_template(
     repository: TemplateRepository = Depends(get_template_repository),
 ) -> TemplateRead:
     """Create a new PDF template. 400 on duplicate template_id or bad concept_code."""
-    dto = PdfTemplateDTO(
-        id=None,
-        template_id=request.template_id,
-        employer_id=request.employer_id,
-        employer_name=request.employer_name,
-        employer_match_pattern=request.employer_match_pattern,
-        version=request.version,
-        is_active=True,
-        fields=_to_field_dtos(request.fields),
-    )
     try:
+        fields = await _resolve_field_dtos(request.fields, repository)
+        dto = PdfTemplateDTO(
+            id=None,
+            template_id=request.template_id,
+            employer_id=request.employer_id,
+            employer_name=request.employer_name,
+            employer_match_pattern=request.employer_match_pattern,
+            version=request.version,
+            is_active=True,
+            fields=fields,
+        )
         created = await repository.create_template(dto)
     except PayrollError as exc:
         raise to_http_exception(exc, default_status=400) from exc
@@ -207,17 +246,18 @@ async def update_template(
     repository: TemplateRepository = Depends(get_template_repository),
 ) -> TemplateRead:
     """Replace an existing template's fields in place (mutate, no version bump)."""
-    dto = PdfTemplateDTO(
-        id=None,
-        template_id=template_id,
-        employer_id=request.employer_id,
-        employer_name=request.employer_name,
-        employer_match_pattern=request.employer_match_pattern,
-        version=request.version,
-        is_active=True,
-        fields=_to_field_dtos(request.fields),
-    )
     try:
+        fields = await _resolve_field_dtos(request.fields, repository)
+        dto = PdfTemplateDTO(
+            id=None,
+            template_id=template_id,
+            employer_id=request.employer_id,
+            employer_name=request.employer_name,
+            employer_match_pattern=request.employer_match_pattern,
+            version=request.version,
+            is_active=True,
+            fields=fields,
+        )
         updated = await repository.update_template(template_id, dto)
     except PayrollError as exc:
         raise to_http_exception(exc, default_status=400) from exc

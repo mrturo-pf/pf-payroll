@@ -258,12 +258,17 @@ class PdfTemplateDTO:
     `employer_id` is a nullable, admin-only reference -- never read by
     `select_template()`/`match_field()`, which keep matching purely against
     `employer_match_pattern` (a regex over the raw PDF text), unchanged.
+    `employer_name` follows the same None-only-on-write precedent as `id`:
+    `None` means "derive the display name from employer_id" on a create/update
+    request (the repository never stores a copy of PAY_EMPLOYER.name -- see
+    pf-db migration 0010); always a resolved, non-None string for anything
+    read back from storage.
     """
 
     id: int | None
     template_id: str
     employer_id: int | None
-    employer_name: str
+    employer_name: str | None
     employer_match_pattern: str
     version: int
     is_active: bool

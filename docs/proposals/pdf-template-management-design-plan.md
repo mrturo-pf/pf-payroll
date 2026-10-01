@@ -13,6 +13,7 @@
 | 1 | `pf-payroll` read path: DTOs, `TemplateReader`, DB-backed `select_template()` wiring | **Complete** |
 | 2 | `pf-payroll` write path: `TemplateRepository`, CRUD routes, validation | **Complete** |
 | 3 | Docs/Postman | **Complete** |
+| 4 | Follow-up: denormalization fix (`kind`/`employer_name`), `pf-db` migration `0010` | **Complete** |
 
 All stages were implemented in a single session (2026-10-01), continuing from a
 previous session that had already completed Stage 0 (see "Picked up mid-session"
@@ -302,6 +303,159 @@ documented follow-up, not done this session.
 **Deleted (`pf-payroll`):**
 - `src/payroll/infrastructure/pdf_import/templates/walmart-chile/v1.json` (and the
   now-empty `templates/` directory)
+
+## Follow-up session (2026-10-01) — denormalization fix
+
+After the above shipped and was deployed, a user code review of the merged schema
+raised two direct questions: why does `PAY_PDF_TEMPLATE_FIELD` store `kind` when
+`concept_code` is already a FK into `PAY_CONCEPT`, which already has its own `kind`?
+And why does `PAY_PDF_TEMPLATE` store `employer_name` alongside a nullable
+`employer_id → PAY_EMPLOYER`? Investigating confirmed both were genuine, unintentional
+duplication introduced in the original design (not caught during the first
+implementation or its review) — this section documents the findings and the fix,
+implemented and shipped in the same follow-up session (`pf-db` migration `0010`).
+
+### Finding — `PAY_PDF_TEMPLATE_FIELD.kind` duplicated `PAY_CONCEPT.kind` with no integrity link
+
+`concept_code` was already `NOT NULL REFERENCES "PAY_CONCEPT"(code)`, and `PAY_CONCEPT`
+already had its own `kind` column with the identical `income`/`discount` CHECK. Nothing
+in the schema or the application layer ever cross-checked that a field's own `kind`
+agreed with its `concept_code`'s real kind in `PAY_CONCEPT` — a client could `POST`/`PUT`
+a field whose `kind` contradicted its `concept_code` (e.g. `concept_code: "INCOME_TAX"`,
+`kind: "income"`) and it would be accepted verbatim, silently misclassifying that row as
+income vs. discount at every future PDF preview. This was not a hypothetical: nothing in
+`_commit_or_raise()`'s IntegrityError translation, nor any Pydantic validator, could have
+caught it -- the two columns simply had no relationship to each other at the database
+level.
+
+**Fix:** dropped `PAY_PDF_TEMPLATE_FIELD.kind` outright (no legitimate case for the two
+to differ -- unlike the employer case below, a concept's kind is not something a single
+template should ever be allowed to override). `kind` is now always resolved from
+`PAY_CONCEPT` via `concept_code`:
+- **Read path:** `SqlAlchemyTemplateRepository._to_dto()` batch-resolves every distinct
+  `concept_code` across the templates being mapped (`_dto_lookup_dicts()` /
+  `resolve_concept_kinds()`, one query regardless of how many templates/fields --
+  avoids N+1), and looks up each field's real kind by code. `PdfTemplateFieldDTO.kind`
+  keeps its existing shape (`PayrollConceptKind` Literal) -- only its *source* changed,
+  not its type, so `compile_templates()`/`select_template()`/`match_field()` in
+  `infrastructure/pdf_import/templates.py` needed zero changes.
+- **Write path:** `TemplateFieldRequest` (the Pydantic request schema) no longer has a
+  `kind` field at all -- a client cannot send one, so there is nothing to silently
+  ignore or contradict. `interfaces/api/routes/pdf_templates.py`'s new
+  `_resolve_field_dtos()` helper resolves every field's kind from
+  `TemplateRepository.resolve_concept_kinds()` *before* constructing the `PdfTemplateDTO`
+  passed to `create_template()`/`update_template()`, and raises `PayrollValidationError`
+  (-> 400) for any `concept_code` with no matching `PAY_CONCEPT` row -- earlier and
+  clearer than the previous behavior of waiting for the FK constraint to fail during
+  commit, with no functional regression (still a 400 either way).
+
+### Finding — `PAY_PDF_TEMPLATE.employer_name` duplicated `PAY_EMPLOYER.name` in every case seen
+
+Unlike `kind`, this one has a legitimate reason the two values could differ in
+principle: `employer_id` is nullable (a template is not required to be linked to a
+`PAY_EMPLOYER` row), and even when linked, the name printed on a real PDF is not
+guaranteed to match `PAY_EMPLOYER.name` verbatim. But in practice, the one real seeded
+template (`walmart-chile-v1`) had `employer_name = 'WALMART-CHILE'` set to the exact
+same string as the `PAY_EMPLOYER` row its own `employer_id` already pointed to --
+confirmed by direct query, not assumption. So the column was real duplication for the
+only data that existed, even though the schema couldn't rule out a legitimate future
+divergence.
+
+**Fix (narrower than the `kind` fix, by design):** `employer_name` was made nullable
+rather than dropped, with a new `chk_pay_pdf_template_employer_ref` CHECK
+(`employer_id IS NOT NULL OR employer_name IS NOT NULL`) guaranteeing every row can
+still resolve *some* display name. No value is ever copied from `PAY_EMPLOYER` into this
+column anymore:
+- **Read path:** mirrors the `kind` fix's shape -- `_to_dto()` resolves a `NULL`
+  `employer_name` via a batched `_load_employer_names()` lookup keyed by `employer_id`,
+  shared with `resolve_concept_kinds()` through the same `_dto_lookup_dicts()` call.
+  `PdfTemplateDTO.employer_name` is typed `str | None` following the exact same
+  None-only-on-write precedent the dataclass's docstring already established for `id`
+  (`None` only for a not-yet-persisted write request; always resolved for anything read
+  back from storage).
+- **Write path:** `TemplateWriteRequest.employer_name` became `str | None = None`, with
+  a new `model_validator(mode="after")` (`_require_employer_name_or_id`) mirroring the
+  DB CHECK -- a request with neither `employer_name` nor `employer_id` is a `422`
+  before ever reaching the repository.
+- **One real mypy consequence:** `infrastructure/pdf_import/templates.py`'s
+  `compile_templates()` builds the matching-engine's own `Template.employer_name: str`
+  (non-Optional -- matching code should never have to think about a missing employer
+  name) from `PdfTemplateDTO.employer_name: str | None`. Split out a `_compile_template()`
+  helper that raises `PayrollValidationError` (marked `# pragma: no cover`, matching the
+  existing precedent at `create_template`'s own post-commit re-read check) if `None`
+  ever reaches it -- defensive only, since every DTO reaching `compile_templates()` came
+  from a `TemplateReader` read, where the repository always resolves it.
+
+### Why `kind` was dropped outright but `employer_name` was only made nullable
+
+Worth stating explicitly since the two fixes look asymmetric: `concept_code` is
+`NOT NULL`, so resolving `kind` from it is *always* possible -- there is no case where a
+field can exist without a resolvable kind, so keeping a (redundant, unenforceable)
+`kind` column added pure risk for zero benefit. `employer_id` is nullable by original,
+deliberate design (see migration `0009`'s own docstring: "a template is not required to
+be linked to a `PAY_EMPLOYER` row"), so a literal `employer_name` genuinely has to
+remain available as a fallback for that case, and as an override for the
+printed-name-differs-from-canonical-name case -- dropping it outright would have been a
+real functional regression, not just a cleanup.
+
+### Validation done this session
+
+- Added `test_to_dto_resolves_employer_name_from_dict_when_column_is_null`,
+  `test_to_dto_leaves_employer_name_none_when_unresolvable`,
+  `test_get_template_resolves_employer_name_when_null`,
+  `test_resolve_concept_kinds_maps_code_to_value`,
+  `test_resolve_concept_kinds_empty_codes_short_circuits` to
+  `test_template_repository.py`; `test_create_template_rejects_unknown_concept_code`,
+  `test_create_template_rejects_missing_employer_name_and_id` to
+  `test_pdf_templates.py`. 498 total tests, 100% coverage, ruff/mypy/vulture/jscpd
+  clean on `pf-payroll`; `ruff check alembic/` clean on `pf-db`.
+- **Live Postgres round-trip** (the follow-up explicitly deferred in the prior session,
+  now done): spun up `pf-db`'s local stack (`make db-up`), applied the fixed
+  `01_schema.sql` fresh, ran `seed-base`+`seed-real`, and confirmed by direct query that
+  `walmart-chile-v1` now has `employer_id=9, employer_name=NULL` and all 20 fields
+  correctly join to `PAY_CONCEPT.kind`. Separately simulated migration `0010`'s
+  `upgrade()`/`downgrade()` SQL bodies directly against that seeded data (bypassing a
+  broken local `pf-db/.venv` -- its interpreter symlink pointed at a path from before
+  the `pf-db` → `pf/modules/pf-db` repo reorg, unrelated to this change, not fixed here
+  since recreating it hung on a slow/incompatible dependency resolution for Python
+  3.14 and was out of scope): `downgrade()` correctly backfilled `employer_name` back
+  to `'WALMART-CHILE'` and `kind` back onto all 20 rows before restoring both `NOT
+  NULL`s, and re-running `upgrade()` afterward cleanly reproduced the fixed shape again
+  -- a genuine, data-preserving round trip, not just a lint pass.
+
+### Files touched (follow-up session)
+
+**New (`pf-db`):**
+- `alembic/versions/0010_pdf_template_denormalization_fix.py`
+
+**Modified (`pf-db`):**
+- `db/01_schema.sql` (nullable `employer_name` + CHECK; dropped `kind` column)
+- `db/04_seed_real.sql` (`employer_name` now `NULL`; field `INSERT` no longer sets `kind`)
+- `docs/tables.md` (both tables' docs updated to match)
+
+**Modified (`pf-payroll`):**
+- `src/payroll/infrastructure/db/models/pdf_template.py` (nullable `employer_name` +
+  `CheckConstraint`; dropped `kind` column/enum imports)
+- `src/payroll/application/dto.py` (`PdfTemplateDTO.employer_name: str | None`)
+- `src/payroll/application/ports/template_repository.py` (added
+  `resolve_concept_kinds()` to the `TemplateRepository` Protocol)
+- `src/payroll/infrastructure/db/repositories/template_repository.py` (rewritten
+  resolution logic: `_load_employer_names()`, `_dto_lookup_dicts()`,
+  `resolve_concept_kinds()`, updated `_to_dto()`/`_to_field_models()`)
+- `src/payroll/interfaces/api/routes/pdf_templates.py` (removed `kind` from
+  `TemplateFieldRequest`; `employer_name` optional + `model_validator`;
+  `_resolve_field_dtos()` replacing `_to_field_dtos()`)
+- `src/payroll/infrastructure/pdf_import/templates.py` (`_compile_template()` split out
+  for mypy narrowing)
+- `tests/unit/infrastructure/db/repositories/test_template_repository.py` (rewritten
+  for the new lookup-dict-based `_to_dto()` signature; new tests, see above)
+- `tests/integration/api/test_pdf_templates.py` (removed `kind` from fixtures; added
+  `resolve_concept_kinds()` to both fakes; new tests, see above)
+- `docs/api.md` (`POST /payroll/templates` row rewritten)
+
+**Modified (`pf-base`):**
+- `postman/pf-ecosystem.postman_collection.json` (removed `kind` from both Templates
+  create/update example bodies; updated both requests' descriptions)
 
 **Modified (`pf-db`, from the mid-session pickup — see "Picked up mid-session" above):**
 - `alembic/versions/0009_pdf_template_tables.py` (new migration)

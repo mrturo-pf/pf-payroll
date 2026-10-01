@@ -11,6 +11,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -21,11 +22,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from payroll.infrastructure.db.base import Base
-from payroll.infrastructure.db.models.reference_data import (
-    PayrollConceptKind,
-    enum_values,
-)
-from sqlalchemy import Enum as SAEnum
 
 
 class PdfTemplateModel(Base):
@@ -38,7 +34,13 @@ class PdfTemplateModel(Base):
     employer_id: Mapped[int | None] = mapped_column(
         ForeignKey("PAY_EMPLOYER.id"), nullable=True
     )
-    employer_name: Mapped[str] = mapped_column(String(120))
+    # Nullable: a literal override only, used when there's no employer_id to
+    # join against, or the PDF's printed name legitimately differs from
+    # PAY_EMPLOYER.name. When NULL, the repository resolves the display name
+    # fresh from PAY_EMPLOYER via employer_id on every read -- never copied
+    # into this column. See pf-db migration 0010 for the CHECK constraint
+    # that guarantees one of the two is always set.
+    employer_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     employer_match_pattern: Mapped[str] = mapped_column(String(500))
     version: Mapped[int] = mapped_column(Integer, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -47,6 +49,13 @@ class PdfTemplateModel(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "employer_id IS NOT NULL OR employer_name IS NOT NULL",
+            name="chk_pay_pdf_template_employer_ref",
+        ),
     )
 
     fields: Mapped[list["PdfTemplateFieldModel"]] = relationship(
@@ -66,16 +75,13 @@ class PdfTemplateFieldModel(Base):
         ForeignKey("PAY_PDF_TEMPLATE.id", ondelete="CASCADE")
     )
     pdf_label_pattern: Mapped[str] = mapped_column(String(500))
+    # No `kind` column -- it would duplicate PAY_CONCEPT.kind with no
+    # referential integrity tying the two copies together (concept_code is
+    # already a FK into PAY_CONCEPT(code), which already owns `kind`). The
+    # repository always resolves kind from PAY_CONCEPT via concept_code at
+    # read time. See pf-db migration 0010.
     concept_code: Mapped[str] = mapped_column(
         String(40), ForeignKey("PAY_CONCEPT.code")
-    )
-    kind: Mapped[PayrollConceptKind] = mapped_column(
-        SAEnum(
-            PayrollConceptKind,
-            name="payroll_concept_kind",
-            native_enum=False,
-            values_callable=enum_values,
-        )
     )
     confidence: Mapped[Decimal] = mapped_column(Numeric(3, 2), default=Decimal("0.90"))
 

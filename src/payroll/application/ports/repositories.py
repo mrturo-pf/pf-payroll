@@ -213,3 +213,14 @@ class MarketDataRepository(Protocol):
     ) -> Decimal | None:
         """Get economic index value."""
         ...
+
+    async def get_latest_economic_index(self, code: str) -> tuple[date, Decimal] | None:
+        """Get the most recently published (period, value) for an index code.
+
+        Used to step a replicated future net_pay prediction at an increase
+        month without knowing that month's own (not-yet-published) IPC --
+        the most recent figure actually available stands in as the best
+        proxy for current price levels. Returns None if no value has ever
+        been published for `code`.
+        """
+        ...

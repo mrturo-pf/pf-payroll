@@ -5,6 +5,53 @@ from datetime import date, timedelta
 import holidays
 
 
+def is_increase_period(
+    *,
+    period_year: int,
+    period_month: int,
+    first_increase_period: date,
+    increase_frequency: int,
+) -> bool:
+    """Return whether the provided period matches the increase cadence.
+
+    Moved here (from a repository staticmethod) so both the period-range
+    listing and the future net_pay projection can share the exact same
+    cadence check without duplicating it -- see
+    docs/proposals/net-pay-prediction-reimplementation-design-plan.md.
+    """
+    period_month_index = (period_year * 12) + period_month
+    first_increase_index = (
+        first_increase_period.year * 12
+    ) + first_increase_period.month
+    delta_months = period_month_index - first_increase_index
+    return delta_months >= 0 and delta_months % increase_frequency == 0
+
+
+def resolve_last_increase_period(
+    *,
+    first_increase_period: date,
+    increase_frequency: int,
+    as_of: date,
+) -> date | None:
+    """Return the most recent increase-cadence month at or before `as_of`.
+
+    This is the backward-looking counterpart to `is_increase_period()`: it
+    answers "what was the last real salary increase, as of this period",
+    used as the IPC baseline when later stepping a replicated future
+    prediction up at the next increase-cadence month. Returns None when
+    `as_of` predates `first_increase_period` entirely -- no increase has
+    happened yet under this employer's configured cadence, so there is no
+    baseline to compare against.
+    """
+    delta_months = (as_of.year - first_increase_period.year) * 12 + (
+        as_of.month - first_increase_period.month
+    )
+    if delta_months < 0:
+        return None
+    steps = delta_months // increase_frequency
+    return add_months(first_increase_period, steps * increase_frequency)
+
+
 def last_day_of_month(value: date) -> date:
     """Return the last day of the month for the provided date."""
     if value.month == 12:

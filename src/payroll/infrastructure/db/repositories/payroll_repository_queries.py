@@ -31,8 +31,9 @@ from payroll.infrastructure.db.repositories.payroll_repository_shared import (
     SqlAlchemyPayrollRepositoryBase,
     build_payroll_summary_dto,
     predict_next_period_net_pay,
+    project_future_net_pay_series,
 )
-from payroll.shared.dates import add_months, resolve_payment_date
+from payroll.shared.dates import add_months, is_increase_period, resolve_payment_date
 
 
 class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
@@ -114,22 +115,6 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             date(employer_started_at.year, employer_started_at.month, 1),
             increase_frequency,
         )
-
-    @staticmethod
-    def _is_increase_period(
-        *,
-        period_year: int,
-        period_month: int,
-        first_increase_period: date,
-        increase_frequency: int,
-    ) -> bool:
-        """Return whether the provided period matches the increase cadence."""
-        period_month_index = (period_year * 12) + period_month
-        first_increase_index = (
-            first_increase_period.year * 12
-        ) + first_increase_period.month
-        delta_months = period_month_index - first_increase_index
-        return delta_months >= 0 and delta_months % increase_frequency == 0
 
     async def list_period_ranges(
         self, *, today: date | None = None
@@ -372,6 +357,14 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             except PayrollDependencyError:
                 first_future_net_pay_clp = None
 
+        future_net_pay_series = await project_future_net_pay_series(
+            first_future_net_pay_clp,
+            current_year=current_year,
+            current_month=current_month,
+            first_increase_period=first_increase_period,
+            increase_frequency=effective_increase_frequency,
+            market_data_repository=self._market_data_repository,
+        )
         future_ranges = [
             PayrollPeriodRangeDTO(
                 period_year=period_month.year,
@@ -391,10 +384,14 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                     payment_fixed_day_roll=current_fixed_day_roll,
                 ),
                 end_date=date(period_month.year, period_month.month, 1),
-                net_pay_clp=(first_future_net_pay_clp if month_offset == 1 else None),
+                net_pay_clp=(
+                    first_future_net_pay_clp
+                    if month_offset == 1
+                    else future_net_pay_series.get(month_offset)
+                ),
                 is_current=False,
                 inferred=True,
-                increase=self._is_increase_period(
+                increase=is_increase_period(
                     period_year=period_month.year,
                     period_month=period_month.month,
                     first_increase_period=first_increase_period,

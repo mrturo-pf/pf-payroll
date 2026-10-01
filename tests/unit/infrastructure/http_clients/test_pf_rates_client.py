@@ -193,3 +193,105 @@ async def test_get_economic_index_value_caches_within_ttl() -> None:
     for _ in range(3):
         await client.get_economic_index_value("UF", 2026, 4)
     assert route.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# get_latest_economic_index
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_latest_economic_index_returns_first_item_on_200() -> None:
+    """Returns (period, value) parsed from the first (most recent) list item.
+
+    GET /economic-indices?code=... already orders results by period
+    descending server-side -- the client trusts that ordering rather than
+    re-sorting client-side.
+    """
+    respx.get(f"{BASE_URL}/economic-indices").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "code": "IPC_CL",
+                    "period_year": 2026,
+                    "period_month": 8,
+                    "index_value": "113.15",
+                    "monthly_change": None,
+                    "yearly_change": None,
+                    "base_period": "DIC-2018",
+                    "source": "manual",
+                },
+                {
+                    "code": "IPC_CL",
+                    "period_year": 2026,
+                    "period_month": 7,
+                    "index_value": "112.45",
+                    "monthly_change": None,
+                    "yearly_change": None,
+                    "base_period": "DIC-2018",
+                    "source": "manual",
+                },
+            ],
+        )
+    )
+    result = await _client().get_latest_economic_index("IPC_CL")
+    assert result == (date(2026, 8, 1), Decimal("113.15"))
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_latest_economic_index_returns_none_on_empty_list() -> None:
+    """An empty list (200 OK, not 404) means the code has no stored values."""
+    respx.get(f"{BASE_URL}/economic-indices").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    result = await _client().get_latest_economic_index("IPC_CL")
+    assert result is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_latest_economic_index_returns_none_on_404() -> None:
+    """Returns None on 404, same as the other pf-rates lookups."""
+    respx.get(f"{BASE_URL}/economic-indices").mock(return_value=httpx.Response(404))
+    result = await _client().get_latest_economic_index("IPC_CL")
+    assert result is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_latest_economic_index_caches_within_ttl() -> None:
+    """Multiple calls within TTL produce exactly one HTTP request."""
+    clock = [0.0, 1.0, 2.0]
+    route = respx.get(f"{BASE_URL}/economic-indices").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "code": "IPC_CL",
+                    "period_year": 2026,
+                    "period_month": 8,
+                    "index_value": "113.15",
+                    "monthly_change": None,
+                    "yearly_change": None,
+                    "base_period": "DIC-2018",
+                    "source": "manual",
+                }
+            ],
+        )
+    )
+    client = _client(ttl=300, clock_values=clock)
+    for _ in range(3):
+        await client.get_latest_economic_index("IPC_CL")
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_latest_economic_index_raises_on_5xx() -> None:
+    """Raises PayrollDependencyError on server errors, same as other lookups."""
+    respx.get(f"{BASE_URL}/economic-indices").mock(return_value=httpx.Response(502))
+    with pytest.raises(PayrollDependencyError, match="pf-rates returned HTTP 502"):
+        await _client().get_latest_economic_index("IPC_CL")

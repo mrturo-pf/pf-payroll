@@ -53,6 +53,7 @@ from payroll.infrastructure.db.repositories.payroll_repository_shared import (
     build_net_pay_warning,
     get_last_day_of_month,
     predict_next_period_net_pay,
+    project_future_net_pay_series,
 )
 from payroll.interfaces.api import dependencies
 
@@ -142,10 +143,14 @@ class FakeMarketDataRepository:
         rates_by_date: dict[date, Decimal | None] | None = None,
         *,
         raises: Exception | None = None,
+        economic_index_by_period: dict[tuple[str, int, int], Decimal] | None = None,
+        latest_economic_index: dict[str, tuple[date, Decimal]] | None = None,
     ) -> None:
         """Initialize the instance."""
         self._rates_by_date = rates_by_date or {}
         self._raises = raises
+        self._economic_index_by_period = economic_index_by_period or {}
+        self._latest_economic_index = latest_economic_index or {}
 
     async def get_exchange_rate_value(
         self, currency_code: str, rate_date: date
@@ -160,9 +165,16 @@ class FakeMarketDataRepository:
     async def get_economic_index_value(
         self, code: str, period_year: int, period_month: int
     ) -> Decimal | None:
-        """Handle get economic index value (unused by this fn; completeness only)."""
-        del code, period_year, period_month
-        return None
+        """Handle get economic index value."""
+        if self._raises is not None:
+            raise self._raises
+        return self._economic_index_by_period.get((code, period_year, period_month))
+
+    async def get_latest_economic_index(self, code: str) -> tuple[date, Decimal] | None:
+        """Handle get latest economic index."""
+        if self._raises is not None:
+            raise self._raises
+        return self._latest_economic_index.get(code)
 
 
 def build_period(
@@ -2852,3 +2864,351 @@ async def test_predict_next_period_net_pay_adjusts_for_worked_days() -> None:
     expected_net_pay = projected_gross - (projected_gross * discount_ratio)
 
     assert result == expected_net_pay.quantize(Decimal("0.01"))
+
+
+@pytest.mark.asyncio
+async def test_project_future_net_pay_series_returns_empty_without_first_prediction() -> (  # noqa: E501
+    None
+):
+    """No month_offset=1 prediction to replicate from means nothing to project."""
+    result = await project_future_net_pay_series(
+        None,
+        current_year=2026,
+        current_month=9,
+        first_increase_period=date(2026, 4, 1),
+        increase_frequency=12,
+        market_data_repository=FakeMarketDataRepository(),
+    )
+
+    assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_project_future_net_pay_series_returns_empty_without_repository() -> None:
+    """No market_data_repository wired in disables projection entirely."""
+    result = await project_future_net_pay_series(
+        Decimal("3118248.98"),
+        current_year=2026,
+        current_month=9,
+        first_increase_period=date(2026, 4, 1),
+        increase_frequency=12,
+        market_data_repository=None,
+    )
+
+    assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_project_future_net_pay_series_replicates_until_next_increase() -> None:
+    """Months 2-12 replicate the first prediction until an increase month.
+
+    Worked example verified against real restored Neon data during local
+    debugging -- see docs/proposals/net-pay-prediction-reimplementation-
+    design-plan.md, "Extending to all 12 future months" section. Employer's
+    first_increase_period is 2026-04 with the default 12-month cadence, so
+    from a current period of 2026-09 the next increase lands on 2027-04
+    (month_offset=7); IPC_CL for 2026-04 is 112.18, latest published is
+    113.15 (2026-08) -- ratio 113.15/112.18 applied to the replicated value.
+    """
+    market_data_repository = FakeMarketDataRepository(
+        economic_index_by_period={("IPC_CL", 2026, 4): Decimal("112.18")},
+        latest_economic_index={
+            "IPC_CL": (date(2026, 8, 1), Decimal("113.15")),
+        },
+    )
+    first_future_net_pay_clp = Decimal("3118248.98")
+
+    result = await project_future_net_pay_series(
+        first_future_net_pay_clp,
+        current_year=2026,
+        current_month=9,
+        first_increase_period=date(2026, 4, 1),
+        increase_frequency=12,
+        market_data_repository=market_data_repository,
+    )
+
+    assert len(result) == 11  # month_offset 2..12
+    for month_offset in range(2, 7):
+        assert result[month_offset] == first_future_net_pay_clp
+    stepped = result[7]
+    expected_stepped = (
+        first_future_net_pay_clp * Decimal("113.15") / Decimal("112.18")
+    ).quantize(Decimal("0.01"))
+    assert stepped == expected_stepped
+    for month_offset in range(8, 13):
+        assert result[month_offset] == stepped
+
+
+@pytest.mark.asyncio
+async def test_project_future_net_pay_series_skips_step_without_prior_increase() -> (
+    None
+):
+    """No real increase has ever happened yet -> replicate flat, never step.
+
+    `current_year`/`current_month` (2026-01) predate `first_increase_period`
+    (2026-04), so resolve_last_increase_period() returns None -- there is no
+    IPC baseline to compare against even though 2027-04 is still a future
+    increase-cadence month within the window.
+    """
+    market_data_repository = FakeMarketDataRepository(
+        latest_economic_index={"IPC_CL": (date(2026, 8, 1), Decimal("113.15"))},
+    )
+    first_future_net_pay_clp = Decimal("3000000.00")
+
+    result = await project_future_net_pay_series(
+        first_future_net_pay_clp,
+        current_year=2026,
+        current_month=1,
+        first_increase_period=date(2026, 4, 1),
+        increase_frequency=12,
+        market_data_repository=market_data_repository,
+    )
+
+    assert all(value == first_future_net_pay_clp for value in result.values())
+
+
+@pytest.mark.asyncio
+async def test_project_future_net_pay_series_skips_step_without_latest_ipc() -> None:
+    """No published IPC at all -> replicate flat even through an increase month."""
+    market_data_repository = FakeMarketDataRepository()
+    first_future_net_pay_clp = Decimal("3000000.00")
+
+    result = await project_future_net_pay_series(
+        first_future_net_pay_clp,
+        current_year=2026,
+        current_month=9,
+        first_increase_period=date(2026, 4, 1),
+        increase_frequency=12,
+        market_data_repository=market_data_repository,
+    )
+
+    assert all(value == first_future_net_pay_clp for value in result.values())
+
+
+@pytest.mark.asyncio
+async def test_project_future_net_pay_series_skips_step_without_baseline_index() -> (
+    None
+):
+    """Latest IPC exists but the last-increase-month IPC itself is missing.
+
+    Falls back to replicating unchanged -- same graceful-degradation
+    philosophy as the rest of this prediction subsystem (see
+    PayrollDependencyError handling in list_period_ranges()).
+    """
+    market_data_repository = FakeMarketDataRepository(
+        latest_economic_index={"IPC_CL": (date(2026, 8, 1), Decimal("113.15"))},
+    )
+    first_future_net_pay_clp = Decimal("3000000.00")
+
+    result = await project_future_net_pay_series(
+        first_future_net_pay_clp,
+        current_year=2026,
+        current_month=9,
+        first_increase_period=date(2026, 4, 1),
+        increase_frequency=12,
+        market_data_repository=market_data_repository,
+    )
+
+    assert all(value == first_future_net_pay_clp for value in result.values())
+
+
+@pytest.mark.asyncio
+async def test_project_future_net_pay_series_skips_step_when_latest_ipc_too_old() -> (
+    None
+):
+    """The explicit guard: a latest-IPC period later than the increase month.
+
+    Never applies in practice -- IPC is only ever published for the past --
+    but the user explicitly required this check. This fake deliberately
+    violates that invariant to prove the guard fires.
+    """
+    market_data_repository = FakeMarketDataRepository(
+        economic_index_by_period={("IPC_CL", 2026, 4): Decimal("112.18")},
+        latest_economic_index={"IPC_CL": (date(2027, 5, 1), Decimal("200.00"))},
+    )
+    first_future_net_pay_clp = Decimal("3000000.00")
+
+    result = await project_future_net_pay_series(
+        first_future_net_pay_clp,
+        current_year=2026,
+        current_month=9,
+        first_increase_period=date(2026, 4, 1),
+        increase_frequency=12,
+        market_data_repository=market_data_repository,
+    )
+
+    assert all(value == first_future_net_pay_clp for value in result.values())
+
+
+@pytest.mark.asyncio
+async def test_project_future_net_pay_series_handles_consecutive_increase_months() -> (
+    None
+):
+    """A short (1-month) increase_frequency steps every single future month."""
+    market_data_repository = FakeMarketDataRepository(
+        economic_index_by_period={
+            ("IPC_CL", 2026, 9): Decimal("100.00"),
+            ("IPC_CL", 2026, 11): Decimal("102.00"),
+        },
+        latest_economic_index={"IPC_CL": (date(2026, 11, 1), Decimal("103.00"))},
+    )
+    first_future_net_pay_clp = Decimal("1000000.00")
+
+    result = await project_future_net_pay_series(
+        first_future_net_pay_clp,
+        current_year=2026,
+        current_month=9,
+        first_increase_period=date(2026, 9, 1),
+        increase_frequency=1,
+        market_data_repository=market_data_repository,
+    )
+
+    # month_offset 2 (2026-11) steps from the 2026-09 baseline (the anchor
+    # then advances to 2026-11, the increase month itself).
+    step_one = (
+        first_future_net_pay_clp * Decimal("103.00") / Decimal("100.00")
+    ).quantize(Decimal("0.01"))
+    assert result[2] == step_one
+    # month_offset 3 (2026-12) is also an increase month (frequency=1), so
+    # it steps again -- this time from the 2026-11 anchor the previous step
+    # just set, using the same latest-published IPC (fetched once, 103.00).
+    step_two = (step_one * Decimal("103.00") / Decimal("102.00")).quantize(
+        Decimal("0.01")
+    )
+    assert result[3] == step_two
+
+
+@pytest.mark.asyncio
+async def test_sqlalchemy_payroll_repository_lists_period_ranges_projects_all_future_months() -> (  # noqa: E501
+    None
+):
+    """End-to-end: list_period_ranges() replicates + IPC-steps months 2-12.
+
+    Same current/previous period fixture as
+    test_sqlalchemy_payroll_repository_lists_period_ranges (employer's
+    default-derived first_increase_period is 2025-11, 12-month cadence, so
+    from a current period of 2026-03 the next increase lands on 2026-11,
+    confirmed by that other test's `result[20].increase is True`). This test
+    additionally wires a full market_data_repository (UF + IPC) to verify
+    the projected net_pay_clp values themselves, not just the increase flag.
+    """
+    current_period = PayrollPeriodModel(
+        id=17,
+        employer_id=1,
+        period_year=2026,
+        period_month=3,
+        payment_date=date(2026, 3, 28),
+        status=PayrollStatus.ACTUAL,
+        declared_net_pay_clp=Decimal("2978086"),
+        worked_days=30,
+    )
+    current_employer = build_specific_chile_employer()
+    previous_period = PayrollPeriodModel(
+        id=16,
+        employer_id=1,
+        period_year=2026,
+        period_month=2,
+        payment_date=date(2026, 2, 26),
+        status=PayrollStatus.ACTUAL,
+        declared_net_pay_clp=Decimal("2983237"),
+    )
+    items = [
+        (Decimal("3000000"), "SALARY_BASE"),
+        (Decimal("100000"), "PENSION_BASE"),
+        (Decimal("50000"), "INCOME_TAX"),
+    ]
+    session = FakeSession(
+        [
+            FakeResult(first_row=(current_period, current_employer)),
+            FakeResult(scalar_rows=[previous_period]),
+            FakeResult(joined_rows=[]),  # salary_base aggregation
+            FakeResult(joined_rows=items),  # predict_next_period_net_pay's items
+        ]
+    )
+    market_data_repository = FakeMarketDataRepository(
+        {
+            date(2026, 3, 31): Decimal("38000.00"),
+            date(2026, 3, 28): Decimal("38000.00"),
+        },
+        economic_index_by_period={("IPC_CL", 2025, 11): Decimal("105.00")},
+        latest_economic_index={"IPC_CL": (date(2026, 2, 1), Decimal("110.00"))},
+    )
+    repository = SqlAlchemyPayrollRepository(  # type: ignore[arg-type]
+        session, market_data_repository
+    )
+
+    result = await repository.list_period_ranges(today=date(2026, 3, 31))
+
+    first_future = Decimal("2850000.00")  # 3,000,000 - 5% (150,000/3,000,000) ratio
+    assert result[13].net_pay_clp == first_future  # 2026-04, month_offset=1
+    for index in range(14, 20):  # 2026-05 .. 2026-10, month_offset 2-7
+        assert result[index].net_pay_clp == first_future
+    stepped = (first_future * Decimal("110.00") / Decimal("105.00")).quantize(
+        Decimal("0.01")
+    )
+    assert result[20].net_pay_clp == stepped  # 2026-11, month_offset=8, increase=True
+    assert result[20].increase is True
+    for index in range(21, 25):  # 2026-12 .. 2027-03, month_offset 9-12
+        assert result[index].net_pay_clp == stepped
+
+
+@pytest.mark.asyncio
+async def test_project_future_net_pay_series_holds_flat_on_deflation() -> None:
+    """IPC dropping below the last-increase baseline never reduces net pay.
+
+    Explicit user requirement (2026-10-01): salaries are sticky downward --
+    a lower latest-published IPC than the baseline holds the previous value
+    flat, it never divides it down. Same non-advancing-anchor treatment as
+    the other degradation paths, so a later rebound in prices is not lost:
+    if IPC later recovers above the *original* 2026-04 baseline, the next
+    increase month still compares against that same original baseline, not
+    against this skipped one.
+    """
+    market_data_repository = FakeMarketDataRepository(
+        economic_index_by_period={("IPC_CL", 2026, 4): Decimal("112.18")},
+        latest_economic_index={"IPC_CL": (date(2026, 8, 1), Decimal("110.00"))},
+    )
+    first_future_net_pay_clp = Decimal("3118248.98")
+
+    result = await project_future_net_pay_series(
+        first_future_net_pay_clp,
+        current_year=2026,
+        current_month=9,
+        first_increase_period=date(2026, 4, 1),
+        increase_frequency=12,
+        market_data_repository=market_data_repository,
+    )
+
+    # month_offset 7 (2027-04) is still flagged as an increase month, but
+    # IPC 110.00 < 112.18 means the floor kicks in: hold flat, not step down.
+    assert all(value == first_future_net_pay_clp for value in result.values())
+
+
+@pytest.mark.asyncio
+async def test_project_future_net_pay_series_steps_on_flat_ipc() -> None:
+    """IPC exactly equal to the baseline is not a decrease -- it still steps.
+
+    Numerically a no-op either way (ratio of 1), but this proves the
+    deflation-floor guard (`latest_value < last_increase_index`) correctly
+    treats a tie as "no decrease" and lets the normal step path run, rather
+    than over-matching on `<=` and treating equality as deflation too.
+    """
+    market_data_repository = FakeMarketDataRepository(
+        economic_index_by_period={
+            ("IPC_CL", 2026, 4): Decimal("112.18"),
+            ("IPC_CL", 2027, 4): Decimal("112.18"),
+        },
+        latest_economic_index={"IPC_CL": (date(2026, 8, 1), Decimal("112.18"))},
+    )
+    first_future_net_pay_clp = Decimal("3118248.98")
+
+    result = await project_future_net_pay_series(
+        first_future_net_pay_clp,
+        current_year=2026,
+        current_month=9,
+        first_increase_period=date(2026, 4, 1),
+        increase_frequency=12,
+        market_data_repository=market_data_repository,
+    )
+
+    assert all(value == first_future_net_pay_clp for value in result.values())

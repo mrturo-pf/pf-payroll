@@ -35,6 +35,14 @@ from payroll.shared.constants import (
     RECONCILIATION_TOLERANCE_CLP,
     REVIEW_REQUIRED_CONCEPT_CODES,
 )
+from payroll.shared.dates import (
+    add_months,
+    is_increase_period,
+    resolve_last_increase_period,
+)
+
+_NET_PAY_QUANT = Decimal("0.01")
+_IPC_CODE = "IPC_CL"
 
 
 def build_net_pay_warning(
@@ -211,7 +219,120 @@ async def predict_next_period_net_pay(
         return None
 
     # Quantize to 2 decimal places (CLP cents)
-    return predicted_net_pay.quantize(Decimal("0.01"))
+    return predicted_net_pay.quantize(_NET_PAY_QUANT)
+
+
+async def _apply_ipc_step(
+    current_value: Decimal,
+    *,
+    last_increase_period: date | None,
+    latest_index: tuple[date, Decimal] | None,
+    increase_month: date,
+    market_data_repository: MarketDataRepository,
+) -> tuple[Decimal, date | None]:
+    """Step `current_value` up by cumulative IPC since the last real increase.
+
+    There is no reliable IPC figure yet for `increase_month` itself (it is
+    always in the future), so this uses the IPC published for
+    `last_increase_period` (the last real/already-applied raise) as the
+    baseline and the most recently published IPC figure overall as the
+    best available stand-in for "today's" price level -- only when that
+    latest figure's own period is not itself later than `increase_month`
+    (it never should be, since IPC is only ever published for the past,
+    but this is the explicit guard requested in
+    docs/proposals/net-pay-prediction-reimplementation-design-plan.md).
+
+    Any missing ingredient (no prior real increase to anchor on, no IPC
+    data at all, or a zero/negative baseline) degrades gracefully: the
+    value is left unchanged and the anchor does not advance, so a later
+    increase month in the same window still compares against the true
+    last real increase instead of silently treating this skipped one as
+    a 0% raise.
+
+    Deflation floor: if the latest published IPC is *lower* than the IPC
+    at the last real increase, the previous net pay is kept as-is instead
+    of being reduced -- salaries do not get cut due to deflation in
+    practice, only held flat (explicit user requirement, see
+    docs/proposals/net-pay-prediction-reimplementation-design-plan.md).
+    Same non-advancing-anchor treatment as the other degradation paths
+    above: a later increase month still compares against the true last
+    real increase, so any eventual rebound in prices is not lost.
+
+    Returns:
+        Tuple of (possibly stepped value, anchor to use for the *next*
+        increase month encountered).
+    """
+    if last_increase_period is None or latest_index is None:
+        return current_value, last_increase_period
+    latest_period, latest_value = latest_index
+    if latest_period > increase_month:
+        return current_value, last_increase_period
+    last_increase_index = await market_data_repository.get_economic_index_value(
+        _IPC_CODE, last_increase_period.year, last_increase_period.month
+    )
+    if last_increase_index is None or last_increase_index <= 0:
+        return current_value, last_increase_period
+    if latest_value < last_increase_index:
+        return current_value, last_increase_period
+    stepped = (current_value * latest_value / last_increase_index).quantize(
+        _NET_PAY_QUANT
+    )
+    return stepped, increase_month
+
+
+async def project_future_net_pay_series(
+    first_future_net_pay_clp: Decimal | None,
+    *,
+    current_year: int,
+    current_month: int,
+    first_increase_period: date,
+    increase_frequency: int,
+    market_data_repository: MarketDataRepository | None,
+) -> dict[int, Decimal | None]:
+    """Project net_pay_clp for future months 2 through 12.
+
+    The UF-based prediction (predict_next_period_net_pay) only ever covers
+    month_offset 1 -- projecting its own ratio-based assumptions any
+    further loses accuracy fast. Instead, months 2-12 replicate that first
+    prediction unchanged until an employer-configured increase month is
+    reached, at which point the value is stepped up by cumulative IPC
+    since the last real increase (see _apply_ipc_step) and the stepped
+    value becomes the new baseline replicated forward from there.
+
+    Returns:
+        Mapping of month_offset (2..12) to its projected net_pay_clp, or
+        an empty mapping if there is nothing to project from (no first
+        future prediction available).
+    """
+    if first_future_net_pay_clp is None or market_data_repository is None:
+        return {}
+
+    current_value = first_future_net_pay_clp
+    last_increase_period = resolve_last_increase_period(
+        first_increase_period=first_increase_period,
+        increase_frequency=increase_frequency,
+        as_of=date(current_year, current_month, 1),
+    )
+    latest_index = await market_data_repository.get_latest_economic_index(_IPC_CODE)
+
+    series: dict[int, Decimal | None] = {}
+    for month_offset in range(2, 13):
+        period_month = add_months(date(current_year, current_month, 1), month_offset)
+        if is_increase_period(
+            period_year=period_month.year,
+            period_month=period_month.month,
+            first_increase_period=first_increase_period,
+            increase_frequency=increase_frequency,
+        ):
+            current_value, last_increase_period = await _apply_ipc_step(
+                current_value,
+                last_increase_period=last_increase_period,
+                latest_index=latest_index,
+                increase_month=period_month,
+                market_data_repository=market_data_repository,
+            )
+        series[month_offset] = current_value
+    return series
 
 
 def build_payroll_summary_dto(

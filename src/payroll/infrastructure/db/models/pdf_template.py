@@ -11,7 +11,6 @@ from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
-    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -31,16 +30,14 @@ class PdfTemplateModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     template_id: Mapped[str] = mapped_column(String(80), unique=True)
-    employer_id: Mapped[int | None] = mapped_column(
-        ForeignKey("PAY_EMPLOYER.id"), nullable=True
-    )
-    # Nullable: a literal override only, used when there's no employer_id to
-    # join against, or the PDF's printed name legitimately differs from
-    # PAY_EMPLOYER.name. When NULL, the repository resolves the display name
-    # fresh from PAY_EMPLOYER via employer_id on every read -- never copied
-    # into this column. See pf-db migration 0010 for the CHECK constraint
-    # that guarantees one of the two is always set.
-    employer_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Required: a template may only be created for an employer that already
+    # has a PAY_EMPLOYER row (i.e. after its first payroll import has run at
+    # least once). There is deliberately no employer_name column -- it used
+    # to be a literal-override fallback for when employer_id was nullable
+    # (see pf-db migration 0010), but that case can no longer happen. The
+    # repository always resolves the display name fresh from PAY_EMPLOYER via
+    # employer_id on every read. See pf-db migration 0012.
+    employer_id: Mapped[int] = mapped_column(ForeignKey("PAY_EMPLOYER.id"))
     employer_match_pattern: Mapped[str] = mapped_column(String(500))
     version: Mapped[int] = mapped_column(Integer, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -49,13 +46,6 @@ class PdfTemplateModel(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
-    )
-
-    __table_args__ = (
-        CheckConstraint(
-            "employer_id IS NOT NULL OR employer_name IS NOT NULL",
-            name="chk_pay_pdf_template_employer_ref",
-        ),
     )
 
     fields: Mapped[list["PdfTemplateFieldModel"]] = relationship(

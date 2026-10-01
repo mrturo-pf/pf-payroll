@@ -655,3 +655,136 @@ for real, through actual Alembic, not hand-run SQL:
 No `docs/api.md` or Postman changes -- confirmed the API contract is untouched by
 this fix.
 
+## Third follow-up: drop `PAY_PDF_TEMPLATE.employer_name` outright
+
+The user explicitly reversed the second follow-up session's default recommendation
+("keep `employer_name` nullable as a legitimate onboarding fallback"): the column
+should not exist at all. Rather than assume a resolution, this was clarified directly
+-- `employer_id` was already nullable specifically because there is no standalone
+endpoint to create a `PAY_EMPLOYER` row ahead of a template (one is only ever created
+as a side effect of a full payroll import), so dropping `employer_name` without a
+decision on `employer_id` would silently reintroduce the exact chicken-and-egg problem
+that justified keeping it nullable in the first place. Asked directly: **`employer_id`
+becomes `NOT NULL`/required** -- a real, confirmed behavior change, not an oversight:
+it is no longer possible to pre-create a template for a brand-new employer before
+their first import has run.
+
+### A nice side effect: `employer_name` simplifies from `str | None` to effectively
+### always-`str` on every read
+
+Once `employer_id` is guaranteed `NOT NULL` with a real FK into `PAY_EMPLOYER`, every
+loaded template's employer is guaranteed to exist -- `employer_name` no longer needs a
+conditional "resolve only if the column itself was NULL" branch in `_to_dto()`; it is
+unconditionally looked up for every row's `employer_id`. `PdfTemplateDTO.employer_id`
+itself also simplifies from `int | None` to plain `int` (still `str | None` for
+`employer_name` at the dataclass level only because of the pre-existing `id: int |
+None` write/read split precedent -- `None` on a not-yet-persisted create/update DTO,
+always resolved to a real `str` on anything read back from storage).
+
+### pf-db implementation
+
+- `alembic/versions/0012_pdf_template_employer_id_required.py`, revising `0011`:
+  defensively backfills any (theoretical -- none exist in the real seed)
+  `employer_id IS NULL` row by joining its old `employer_name` to `PAY_EMPLOYER.name`,
+  then raises a `RAISE EXCEPTION` inside a `DO $$` block if any row still can't resolve
+  one (no silent partial migration), before setting `employer_id NOT NULL`, dropping
+  `chk_pay_pdf_template_employer_ref`, and dropping `employer_name`. `downgrade()`
+  restores the nullable column (as `NULL` -- the original literal text is gone for
+  good, which is fine: it was never anything but a display fallback) and the CHECK.
+- `db/01_schema.sql`/`db/04_seed_real.sql`/`docs/tables.md` updated to match --
+  `04_seed_real.sql`'s `INSERT`/`ON CONFLICT` clauses no longer mention `employer_name`
+  at all.
+
+### pf-payroll implementation
+
+- `PdfTemplateModel.employer_id` is now `Mapped[int]` (no longer nullable); the
+  `employer_name` column and its `CheckConstraint` are gone entirely.
+- `PdfTemplateDTO.employer_id: int` (was `int | None`); `employer_name` keeps its
+  `str | None` write/read-split typing.
+- `interfaces/api/routes/pdf_templates.py`: `TemplateWriteRequest` drops
+  `employer_name` entirely and makes `employer_id: int` required (no default) --
+  `_require_employer_name_or_id` (the whole reason `model_validator` was imported)
+  is deleted outright, since there's nothing left to cross-validate. `TemplateRead.
+  employer_id` is now plain `int`.
+- `infrastructure/db/repositories/template_repository.py`: new
+  `_validate_employer_exists()` mirrors the unknown-`concept_code` pattern exactly --
+  rejects an unknown `employer_id` with a clear `PayrollValidationError` (-> 400)
+  *before* `create_template()`/`update_template()` ever call `self._session.add()`/
+  mutate the model, rather than relying solely on the FK `IntegrityError` translated
+  by `_commit_or_raise()` (kept as a safety net regardless -- now realistically only
+  ever fires for a genuine duplicate `template_id`). `_dto_lookup_dicts()`'s
+  `employer_ids` computation simplifies from a filtered set ("only ids where
+  `employer_name is None`") to unconditionally every `employer_id` in the batch, since
+  every row now needs one. `_to_dto()` indexes `employer_names[model.employer_id]`
+  directly (no more `.get()`/`None` fallback) -- a `KeyError` here would mean a real
+  data-integrity break worth surfacing loudly, not masking.
+
+### Live PostgreSQL validation
+
+Same `make db-reset` -> `alembic upgrade head` (full `0001`->`0012` chain, one run) ->
+`make seed-real` -> direct-query -> `alembic downgrade 0011` -> direct-query ->
+`alembic upgrade head` -> direct-query round trip as the prior two follow-ups,
+confirming: `employer_id BIGINT NOT NULL` with its FK, no `employer_name` column, no
+CHECK constraint, `walmart-chile-v1` correctly joins to `PAY_EMPLOYER` (`employer_id=3`
+-> `WALMART-CHILE`) after `upgrade head`; `downgrade 0011` correctly restores a
+nullable `employer_name` column (as `NULL`, per design) without losing `employer_id`;
+re-`upgrade head` cleanly reproduces the fixed shape again with the same `employer_id`
+intact throughout.
+
+### Tests and quality checks
+
+- Unit tests: removed the three tests specific to the old "resolve from dict only if
+  column is NULL" branch (`test_to_dto_resolves_employer_name_from_dict_when_column_
+  is_null`, `test_to_dto_leaves_employer_name_none_when_unresolvable`,
+  `test_get_template_resolves_employer_name_when_null` -- that branch no longer
+  exists); added `test_load_employer_names_empty_ids_short_circuits`,
+  `test_validate_employer_exists_rejects_unknown_id`,
+  `test_create_template_rejects_unknown_employer_id_before_any_write` (net zero test
+  count change, 500 total). Every mocked multi-`execute()`-call test
+  (`create_template`/`update_template`) grew one more `side_effect` entry for the new
+  `_validate_employer_exists()` lookup.
+- Integration tests: `TemplateWriteRequest` no longer has `employer_name`, so every
+  `PdfTemplateDTO(...)` fixture across the file needed a real `employer_id` (was
+  freely `None` before); `test_create_template_rejects_missing_employer_name_and_id`
+  renamed to `test_create_template_rejects_missing_employer_id` (now just asserts the
+  plain-required-field 422, no cross-field validator left to exercise).
+- Full suite: **500 tests passing, 100% coverage**; `ruff check`/`ruff format
+  --check`/`mypy`/`vulture`/`jscpd` all clean on `pf-payroll`; `ruff check alembic/`
+  clean on `pf-db`.
+
+### `docs/api.md`/Postman changes (unlike the second follow-up, this one has real ones)
+
+Unlike the `concept_id` fix, this *is* a client-visible contract change -- updated:
+
+- `docs/api.md`'s `POST /payroll/templates` row: `employer_id` now documented as
+  required; `employer_name` removed from the request description entirely; added the
+  new "`employer_id` that does not exist" 400 case.
+- `postman/pf-ecosystem.postman_collection.json`: both the Create and Update Template
+  example request bodies replace `"employer_name": "ACME-CHILE"` with `"employer_id":
+  1`; the Create request's description rewritten to match.
+
+### Files touched (third follow-up session)
+
+**New (`pf-db`):**
+- `alembic/versions/0012_pdf_template_employer_id_required.py`
+
+**Modified (`pf-db`):**
+- `db/01_schema.sql`, `db/04_seed_real.sql`, `docs/tables.md`
+
+**Modified (`pf-payroll`):**
+- `src/payroll/infrastructure/db/models/pdf_template.py` (`employer_id` required;
+  `employer_name` column + `CheckConstraint` removed)
+- `src/payroll/application/dto.py` (`PdfTemplateDTO.employer_id: int`)
+- `src/payroll/interfaces/api/routes/pdf_templates.py` (`employer_name` request field
+  + `_require_employer_name_or_id` validator removed; `employer_id` required)
+- `src/payroll/infrastructure/db/repositories/template_repository.py` (new
+  `_validate_employer_exists()`; `_to_dto()`/`_dto_lookup_dicts()` simplified)
+- `tests/unit/infrastructure/db/repositories/test_template_repository.py` (rewritten;
+  see above)
+- `tests/integration/api/test_pdf_templates.py` (every fixture updated; see above)
+- `docs/api.md` (`POST /payroll/templates` row rewritten)
+
+**Modified (root `pf-base`):**
+- `postman/pf-ecosystem.postman_collection.json` (`employer_name` -> `employer_id` in
+  both example bodies + the Create description)
+

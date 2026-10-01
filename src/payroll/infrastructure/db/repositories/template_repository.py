@@ -6,14 +6,16 @@ one concrete class satisfying two Protocols, mirroring how
 `SqlAlchemyReferenceDataRepository` already satisfies both
 `EmployerPaymentRuleReader` and the fuller `ReferenceDataRepository`.
 
-None of `PdfTemplateFieldModel.kind`, an unconditional `PdfTemplateModel
-.employer_name`, nor `PdfTemplateFieldModel.concept_code` exist anymore (see
-pf-db migrations 0010/0011) -- all three used to duplicate data already
-owned by `PAY_CONCEPT`/`PAY_EMPLOYER` (the first two with no referential
-integrity tying the copies together; the third as a plain inconsistency
-with every other FK into `PAY_CONCEPT` in the schema, which all reference
-its surrogate `id`). This repository is the one place that resolves all of
-them, fresh, on every read and write.
+None of `PdfTemplateFieldModel.kind`, `PdfTemplateModel.employer_name`, nor
+`PdfTemplateFieldModel.concept_code` exist anymore (see pf-db migrations
+0010/0011/0012) -- all three used to duplicate data already owned by
+`PAY_CONCEPT`/`PAY_EMPLOYER` (the first two with no referential integrity
+tying the copies together; the third as a plain inconsistency with every
+other FK into `PAY_CONCEPT` in the schema, which all reference its surrogate
+`id`). `PdfTemplateModel.employer_id` is now required (migration 0012) -- a
+template may only be created for an employer that already has a
+`PAY_EMPLOYER` row. This repository is the one place that resolves the
+display name and field kinds, fresh, on every read and write.
 """
 
 from decimal import Decimal
@@ -37,8 +39,8 @@ from payroll.infrastructure.db.models.pdf_template import (
 from payroll.infrastructure.db.models.reference_data import PayrollConceptModel
 
 _INTEGRITY_ERROR_MESSAGE = (
-    "Could not save template: duplicate template_id, or a field references an "
-    "unknown concept_code."
+    "Could not save template: duplicate template_id, a field references an "
+    "unknown concept_code, or employer_id does not exist."
 )
 
 
@@ -53,16 +55,16 @@ def _to_dto(
     `_dto_lookup_dicts()`) -- this function does no I/O of its own, so it
     stays trivially testable without a session. `concepts_by_id` maps
     `concept_id -> (code, kind)`: one lookup resolves both values a field
-    needs, since both live on the same `PAY_CONCEPT` row.
+    needs, since both live on the same `PAY_CONCEPT` row. `employer_id` is
+    required (NOT NULL, see pf-db migration 0012), so `employer_names` is
+    expected to always have an entry for it -- a loaded model's employer_id
+    is guaranteed to reference a real PAY_EMPLOYER row by the FK itself.
     """
-    employer_name = model.employer_name
-    if employer_name is None and model.employer_id is not None:
-        employer_name = employer_names.get(model.employer_id)
     return PdfTemplateDTO(
         id=model.id,
         template_id=model.template_id,
         employer_id=model.employer_id,
-        employer_name=employer_name,
+        employer_name=employer_names[model.employer_id],
         employer_match_pattern=model.employer_match_pattern,
         version=model.version,
         is_active=model.is_active,
@@ -131,10 +133,10 @@ class SqlAlchemyTemplateRepository:
 
     async def create_template(self, template: PdfTemplateDTO) -> PdfTemplateDTO:
         """Create a new template (and its fields). Raises on duplicate template_id."""
+        await self._validate_employer_exists(template.employer_id)
         model = PdfTemplateModel(
             template_id=template.template_id,
             employer_id=template.employer_id,
-            employer_name=template.employer_name,
             employer_match_pattern=template.employer_match_pattern,
             version=template.version,
             is_active=True,
@@ -156,8 +158,8 @@ class SqlAlchemyTemplateRepository:
         model = await self._get_model(template_id)
         if model is None:
             return None
+        await self._validate_employer_exists(template.employer_id)
         model.employer_id = template.employer_id
-        model.employer_name = template.employer_name
         model.employer_match_pattern = template.employer_match_pattern
         model.version = template.version
         # Reassigning the relationship (cascade="all, delete-orphan") deletes
@@ -221,7 +223,7 @@ class SqlAlchemyTemplateRepository:
         ]
 
     async def _load_employer_names(self, employer_ids: set[int]) -> dict[int, str]:
-        """Resolve PAY_EMPLOYER.name for a set of ids, to fill a NULL employer_name."""
+        """Resolve PAY_EMPLOYER.name for a set of ids -- the read path's names."""
         if not employer_ids:
             return {}
         statement = select(EmployerModel.id, EmployerModel.name).where(
@@ -229,6 +231,19 @@ class SqlAlchemyTemplateRepository:
         )
         result = await self._session.execute(statement)
         return {employer_id: name for employer_id, name in result.all()}
+
+    async def _validate_employer_exists(self, employer_id: int) -> None:
+        """Reject an unknown employer_id with a clear 400, on the write path.
+
+        Mirrors _to_field_models()'s unknown-concept_code check: rejecting
+        explicitly here is earlier and clearer than leaning solely on the FK
+        IntegrityError translated by _commit_or_raise(). A template may only
+        be created for an employer that already has a PAY_EMPLOYER row (see
+        pf-db migration 0012) -- there is no standalone endpoint to create
+        one ahead of that.
+        """
+        if not await self._load_employer_names({employer_id}):
+            raise PayrollValidationError(f"Unknown employer_id: {employer_id}.")
 
     async def _load_concepts_by_id(
         self, concept_ids: set[int]
@@ -262,11 +277,7 @@ class SqlAlchemyTemplateRepository:
         lives in exactly one place.
         """
         concept_ids = {field.concept_id for model in models for field in model.fields}
-        employer_ids = {
-            model.employer_id
-            for model in models
-            if model.employer_name is None and model.employer_id is not None
-        }
+        employer_ids = {model.employer_id for model in models}
         concepts_by_id = await self._load_concepts_by_id(concept_ids)
         employer_names = await self._load_employer_names(employer_ids)
         return concepts_by_id, employer_names
@@ -291,10 +302,12 @@ class SqlAlchemyTemplateRepository:
     async def _commit_or_raise(self) -> None:
         """Commit, translating an IntegrityError into a 400 PayrollValidationError.
 
-        Covers both failure modes a Pydantic request validator cannot catch
-        on its own: a duplicate template_id (UNIQUE), and a field whose
-        concept_code does not exist in PAY_CONCEPT (FK) -- neither is
-        knowable without a real database round-trip.
+        A duplicate template_id (UNIQUE) is the realistic case left by the
+        time this runs -- an unknown concept_code and an unknown employer_id
+        are both already rejected explicitly, earlier, by
+        _to_field_models()/_validate_employer_exists(). Kept as a safety net
+        regardless: a Pydantic request validator cannot catch any of these
+        without a real database round-trip.
         """
         try:
             await self._session.commit()

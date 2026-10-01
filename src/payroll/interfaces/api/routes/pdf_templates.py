@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from payroll.application.dto import PdfTemplateDTO, PdfTemplateFieldDTO
 from payroll.application.errors import (
@@ -69,17 +69,17 @@ class TemplateFieldRequest(BaseModel):
 class TemplateWriteRequest(BaseModel):
     """Share the fields common to create and update requests.
 
-    `employer_name` is optional: omit it when `employer_id` is given and the
-    canonical PAY_EMPLOYER.name should be used as the display name (resolved
-    fresh on every read, never copied into the row -- see pf-db migration
-    0010). At least one of the two must be provided, so a template can always
-    resolve *some* display name.
+    `employer_id` is required: a template may only be created for an
+    employer that already has a `PAY_EMPLOYER` row (i.e. after its first
+    payroll import has run; there is no standalone endpoint to create one
+    ahead of that -- see pf-db migration 0012). There is no `employer_name`
+    field -- nothing to supply; the display name shown in responses is
+    always resolved fresh from `PAY_EMPLOYER.name` via `employer_id`.
     """
 
-    employer_name: str | None = None
+    employer_id: int
     employer_match_pattern: str
     version: int = 1
-    employer_id: int | None = None
     fields: list[TemplateFieldRequest] = Field(min_length=1)
 
     @field_validator("employer_match_pattern")
@@ -88,13 +88,6 @@ class TemplateWriteRequest(BaseModel):
         """Delegate to _compiles_as_regex (cls unused -- required by @classmethod)."""
         del cls
         return _compiles_as_regex(value)
-
-    @model_validator(mode="after")
-    def _require_employer_name_or_id(self) -> TemplateWriteRequest:
-        """Mirror pf-db's chk_pay_pdf_template_employer_ref CHECK constraint."""
-        if self.employer_id is None and self.employer_name is None:
-            raise ValueError("Provide employer_name, employer_id, or both.")
-        return self
 
 
 class TemplateCreateRequest(TemplateWriteRequest):
@@ -122,7 +115,7 @@ class TemplateRead(BaseModel):
 
     id: int
     template_id: str
-    employer_id: int | None
+    employer_id: int
     employer_name: str
     employer_match_pattern: str
     version: int
@@ -201,7 +194,7 @@ async def create_template(
             id=None,
             template_id=request.template_id,
             employer_id=request.employer_id,
-            employer_name=request.employer_name,
+            employer_name=None,
             employer_match_pattern=request.employer_match_pattern,
             version=request.version,
             is_active=True,
@@ -252,7 +245,7 @@ async def update_template(
             id=None,
             template_id=template_id,
             employer_id=request.employer_id,
-            employer_name=request.employer_name,
+            employer_name=None,
             employer_match_pattern=request.employer_match_pattern,
             version=request.version,
             is_active=True,

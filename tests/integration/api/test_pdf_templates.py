@@ -45,7 +45,7 @@ class FakeTemplateRepository:
             id=len(self._by_id) + 1,
             template_id=template.template_id,
             employer_id=template.employer_id,
-            employer_name=template.employer_name,
+            employer_name="ACME",
             employer_match_pattern=template.employer_match_pattern,
             version=template.version,
             is_active=True,
@@ -65,7 +65,7 @@ class FakeTemplateRepository:
             id=existing.id,
             template_id=template_id,
             employer_id=template.employer_id,
-            employer_name=template.employer_name,
+            employer_name="ACME",
             employer_match_pattern=template.employer_match_pattern,
             version=template.version,
             is_active=existing.is_active,
@@ -118,7 +118,7 @@ def _get_template(repository: "FakeTemplateRepository", template_id: str):
 def _sample_create_body(template_id: str = "acme-v1") -> dict:
     return {
         "template_id": template_id,
-        "employer_name": "ACME",
+        "employer_id": 1,
         "employer_match_pattern": "(?i)acme",
         "version": 1,
         "fields": [
@@ -207,14 +207,14 @@ def test_create_template_rejects_unknown_concept_code() -> None:
     assert response.status_code == 400
 
 
-def test_create_template_rejects_missing_employer_name_and_id() -> None:
-    """At least one of employer_name/employer_id is required (pf-db CHECK mirror)."""
+def test_create_template_rejects_missing_employer_id() -> None:
+    """employer_id is required (pf-db NOT NULL mirror) -- a 422 from Pydantic."""
     repository = FakeTemplateRepository()
     app.dependency_overrides[get_template_repository] = lambda: repository
     client = _client()
 
     body = _sample_create_body()
-    del body["employer_name"]
+    del body["employer_id"]
 
     try:
         response = client.post("/payroll/templates", json=body)
@@ -231,7 +231,7 @@ def test_create_template_duplicate_template_id_is_400() -> None:
             PdfTemplateDTO(
                 id=1,
                 template_id="acme-v1",
-                employer_id=None,
+                employer_id=1,
                 employer_name="ACME",
                 employer_match_pattern="(?i)acme",
                 version=1,
@@ -253,8 +253,8 @@ def test_create_template_duplicate_template_id_is_400() -> None:
 
 def test_list_templates_defaults_to_active_only() -> None:
     """GET /payroll/templates hides inactive templates unless asked."""
-    active = PdfTemplateDTO(1, "active-v1", None, "A", "(?i)a", 1, True, [])
-    inactive = PdfTemplateDTO(2, "inactive-v1", None, "B", "(?i)b", 1, False, [])
+    active = PdfTemplateDTO(1, "active-v1", 1, "A", "(?i)a", 1, True, [])
+    inactive = PdfTemplateDTO(2, "inactive-v1", 2, "B", "(?i)b", 1, False, [])
     repository = FakeTemplateRepository(templates=[active, inactive])
     app.dependency_overrides[get_template_repository] = lambda: repository
     client = _client()
@@ -271,8 +271,8 @@ def test_list_templates_defaults_to_active_only() -> None:
 
 def test_list_templates_include_inactive_shows_everything() -> None:
     """?include_inactive=true surfaces logically-deleted templates too."""
-    active = PdfTemplateDTO(1, "active-v1", None, "A", "(?i)a", 1, True, [])
-    inactive = PdfTemplateDTO(2, "inactive-v1", None, "B", "(?i)b", 1, False, [])
+    active = PdfTemplateDTO(1, "active-v1", 1, "A", "(?i)a", 1, True, [])
+    inactive = PdfTemplateDTO(2, "inactive-v1", 2, "B", "(?i)b", 1, False, [])
     repository = FakeTemplateRepository(templates=[active, inactive])
     app.dependency_overrides[get_template_repository] = lambda: repository
     client = _client()
@@ -289,7 +289,7 @@ def test_list_templates_include_inactive_shows_everything() -> None:
 
 def test_get_template_found() -> None:
     """GET /payroll/templates/{template_id} returns the matching template."""
-    template = PdfTemplateDTO(1, "acme-v1", None, "ACME", "(?i)acme", 1, True, [])
+    template = PdfTemplateDTO(1, "acme-v1", 1, "ACME", "(?i)acme", 1, True, [])
     repository = FakeTemplateRepository(templates=[template])
 
     response = _get_template(repository, "acme-v1")
@@ -300,7 +300,7 @@ def test_get_template_found() -> None:
 
 def test_get_template_includes_inactive() -> None:
     """GET by id must find a template even when it's been logically deleted."""
-    template = PdfTemplateDTO(1, "acme-v1", None, "ACME", "(?i)acme", 1, False, [])
+    template = PdfTemplateDTO(1, "acme-v1", 1, "ACME", "(?i)acme", 1, False, [])
     repository = FakeTemplateRepository(templates=[template])
 
     response = _get_template(repository, "acme-v1")
@@ -328,7 +328,7 @@ def test_update_template_replaces_fields() -> None:
     template = PdfTemplateDTO(
         1,
         "acme-v1",
-        None,
+        1,
         "ACME",
         "(?i)acme",
         1,
@@ -398,7 +398,7 @@ def test_update_template_maps_payroll_errors_to_400() -> None:
 
 def test_deactivate_template_flips_is_active() -> None:
     """DELETE /payroll/templates/{template_id} is a logical delete, never a DELETE."""
-    template = PdfTemplateDTO(1, "acme-v1", None, "ACME", "(?i)acme", 1, True, [])
+    template = PdfTemplateDTO(1, "acme-v1", 1, "ACME", "(?i)acme", 1, True, [])
     repository = FakeTemplateRepository(templates=[template])
     app.dependency_overrides[get_template_repository] = lambda: repository
     client = _client()

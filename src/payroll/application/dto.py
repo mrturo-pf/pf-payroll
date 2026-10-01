@@ -520,7 +520,7 @@ class PayrollPeriodRangeDTO(PayrollPeriodRangeFields):
     net_pay_clp: Decimal | None
     is_current: bool
     inferred: bool
-    increase: bool | None = None
+    increase: Decimal | None = None
     salary_base: Decimal | None = None
     worked_days: int | None = None
     is_lookback: bool = False

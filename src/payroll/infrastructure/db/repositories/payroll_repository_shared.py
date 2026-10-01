@@ -1,6 +1,7 @@
 """Shared helpers for SQLAlchemy payroll repositories."""
 
 from calendar import monthrange
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -16,6 +17,7 @@ from payroll.application.errors import (
 )
 from payroll.application.dto import PayrollSummaryDTO
 from payroll.application.ports.repositories import MarketDataRepository
+from payroll.domain.quantizers import quantize_percent
 from payroll.infrastructure.db.models import (
     ContributionCapModel,
     EmployerModel,
@@ -43,6 +45,25 @@ from payroll.shared.dates import (
 
 _NET_PAY_QUANT = Decimal("0.01")
 _IPC_CODE = "IPC_CL"
+_NO_INCREASE_PCT = Decimal("0.00")
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectedFutureMonth:
+    """One future month's projected net_pay_clp and salary_base increase_pct.
+
+    `increase_pct` is the percentage variation of (normalized) salary_base
+    this month represents vs. the preceding one -- 0.00 whenever this month
+    is not a scheduled increase month, or whenever it is one but the
+    percentage could not be computed/was floored (see _apply_ipc_step).
+    `net_pay_clp` is independently nullable: it degrades to None whenever
+    there is no first-month UF prediction to replicate/step from (e.g. a
+    pf-rates outage), even on months where increase_pct is still a real,
+    computable number from IPC data alone.
+    """
+
+    net_pay_clp: Decimal | None
+    increase_pct: Decimal
 
 
 def build_net_pay_warning(
@@ -223,13 +244,13 @@ async def predict_next_period_net_pay(
 
 
 async def _apply_ipc_step(
-    current_value: Decimal,
+    current_value: Decimal | None,
     *,
     last_increase_period: date | None,
     latest_index: tuple[date, Decimal] | None,
     increase_month: date,
     market_data_repository: MarketDataRepository,
-) -> tuple[Decimal, date | None]:
+) -> tuple[Decimal | None, date | None, Decimal]:
     """Step `current_value` up by cumulative IPC since the last real increase.
 
     There is no reliable IPC figure yet for `increase_month` itself (it is
@@ -244,43 +265,77 @@ async def _apply_ipc_step(
 
     Any missing ingredient (no prior real increase to anchor on, no IPC
     data at all, or a zero/negative baseline) degrades gracefully: the
-    value is left unchanged and the anchor does not advance, so a later
+    value is left unchanged, the anchor does not advance (so a later
     increase month in the same window still compares against the true
     last real increase instead of silently treating this skipped one as
-    a 0% raise.
+    a 0% raise), and the reported increase_pct is 0.00 (no quantifiable
+    change -- see ProjectedFutureMonth).
 
     Deflation floor: if the latest published IPC is *lower* than the IPC
     at the last real increase, the previous net pay is kept as-is instead
     of being reduced -- salaries do not get cut due to deflation in
     practice, only held flat (explicit user requirement, see
     docs/proposals/net-pay-prediction-reimplementation-design-plan.md).
-    Same non-advancing-anchor treatment as the other degradation paths
-    above: a later increase month still compares against the true last
-    real increase, so any eventual rebound in prices is not lost.
+    Same non-advancing-anchor/0.00-percentage treatment as the other
+    degradation paths above: a later increase month still compares against
+    the true last real increase, so any eventual rebound in prices is not
+    lost.
+
+    `current_value` may be None (no first-month UF prediction to step --
+    e.g. a pf-rates outage at that unrelated step): the increase_pct is
+    still computed from IPC data alone when possible, it is only the
+    stepped net_pay that stays None, passed through unchanged.
 
     Returns:
-        Tuple of (possibly stepped value, anchor to use for the *next*
-        increase month encountered).
+        Tuple of (possibly stepped value or None, anchor to use for the
+        *next* increase month encountered, increase_pct this step
+        represents -- 0.00 when no real step was applied for any of the
+        reasons above).
     """
     if last_increase_period is None or latest_index is None:
-        return current_value, last_increase_period
+        return current_value, last_increase_period, _NO_INCREASE_PCT
     latest_period, latest_value = latest_index
     if latest_period > increase_month:
-        return current_value, last_increase_period
+        return current_value, last_increase_period, _NO_INCREASE_PCT
     last_increase_index = await market_data_repository.get_economic_index_value(
         _IPC_CODE, last_increase_period.year, last_increase_period.month
     )
     if last_increase_index is None or last_increase_index <= 0:
-        return current_value, last_increase_period
+        return current_value, last_increase_period, _NO_INCREASE_PCT
     if latest_value < last_increase_index:
-        return current_value, last_increase_period
-    stepped = (current_value * latest_value / last_increase_index).quantize(
-        _NET_PAY_QUANT
+        return current_value, last_increase_period, _NO_INCREASE_PCT
+    increase_pct = quantize_percent((latest_value / last_increase_index - 1) * 100)
+    stepped = (
+        (current_value * latest_value / last_increase_index).quantize(_NET_PAY_QUANT)
+        if current_value is not None
+        else None
     )
-    return stepped, increase_month
+    return stepped, increase_month, increase_pct
 
 
-async def project_future_net_pay_series(
+def degraded_future_months(
+    first_future_net_pay_clp: Decimal | None,
+) -> dict[int, ProjectedFutureMonth]:
+    """Build the fallback series used whenever IPC data cannot be checked at all.
+
+    Shared by project_future_months() itself (no market_data_repository
+    wired in) and list_period_ranges() (market_data_repository wired in,
+    but a PayrollDependencyError means pf-rates itself is unreachable right
+    now) -- both degrade identically from the caller's perspective: there
+    is no way to check IPC, so increase_pct is 0.00 everywhere, and
+    net_pay_clp only survives for month_offset 1 (it never depended on
+    this lookup in the first place).
+    """
+    return {
+        month_offset: ProjectedFutureMonth(
+            net_pay_clp=first_future_net_pay_clp if month_offset == 1 else None,
+            increase_pct=_NO_INCREASE_PCT,
+        )
+        for month_offset in range(1, 13)
+    }
+
+
+async def project_future_months(
     first_future_net_pay_clp: Decimal | None,
     *,
     current_year: int,
@@ -288,24 +343,39 @@ async def project_future_net_pay_series(
     first_increase_period: date,
     increase_frequency: int,
     market_data_repository: MarketDataRepository | None,
-) -> dict[int, Decimal | None]:
-    """Project net_pay_clp for future months 2 through 12.
+) -> dict[int, ProjectedFutureMonth]:
+    """Project net_pay_clp and increase_pct for future months 1 through 12.
 
-    The UF-based prediction (predict_next_period_net_pay) only ever covers
-    month_offset 1 -- projecting its own ratio-based assumptions any
-    further loses accuracy fast. Instead, months 2-12 replicate that first
-    prediction unchanged until an employer-configured increase month is
-    reached, at which point the value is stepped up by cumulative IPC
-    since the last real increase (see _apply_ipc_step) and the stepped
-    value becomes the new baseline replicated forward from there.
+    net_pay_clp for month_offset 1 always mirrors the UF-based prediction
+    (predict_next_period_net_pay) unchanged -- projecting its own
+    ratio-based assumptions any further loses accuracy fast. Months 2-12
+    replicate that first prediction unchanged until an employer-configured
+    increase month is reached, at which point the value is stepped up by
+    cumulative IPC since the last real increase (see _apply_ipc_step) and
+    the stepped value becomes the new baseline replicated forward from
+    there. In the rare case month_offset 1 itself lands on a scheduled
+    increase month, its own displayed net_pay_clp still stays the raw UF
+    prediction (by design, the two are different, equally valid estimation
+    methods for the same event), but the internal running value used to
+    seed month_offset 2 onward does pick up that step -- so the configured
+    raise is never silently lost even in that edge case.
+
+    increase_pct is independent of net_pay_clp and covers all 12 months
+    uniformly: it reflects the IPC-based percentage of this scheduled
+    salary_base change, 0.00 on non-increase months or whenever IPC data
+    is insufficient to compute a real figure (see _apply_ipc_step).
+
+    Like predict_next_period_net_pay(), this function lets
+    PayrollDependencyError propagate on a pf-rates outage rather than
+    catching it -- list_period_ranges() is the single try/except boundary
+    responsible for degrading gracefully (same convention, see its own
+    docstring and degraded_future_months() above).
 
     Returns:
-        Mapping of month_offset (2..12) to its projected net_pay_clp, or
-        an empty mapping if there is nothing to project from (no first
-        future prediction available).
+        Mapping of month_offset (1..12) to its ProjectedFutureMonth.
     """
-    if first_future_net_pay_clp is None or market_data_repository is None:
-        return {}
+    if market_data_repository is None:
+        return degraded_future_months(first_future_net_pay_clp)
 
     current_value = first_future_net_pay_clp
     last_increase_period = resolve_last_increase_period(
@@ -315,23 +385,29 @@ async def project_future_net_pay_series(
     )
     latest_index = await market_data_repository.get_latest_economic_index(_IPC_CODE)
 
-    series: dict[int, Decimal | None] = {}
-    for month_offset in range(2, 13):
+    series: dict[int, ProjectedFutureMonth] = {}
+    for month_offset in range(1, 13):
         period_month = add_months(date(current_year, current_month, 1), month_offset)
+        increase_pct = _NO_INCREASE_PCT
         if is_increase_period(
             period_year=period_month.year,
             period_month=period_month.month,
             first_increase_period=first_increase_period,
             increase_frequency=increase_frequency,
         ):
-            current_value, last_increase_period = await _apply_ipc_step(
+            current_value, last_increase_period, increase_pct = await _apply_ipc_step(
                 current_value,
                 last_increase_period=last_increase_period,
                 latest_index=latest_index,
                 increase_month=period_month,
                 market_data_repository=market_data_repository,
             )
-        series[month_offset] = current_value
+        displayed_net_pay = (
+            first_future_net_pay_clp if month_offset == 1 else current_value
+        )
+        series[month_offset] = ProjectedFutureMonth(
+            net_pay_clp=displayed_net_pay, increase_pct=increase_pct
+        )
     return series
 
 

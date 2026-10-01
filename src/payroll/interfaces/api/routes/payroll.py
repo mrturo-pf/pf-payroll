@@ -40,7 +40,7 @@ from payroll.application.dto import (
     PayrollSummaryDTO,
 )
 from payroll.domain.contributions import EmploymentContractKind
-from payroll.domain.quantizers import quantize_clp
+from payroll.domain.quantizers import quantize_clp, quantize_percent
 from payroll.interfaces.api.errors import to_http_exception
 from payroll.interfaces.session import TransactionalSessionScope
 from payroll.application.use_cases.payroll_queries import PayrollQueries
@@ -664,7 +664,7 @@ class PayrollPeriodRangeRead(PayrollPeriodRangeFields):
 
     net_pay_clp: int | None
     position: Literal["previous", "current", "future"]
-    increase: bool | None
+    increase: float | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -699,11 +699,16 @@ def to_payroll_summary_read(summary: PayrollSummaryDTO) -> PayrollSummaryRead:
 def _compute_increase(
     item: PayrollPeriodRangeDTO,
     predecessor: PayrollPeriodRangeDTO | None,
-) -> bool | None:
-    """Return whether salary increased relative to the preceding period.
+) -> Decimal | None:
+    """Return the percentage variation of salary_base vs the preceding period.
 
-    Compares (salary_base / worked_days) * 30 for both periods.
-    Returns None when data is insufficient to determine the direction.
+    Compares (salary_base / worked_days) * 30 for both periods -- the same
+    worked-days normalization this comparison has always used -- and
+    expresses the change as a percentage, quantized to 2 decimals. Returns
+    None when data is insufficient to compute a meaningful percentage: no
+    predecessor, missing salary_base/worked_days on either side, or a
+    zero-salary predecessor baseline (percent change from zero is
+    undefined).
     """
     if (
         predecessor is None
@@ -713,9 +718,13 @@ def _compute_increase(
         or not predecessor.worked_days
     ):
         return None
-    current_normalized = (item.salary_base / item.worked_days) * 30
-    prev_normalized = (predecessor.salary_base / predecessor.worked_days) * 30
-    return current_normalized > prev_normalized
+    current_normalized = (item.salary_base / item.worked_days) * Decimal(30)
+    prev_normalized = (predecessor.salary_base / predecessor.worked_days) * Decimal(30)
+    if prev_normalized == 0:
+        return None
+    return quantize_percent(
+        (current_normalized - prev_normalized) / prev_normalized * Decimal(100)
+    )
 
 
 def to_payroll_period_range_reads(
@@ -738,11 +747,11 @@ def to_payroll_period_range_reads(
             else "future"
         )
         if position in {"previous", "current"}:
-            increase: bool | None = _compute_increase(
+            increase: Decimal | None = _compute_increase(
                 item, period_ranges[index - 1] if index > 0 else None
             )
         else:
-            increase = bool(item.increase)
+            increase = item.increase
         ranges.append(
             PayrollPeriodRangeRead(
                 period_year=item.period_year,
@@ -755,7 +764,7 @@ def to_payroll_period_range_reads(
                     else None
                 ),
                 position=position,
-                increase=increase,
+                increase=(float(increase) if increase is not None else None),
             )
         )
     return ranges

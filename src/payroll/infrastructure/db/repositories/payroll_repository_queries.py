@@ -28,12 +28,14 @@ from payroll.infrastructure.db.models.payroll import (
     PayrollPeriodModel,
 )
 from payroll.infrastructure.db.repositories.payroll_repository_shared import (
+    ProjectedFutureMonth,
     SqlAlchemyPayrollRepositoryBase,
     build_payroll_summary_dto,
+    degraded_future_months,
     predict_next_period_net_pay,
-    project_future_net_pay_series,
+    project_future_months,
 )
-from payroll.shared.dates import add_months, is_increase_period, resolve_payment_date
+from payroll.shared.dates import add_months, resolve_payment_date
 
 
 class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
@@ -91,6 +93,35 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             if candidate_start == payment_date:
                 return candidate_offset
         return payment_month_offset
+
+    async def _project_future_months_or_degrade(
+        self,
+        first_future_net_pay_clp: Decimal | None,
+        *,
+        current_year: int,
+        current_month: int,
+        first_increase_period: date,
+        increase_frequency: int,
+    ) -> dict[int, ProjectedFutureMonth]:
+        """Project future months, degrading gracefully on a pf-rates outage.
+
+        Same philosophy as the first_future_net_pay_clp try/except just
+        above -- a PayrollDependencyError from project_future_months()'s own
+        IPC lookup must not take down this otherwise fully DB-only,
+        always-available endpoint either. See degraded_future_months() for
+        exactly what "degrade" means here.
+        """
+        try:
+            return await project_future_months(
+                first_future_net_pay_clp,
+                current_year=current_year,
+                current_month=current_month,
+                first_increase_period=first_increase_period,
+                increase_frequency=increase_frequency,
+                market_data_repository=self._market_data_repository,
+            )
+        except PayrollDependencyError:
+            return degraded_future_months(first_future_net_pay_clp)
 
     @staticmethod
     def _resolve_increase_frequency(*, configured_frequency: int | None) -> int:
@@ -357,13 +388,12 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             except PayrollDependencyError:
                 first_future_net_pay_clp = None
 
-        future_net_pay_series = await project_future_net_pay_series(
+        future_months = await self._project_future_months_or_degrade(
             first_future_net_pay_clp,
             current_year=current_year,
             current_month=current_month,
             first_increase_period=first_increase_period,
             increase_frequency=effective_increase_frequency,
-            market_data_repository=self._market_data_repository,
         )
         future_ranges = [
             PayrollPeriodRangeDTO(
@@ -384,19 +414,10 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                     payment_fixed_day_roll=current_fixed_day_roll,
                 ),
                 end_date=date(period_month.year, period_month.month, 1),
-                net_pay_clp=(
-                    first_future_net_pay_clp
-                    if month_offset == 1
-                    else future_net_pay_series.get(month_offset)
-                ),
+                net_pay_clp=future_months[month_offset].net_pay_clp,
                 is_current=False,
                 inferred=True,
-                increase=is_increase_period(
-                    period_year=period_month.year,
-                    period_month=period_month.month,
-                    first_increase_period=first_increase_period,
-                    increase_frequency=effective_increase_frequency,
-                ),
+                increase=future_months[month_offset].increase_pct,
             )
             for month_offset, period_month in (
                 (

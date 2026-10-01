@@ -366,3 +366,150 @@ a plain, rounded (no-decimals) JSON number instead for this specific field.
 ### Not yet done
 
 Same as Sections 9/10: no commit, no push, awaiting explicit user authorization.
+
+## 12. `increase` becomes a percentage, not a boolean (2026-10-01)
+
+User request: `increase` on `GET /payroll/period-range` should stop being a
+boolean and instead be a number (2 decimals) representing the percentage
+variation of `salary_base` vs. the immediately preceding period in the
+window.
+
+### Design
+
+Two genuinely different computations feed this one field, depending on
+position -- this duality already existed before today (as a boolean), it is
+not new:
+
+- **`previous`/`current`**: `_compute_increase()` (routes/payroll.py) already
+  compared `(salary_base / worked_days) * 30` between a period and its
+  predecessor to decide True/False. Converting to a percentage was a small,
+  low-risk change: same normalization, same insufficient-data guards (no
+  predecessor in window / missing `salary_base`/`worked_days` on either
+  side), new guard added for a zero-salary predecessor baseline (percent
+  change from zero is undefined -- avoids a `ZeroDivisionError`). Returns
+  `Decimal | None`, quantized via the new `quantize_percent()` helper.
+- **`future`**: previously `is_increase_period()`'s raw calendar boolean
+  (today's cadence check), completely decoupled from any real number.
+  Reusing the *same* IPC ratio already computed to step `net_pay_clp`
+  (`_apply_ipc_step()`) was the natural choice -- it means a stepped future
+  month and its displayed `increase` percentage always agree numerically,
+  instead of exposing two unrelated signals that happened to both be
+  truthy at the same month.
+
+### What changed structurally
+
+- **New**: `domain/quantizers.py::quantize_percent()` -- same pattern as
+  `quantize_clp()`/`quantize_utm()`, 2 decimal places.
+- **`_apply_ipc_step()`** (payroll_repository_shared.py) now returns a
+  3-tuple `(value, anchor, increase_pct)` instead of 2. `increase_pct` is
+  computed from the *raw* ratio independently of whatever rounding happens
+  to `value` -- deliberately NOT derived by re-applying the already-
+  quantized percentage to `current_value`, which would have silently
+  introduced a second, compounding rounding error (verified by hand: at
+  112.18→113.15 the raw-ratio net_pay is 3,145,211.91, but reapplying the
+  *quantized* 0.86% would have produced ≈3,145,065.92 instead -- a ~146
+  peso discrepancy for no reason). `current_value` is now `Decimal | None`
+  (see below) -- a `None` running value still gets a real `increase_pct`
+  computed from IPC alone, it just can't be stepped into an actual amount.
+- **Renamed**: `project_future_net_pay_series()` → `project_future_months()`.
+  Now returns `dict[int, ProjectedFutureMonth]` (new frozen dataclass:
+  `net_pay_clp: Decimal | None`, `increase_pct: Decimal`) covering
+  month_offset **1 through 12** (previously 2-12 only -- month_offset 1's
+  `net_pay_clp` was always special-cased to the UF prediction anyway, but
+  its `increase` boolean used to be computed completely separately, via a
+  second `is_increase_period()` call directly in
+  `list_period_ranges()`'s comprehension). Folding offset 1 into the same
+  walk removes that duplication and -- as a side benefit -- correctly
+  carries forward an anchor-advance even in the near-impossible edge case
+  where offset 1 itself lands on a scheduled increase month (see the
+  function's own docstring for the full reasoning); `net_pay_clp` displayed
+  for offset 1 is *still* always pinned to the raw UF prediction either
+  way, so this is not a behavior change for any realistic configuration
+  (`increase_frequency` would have to be 1 or very unusual for offset 1 to
+  ever coincide with an increase month at all).
+- **New**: `degraded_future_months()` -- extracted because the "no
+  quantifiable data" fallback dict (month_offset 1 keeps its net_pay,
+  2-12 go `None`, `increase_pct` is `0.00` everywhere) is needed in *two*
+  places that must stay in sync: `project_future_months()` itself (no
+  `market_data_repository` wired in at all) and the new
+  `SqlAlchemyPayrollQueryRepository._project_future_months_or_degrade()`
+  (a `market_data_repository` *is* wired in, but it raised
+  `PayrollDependencyError` -- pf-rates is unreachable *right now*). Both
+  failure modes look identical to the caller, so they degrade identically.
+- **Bug caught by the test suite, fixed before merge**: the very first
+  version of `project_future_months()` dropped the old function's
+  `first_future_net_pay_clp is None -> return {}` short-circuit (replaced
+  by decoupling `net_pay_clp` and `increase_pct`'s failure modes, see
+  above), which meant it now unconditionally called
+  `market_data_repository.get_latest_economic_index()` whenever a
+  repository was wired in -- even when `predict_next_period_net_pay()` had
+  *already* caught a `PayrollDependencyError` for that exact repository
+  moments earlier in `list_period_ranges()`. A `FakeMarketDataRepository`
+  configured to raise on every single call (simulating a full pf-rates
+  outage, not just the UF endpoint) made this crash
+  `test_list_period_ranges_degrades_to_none_on_market_data_outage`
+  immediately. Fixed by adding
+  `_project_future_months_or_degrade()` as `list_period_ranges()`'s *own*
+  try/except boundary around this call -- same established convention as
+  `predict_next_period_net_pay()`'s own try/except just above it in the
+  same method (pure port-calling functions propagate
+  `PayrollDependencyError`; `list_period_ranges()` alone is responsible for
+  catching it and degrading).
+- **`PayrollPeriodRangeDTO.increase`**: `bool | None` -> `Decimal | None`.
+- **`PayrollPeriodRangeRead.increase`**: `bool | None` -> `float | None` (a
+  plain JSON number, same `float(...)`-conversion pattern already used for
+  `net_pay_clp` -- not a string, per the user's explicit ask).
+- **`routes/payroll.py`**: `to_payroll_period_range_reads()` no longer
+  wraps the future branch in `bool(...)`; it passes `item.increase` through
+  (already the right type from the DTO).
+
+### Tests
+
+- 10 unit tests directly against the renamed `project_future_months()`
+  rewritten/renamed to assert `.net_pay_clp`/`.increase_pct` on
+  `ProjectedFutureMonth` objects instead of raw `Decimal` dict values, and
+  widened from `len(result) == 11` (month_offset 2..12) to
+  `len(result) == 12` (1..12) where applicable.
+- 2 new/renamed tests specifically for the two "no quantifiable data"
+  degradation paths (`test_project_future_months_nulls_net_pay_without_
+  first_prediction`, `test_project_future_months_degrades_without_
+  repository`) replacing the old "`returns {}`" assertions, since neither
+  path returns an empty dict anymore.
+- `test_sqlalchemy_payroll_repository_marks_scheduled_future_increases`:
+  its assertions now expect `Decimal("0.00")` uniformly (this test's
+  repository has no `market_data_repository` wired in, same as most other
+  `list_period_ranges()` tests in this file) -- its docstring was rewritten
+  to explain this honestly rather than pretend it still exercises the
+  schedule-to-percentage path (that path is covered with real market data
+  by `test_sqlalchemy_payroll_repository_lists_period_ranges_projects_all_
+  future_months` instead, whose own `result[20].increase` assertion is now
+  `Decimal("4.76")`, i.e. `(110.00/105.00 - 1) * 100`).
+- `_compute_increase()`: renamed/rewritten True/False tests to assert
+  `Decimal("20.00")` / `Decimal("-16.67")`; added a new
+  `test_compute_increase_returns_none_for_zero_salary_predecessor` for the
+  new zero-baseline guard (division-by-zero coverage gap caught by the
+  100%-coverage gate).
+- Full API-level JSON-literal and `SalaryFakeQueries`/`LookbackFakeQueries`
+  integration tests in `test_payroll_queries.py` updated to the real
+  computed percentages for their fixture data (20.0, 25.0, 0.0, etc.).
+
+### Validation
+
+- `pytest`: 518 tests passing (520 total minus 3 pre-existing
+  Docker/testcontainers-dependent tests unrelated to this change --
+  confirmed via `git stash` that they fail identically on `main` before
+  this session's commits, root cause a local Docker Desktop mount-path
+  error, not code), 100% coverage on every file this change touched
+  (`interfaces/session.py`'s 54% is exactly those 3 deselected tests).
+- `ruff check` / `ruff format --check` / `mypy src` / `vulture src`: all
+  clean.
+- Live-verified against the restored local Neon data: a *real* historical
+  5.2% raise shows up at 2026-04 (`previous`, actual salary_base data), and
+  the projected 2027-04 future increase now reads `0.86` (matching
+  `(113.15/112.18 - 1) * 100` computed by hand), with every other month
+  reading `0.0`.
+
+### Not yet done
+
+Same as prior sections: no commit, no push, awaiting explicit user
+authorization.

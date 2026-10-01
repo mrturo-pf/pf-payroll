@@ -257,8 +257,8 @@ def test_payroll_detail_endpoint_surfaces_not_found() -> None:
     assert response.json() == {"detail": "Payroll period 9 was not found."}
 
 
-def test_compute_increase_returns_true_when_normalized_salary_rose() -> None:
-    """Increase is true when (salary_base/worked_days)*30 grew vs predecessor."""
+def test_compute_increase_returns_positive_pct_when_normalized_salary_rose() -> None:
+    """Increase is the percentage change when (salary_base/worked_days)*30 grew."""
     current = _make_period_range(
         2026,
         1,
@@ -277,11 +277,11 @@ def test_compute_increase_returns_true_when_normalized_salary_rose() -> None:
         salary_base=Decimal("1000000"),
         worked_days=30,
     )
-    assert _compute_increase(current, predecessor) is True
+    assert _compute_increase(current, predecessor) == Decimal("20.00")
 
 
-def test_compute_increase_returns_false_when_normalized_salary_fell() -> None:
-    """Increase is false when (salary_base/worked_days)*30 dropped vs predecessor."""
+def test_compute_increase_returns_negative_pct_when_normalized_salary_fell() -> None:
+    """Increase is the percentage change (negative) when normalized salary dropped."""
     current = _make_period_range(
         2026,
         1,
@@ -300,7 +300,7 @@ def test_compute_increase_returns_false_when_normalized_salary_fell() -> None:
         salary_base=Decimal("1200000"),
         worked_days=30,
     )
-    assert _compute_increase(current, predecessor) is False
+    assert _compute_increase(current, predecessor) == Decimal("-16.67")
 
 
 def test_compute_increase_returns_none_when_predecessor_has_no_salary() -> None:
@@ -347,7 +347,30 @@ def test_compute_increase_accounts_for_worked_days_normalization() -> None:
         salary_base=Decimal("1000000"),
         worked_days=30,  # (1000000/30)*30 = 1000000
     )
-    assert _compute_increase(current, predecessor) is True
+    assert _compute_increase(current, predecessor) == Decimal("20.00")
+
+
+def test_compute_increase_returns_none_for_zero_salary_predecessor() -> None:
+    """A zero-salary predecessor baseline makes percent change undefined."""
+    current = _make_period_range(
+        2026,
+        1,
+        date(2026, 1, 31),
+        date(2026, 2, 27),
+        None,
+        salary_base=Decimal("1000000"),
+        worked_days=30,
+    )
+    predecessor = _make_period_range(
+        2025,
+        12,
+        date(2025, 12, 31),
+        date(2026, 1, 30),
+        None,
+        salary_base=Decimal("0"),
+        worked_days=30,
+    )
+    assert _compute_increase(current, predecessor) is None
 
 
 def test_period_range_endpoint_computes_increase_for_previous_with_salary_data() -> (
@@ -405,7 +428,7 @@ def test_period_range_endpoint_computes_increase_for_previous_with_salary_data()
                     net_pay_clp=None,
                     is_current=False,
                     inferred=True,
-                    increase=False,
+                    increase=Decimal("0.00"),
                 ),
             ]
 
@@ -422,11 +445,11 @@ def test_period_range_endpoint_computes_increase_for_previous_with_salary_data()
     assert data[0]["position"] == "previous"
     assert data[0]["increase"] is None  # no predecessor in window
     assert data[1]["position"] == "previous"
-    assert data[1]["increase"] is True  # 1200000 > 1000000
+    assert data[1]["increase"] == 20.0  # (1200000-1000000)/1000000 * 100
     assert data[2]["position"] == "current"
-    assert data[2]["increase"] is True  # 1500000 > 1200000 (vs December)
+    assert data[2]["increase"] == 25.0  # (1500000-1200000)/1200000 * 100
     assert data[3]["position"] == "future"
-    assert data[3]["increase"] is False
+    assert data[3]["increase"] == 0.0
 
 
 def test_period_range_oldest_previous_uses_lookback_as_predecessor() -> None:
@@ -482,7 +505,7 @@ def test_period_range_oldest_previous_uses_lookback_as_predecessor() -> None:
                     net_pay_clp=None,
                     is_current=False,
                     inferred=True,
-                    increase=True,
+                    increase=Decimal("0.00"),
                 ),
             ]
 
@@ -500,9 +523,9 @@ def test_period_range_oldest_previous_uses_lookback_as_predecessor() -> None:
     assert len(data) == 3
     assert data[0]["position"] == "previous"
     assert data[0]["period_month"] == 11
-    assert data[0]["increase"] is True  # 1200000 > 1000000 (lookback)
+    assert data[0]["increase"] == 20.0  # (1200000-1000000)/1000000 * 100 (lookback)
     assert data[1]["position"] == "current"
-    assert data[1]["increase"] is False  # 1200000 == 1200000 → not greater → False
+    assert data[1]["increase"] == 0.0  # 1200000 == 1200000 -> 0% change
     assert data[2]["position"] == "future"
 
 

@@ -40,6 +40,7 @@ from payroll.application.dto import (
     PayrollSummaryDTO,
 )
 from payroll.domain.contributions import EmploymentContractKind
+from payroll.domain.quantizers import quantize_clp
 from payroll.interfaces.api.errors import to_http_exception
 from payroll.interfaces.session import TransactionalSessionScope
 from payroll.application.use_cases.payroll_queries import PayrollQueries
@@ -661,7 +662,7 @@ class PayrollSummaryRead(BaseModel):
 class PayrollPeriodRangeRead(PayrollPeriodRangeFields):
     """Represent Payroll Period Range Read."""
 
-    net_pay_clp: str | None
+    net_pay_clp: int | None
     position: Literal["previous", "current", "future"]
     increase: bool | None
 
@@ -749,7 +750,9 @@ def to_payroll_period_range_reads(
                 start_date=item.start_date,
                 end_date=item.end_date,
                 net_pay_clp=(
-                    str(item.net_pay_clp) if item.net_pay_clp is not None else None
+                    int(quantize_clp(item.net_pay_clp))
+                    if item.net_pay_clp is not None
+                    else None
                 ),
                 position=position,
                 increase=increase,

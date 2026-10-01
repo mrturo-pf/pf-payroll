@@ -151,7 +151,7 @@ def test_payroll_query_endpoints() -> None:
             "period_month": 1,
             "start_date": "2026-01-31",
             "end_date": "2026-02-27",
-            "net_pay_clp": "830000",
+            "net_pay_clp": 830000,
             "position": "current",
             "increase": None,
         },

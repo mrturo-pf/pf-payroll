@@ -302,3 +302,67 @@ choice is pinned down and cannot silently regress to the wrong comparison later.
 ### Not yet done
 
 Same as Section 9: no commit, no push, awaiting explicit user authorization.
+
+## 11. Follow-up: `net_pay_clp` as a rounded JSON number, not a string (2026-10-01)
+
+The user noticed `GET /payroll/period-range`'s `net_pay_clp` was a JSON string
+(e.g. `"3145211.91"`, matching every other money field in this API) and asked for
+a plain, rounded (no-decimals) JSON number instead for this specific field.
+
+### Design
+
+- Scoped to exactly one response field: `PayrollPeriodRangeRead.net_pay_clp`
+  (`interfaces/api/routes/payroll.py`). Every other money field in the API
+  (`PayrollSummaryRead.net_pay_clp`, `amount_clp`, `declared_net_pay_clp`, etc.)
+  keeps its existing `str`-serialized `Decimal` convention -- that convention
+  exists to round-trip exact precision over JSON (which has no native arbitrary-
+  precision decimal type), and nothing about those other fields changed. This
+  field is different in kind: it is a *projection/approximation* for `future`
+  entries, already explicitly documented as such, never persisted or reconciled
+  against -- exact-precision round-tripping was never a real requirement for it,
+  unlike a real ledger amount.
+- Rounding reuses the existing `domain/quantizers.py::quantize_clp()` helper
+  (`value.quantize(Decimal("1"))`, i.e. default-context rounding to the nearest
+  whole peso) rather than inventing a new rounding scheme -- this is the exact
+  same helper `tax_calculator.py`/`contribution_calculator.py`/`deflation.py`
+  already use for "round a CLP `Decimal` to zero decimal places" everywhere else
+  in this codebase (DRY: one rounding convention for CLP, not two). The route
+  layer already imports from `domain/` directly elsewhere in this same file
+  (`EmploymentContractKind`), so this does not introduce a new architectural
+  dependency direction.
+- `int(quantize_clp(...))` converts the quantized `Decimal` (now an integral
+  value) to a plain Python `int`, which FastAPI/Pydantic serializes as a bare
+  JSON number.
+
+### What changed
+
+- `interfaces/api/routes/payroll.py`: `PayrollPeriodRangeRead.net_pay_clp` type
+  `str | None` -> `int | None`; its construction in
+  `to_payroll_period_range_reads()` now does
+  `int(quantize_clp(item.net_pay_clp)) if item.net_pay_clp is not None else None`
+  instead of `str(item.net_pay_clp)`.
+- `tests/integration/api/test_payroll_queries.py`: the one JSON-literal assertion
+  covering this field in the `/payroll/period-range` array updated from
+  `"net_pay_clp": "830000"` to `"net_pay_clp": 830000` (unquoted). The other two
+  `"net_pay_clp": "830000"` occurrences in the same file (`/payroll/summary` and
+  `/payroll/{period_id}`'s embedded `summary`) are `PayrollSummaryRead`, a
+  different schema, deliberately left untouched.
+- `docs/api.md`: `GET /payroll/period-range`'s row gained a clause flagging that
+  `net_pay_clp` is, uniquely in this API, a plain rounded JSON number rather than
+  a precision-preserving string.
+- Postman collection: no change -- the "Period range" request already carries an
+  empty description, same as the Stage 2 update.
+
+### Validation
+
+- `pytest`: **520 passed**, 100% coverage maintained.
+- `ruff check` / `ruff format --check` / `mypy src` / `vulture src`: all clean.
+- Live-verified against the restored Neon data once more: `net_pay_clp` values
+  now come back as bare numbers (`3118249`, `3145212`, etc. -- correctly rounded
+  from `3118248.98`/`3145211.91`), confirmed via raw JSON inspection (no
+  surrounding quotes), not just a Python-side `repr()` check that could mask a
+  str-that-looks-like-a-number.
+
+### Not yet done
+
+Same as Sections 9/10: no commit, no push, awaiting explicit user authorization.

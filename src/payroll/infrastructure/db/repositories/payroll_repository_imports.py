@@ -12,6 +12,7 @@ from payroll.application.dto import (
     ImportedPayrollPeriodDTO,
 )
 from payroll.application.errors import PayrollValidationError
+from payroll.application.ports.repositories import MarketDataRepository
 from payroll.infrastructure.db.models import (
     EmployerModel,
     PayrollConceptModel,
@@ -37,9 +38,21 @@ from payroll.shared.dates import add_months
 class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
     """Persistence operations related to payroll imports."""
 
-    def __init__(self, session: AsyncSession) -> None:
-        """Initialize the instance."""
-        super().__init__(session)
+    def __init__(
+        self,
+        session: AsyncSession,
+        market_data_repository: MarketDataRepository | None = None,
+    ) -> None:
+        """Initialize the instance.
+
+        Overrides the shared base's __init__ only to also build the nested
+        SqlAlchemyReferenceDataRepository -- forwards market_data_repository
+        unchanged (see SqlAlchemyPayrollRepositoryBase.__init__'s docstring
+        for why it's optional/defaulted). This mixin is first in
+        SqlAlchemyPayrollRepository's MRO, so without this explicit forward
+        the facade would silently drop the parameter for every caller.
+        """
+        super().__init__(session, market_data_repository)
         self._reference_data_repository = SqlAlchemyReferenceDataRepository(session)
 
     async def _deduce_pension_plan_for_date(self, reference_date: date) -> int:

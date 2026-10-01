@@ -12,6 +12,7 @@ from payroll.application.dto import (
     PayrollPeriodRangeDTO,
     PayrollSummaryDTO,
 )
+from payroll.application.errors import PayrollDependencyError
 from payroll.infrastructure.db.models import (
     EmployerModel,
     HealthInstitutionModel,
@@ -355,15 +356,21 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             ),
         )
 
-        # Calculate predicted net_pay for the first future period
+        # Calculate predicted net_pay for the first future period. A
+        # PayrollDependencyError (pf-rates unreachable/erroring) must not take
+        # down this otherwise fully DB-only, always-available endpoint over
+        # one optional field on one of its 24 rows -- degrade to None instead.
         first_future_net_pay_clp: Decimal | None = None
         if current_row is not None and not current_inferred:
-            first_future_net_pay_clp = await predict_next_period_net_pay(
-                self._session,
-                current_period,
-                date(current_year, current_month, 1),
-                allow_provider_lookup=False,
-            )
+            try:
+                first_future_net_pay_clp = await predict_next_period_net_pay(
+                    self._session,
+                    current_period,
+                    date(current_year, current_month, 1),
+                    self._market_data_repository,
+                )
+            except PayrollDependencyError:
+                first_future_net_pay_clp = None
 
         future_ranges = [
             PayrollPeriodRangeDTO(

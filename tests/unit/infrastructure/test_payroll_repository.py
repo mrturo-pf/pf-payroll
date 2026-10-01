@@ -13,6 +13,7 @@ from helpers.db_fakes import (
     assert_get_session_lifecycle,
 )
 from payroll.application.dto import ExportPayrollFiltersDTO
+from payroll.application.errors import PayrollDependencyError
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
@@ -126,18 +127,42 @@ class FakeSession(FakeResultsQueueBase):
         self.commit_count += 1
 
 
-class FakeFxRateProvider:
-    """Test double for FX provider lookups."""
+class FakeMarketDataRepository:
+    """Test double for MarketDataRepository (the pf-rates-backed port).
 
-    def __init__(self, rates_by_date: dict[date, Decimal | None] | None = None) -> None:
+    Mirrors PfRatesClient's get_exchange_rate_value() shape exactly --
+    predict_next_period_net_pay() no longer does any fallback logic of its
+    own (pf-rates owns the whole DB-hit -> provider -> nearest-prior-date
+    cascade server-side now), so this fake only ever needs a flat
+    date -> value lookup, plus an optional simulated-outage mode.
+    """
+
+    def __init__(
+        self,
+        rates_by_date: dict[date, Decimal | None] | None = None,
+        *,
+        raises: Exception | None = None,
+    ) -> None:
         """Initialize the instance."""
         self._rates_by_date = rates_by_date or {}
+        self._raises = raises
 
-    async def fetch_rate(self, currency_code: str, on: date) -> Decimal | None:
-        """Handle fetch rate."""
+    async def get_exchange_rate_value(
+        self, currency_code: str, rate_date: date
+    ) -> Decimal | None:
+        """Handle get exchange rate value."""
+        if self._raises is not None:
+            raise self._raises
         if currency_code != "UF":
             return None
-        return self._rates_by_date.get(on)
+        return self._rates_by_date.get(rate_date)
+
+    async def get_economic_index_value(
+        self, code: str, period_year: int, period_month: int
+    ) -> Decimal | None:
+        """Handle get economic index value (unused by this fn; completeness only)."""
+        del code, period_year, period_month
+        return None
 
 
 def build_period(
@@ -2193,9 +2218,12 @@ async def test_sqlalchemy_payroll_repository_applies_effective_processing_dates(
     assert result[13].increase is False
 
 
-@pytest.mark.asyncio
-async def test_sqlalchemy_payroll_repository_infers_current_month_offset() -> None:
-    """Test future ranges align to the observed current payment-month offset."""
+def _build_current_period_fixture_session() -> tuple[PayrollPeriodModel, "FakeSession"]:
+    """Build the recurring id=19/June-2026 current-period FakeSession fixture.
+
+    Shared by the two list_period_ranges() tests below that only differ in
+    which market_data_repository (if any) they pass to the repository.
+    """
     current_period = PayrollPeriodModel(
         id=19,
         employer_id=1,
@@ -2212,6 +2240,13 @@ async def test_sqlalchemy_payroll_repository_infers_current_month_offset() -> No
             FakeResult(scalar_rows=[]),
         ]
     )
+    return current_period, session
+
+
+@pytest.mark.asyncio
+async def test_sqlalchemy_payroll_repository_infers_current_month_offset() -> None:
+    """Test future ranges align to the observed current payment-month offset."""
+    current_period, session = _build_current_period_fixture_session()
     repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
     result = await repository.list_period_ranges(today=date(2026, 6, 11))
@@ -2224,6 +2259,30 @@ async def test_sqlalchemy_payroll_repository_infers_current_month_offset() -> No
     assert result[13].period_month == 7
     assert result[13].start_date == date(2026, 6, 26)
     assert result[13].end_date == date(2026, 7, 29)
+
+
+@pytest.mark.asyncio
+async def test_list_period_ranges_degrades_to_none_on_market_data_outage() -> None:
+    """A pf-rates outage must not 500 the whole endpoint -- just null that one field.
+
+    See docs/proposals/net-pay-prediction-reimplementation-design-
+    recommendation.md, Section 4: list_period_ranges() is the single
+    try/except boundary responsible for this, not predict_next_period_net_pay()
+    itself (which must keep propagating the real error -- see
+    test_predict_next_period_net_pay_propagates_dependency_error above).
+    """
+    _current_period, session = _build_current_period_fixture_session()
+    market_data_repository = FakeMarketDataRepository(
+        raises=PayrollDependencyError("pf-rates is unreachable.")
+    )
+    repository = SqlAlchemyPayrollRepository(  # type: ignore[arg-type]
+        session, market_data_repository
+    )
+
+    result = await repository.list_period_ranges(today=date(2026, 6, 11))
+
+    assert result[12].is_current is True
+    assert result[13].net_pay_clp is None
 
 
 def test_sqlalchemy_payroll_repository_keeps_configured_offset_when_unmatched() -> None:
@@ -2602,19 +2661,27 @@ def test_get_last_day_of_month_when_input_is_month_end() -> None:
 
 
 @pytest.mark.asyncio
+async def test_predict_next_period_net_pay_returns_none_without_repository() -> None:
+    """No market_data_repository means the feature is not wired in -- None, no I/O."""
+    current_period = build_june_2026_period()
+    session = FakeSession([])
+
+    result = await predict_next_period_net_pay(
+        session, current_period, date(2026, 6, 1), None
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
 async def test_predict_next_period_net_pay_returns_none_for_missing_uf() -> None:
     """Test predict_next_period_net_pay returns None when UF data is missing."""
     current_period = build_june_2026_period()
-    session = FakeSession(
-        [
-            FakeResult(scalar_one=None),  # uf_current month-end missing
-            FakeResult(scalar_one=None),  # latest UF in DB missing
-        ]
-    )
-    fx_provider = FakeFxRateProvider()
+    session = FakeSession([])
+    market_data_repository = FakeMarketDataRepository()  # empty -> no UF for any date
 
     result = await predict_next_period_net_pay(
-        session, current_period, date(2026, 6, 1), fx_provider=fx_provider
+        session, current_period, date(2026, 6, 1), market_data_repository
     )
 
     assert result is None
@@ -2626,65 +2693,85 @@ async def test_predict_next_period_net_pay_returns_none_for_missing_income() -> 
     current_period = build_june_2026_period()
     session = FakeSession(
         [
-            FakeResult(scalar_one=Decimal("40821.18")),  # uf_current
             FakeResult(joined_rows=[]),  # items (empty)
         ]
     )
-    fx_provider = FakeFxRateProvider()
-
-    result = await predict_next_period_net_pay(
-        session, current_period, date(2026, 6, 1), fx_provider=fx_provider
+    market_data_repository = FakeMarketDataRepository(
+        {date(2026, 6, 30): Decimal("40821.18")}
     )
 
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_predict_next_period_net_pay_stub_returns_none() -> None:
-    """Test predict_next_period_net_pay always returns None (pending pf-rates)."""
-    current_period = build_june_2026_period()
-    session = FakeSession([])
     result = await predict_next_period_net_pay(
-        session, current_period, date(2026, 6, 1)
+        session, current_period, date(2026, 6, 1), market_data_repository
     )
+
     assert result is None
 
 
 @pytest.mark.asyncio
 async def test_predict_next_period_net_pay_returns_none_without_historical_uf() -> None:
-    """Test UF-dependent prediction returns None when no historical UF is available."""
+    """Test UF-dependent prediction returns None when the reference UF is missing."""
     current_period = build_june_2026_period(worked_days=30)
     session = FakeSession(
         [
-            FakeResult(
-                scalar_one=Decimal("41000.00")
-            ),  # selected UF for prediction target
             FakeResult(joined_rows=_HEALTH_UF_ITEMS),  # items
-            FakeResult(scalar_one=None),  # exact current-period UF missing
-            FakeResult(scalar_one=None),  # latest historical UF missing
         ]
+    )
+    # Only the month-end UF is known; current_period.payment_date's UF is not,
+    # and _HEALTH_UF_ITEMS has a nonzero HEALTH_ADDITIONAL_UF, so that second
+    # lookup is required and, missing, must short-circuit to None.
+    market_data_repository = FakeMarketDataRepository(
+        {date(2026, 6, 30): Decimal("41000.00")}
     )
 
     result = await predict_next_period_net_pay(
-        session, current_period, date(2026, 6, 1)
+        session, current_period, date(2026, 6, 1), market_data_repository
     )
 
     assert result is None
 
 
+@pytest.mark.asyncio
+async def test_predict_next_period_net_pay_propagates_dependency_error() -> None:
+    """A pf-rates outage must surface as PayrollDependencyError, not a silent None.
+
+    list_period_ranges() is the one responsible for catching this at its own
+    call-site boundary and degrading to None there -- this function itself
+    must not swallow it, or that boundary would never see a real failure to
+    distinguish from "pf-rates genuinely has no UF value".
+    """
+    current_period = build_june_2026_period()
+    session = FakeSession([])
+    market_data_repository = FakeMarketDataRepository(
+        raises=PayrollDependencyError("pf-rates is unreachable.")
+    )
+
+    with pytest.raises(PayrollDependencyError):
+        await predict_next_period_net_pay(
+            session, current_period, date(2026, 6, 1), market_data_repository
+        )
+
+
 async def _predict_june_2026(
     current_period: PayrollPeriodModel,
     items: list[tuple[Decimal, str]],
+    *,
+    uf_current: Decimal = Decimal("40821.18"),
+    reference_uf: Decimal = Decimal("40821.18"),
 ) -> Decimal | None:
     """Run predict_next_period_net_pay for a June-2026 period with the given items."""
     session = FakeSession(
         [
-            FakeResult(scalar_one=Decimal("40821.18")),  # uf_current
             FakeResult(joined_rows=items),  # items
         ]
     )
+    market_data_repository = FakeMarketDataRepository(
+        {
+            date(2026, 6, 30): uf_current,
+            current_period.payment_date: reference_uf,
+        }
+    )
     return await predict_next_period_net_pay(
-        session, current_period, date(2026, 6, 1), fx_provider=FakeFxRateProvider()
+        session, current_period, date(2026, 6, 1), market_data_repository
     )
 
 
@@ -2701,3 +2788,67 @@ async def test_predict_next_period_net_pay_returns_none_zero_net_pay() -> None:
     result = await _predict_june_2026(current_period, items)
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_predict_next_period_net_pay_calculates_correctly() -> None:
+    """Test prediction recalculates UF-based discounts with selected UF.
+
+    Worked example from docs/proposals/net-pay-prediction-reimplementation-
+    design-recommendation.md, Section 2 (recovered verbatim from the
+    pre-pf-rates implementation, commit bdc3d29).
+    """
+    current_period = build_june_2026_period(worked_days=30)
+    items = [
+        (Decimal("3000000"), "SALARY_BASE"),
+        (Decimal("200000"), "LEGAL_GRATUITY"),
+        (Decimal("100000"), "TELEWORK_REFUND"),
+        (Decimal("35000"), "HEALTH_ADDITIONAL_UF"),
+        (Decimal("8000"), "HEALTH_INSURANCE_EMPLOYER_CONTRIBUTION"),
+        (Decimal("100000"), "PENSION_BASE"),
+        (Decimal("50000"), "HEALTH_BASE"),
+        (Decimal("30000"), "HEALTH_INSURANCE"),
+        (Decimal("50000"), "INCOME_TAX"),
+    ]
+    selected_uf = Decimal("40821.18")
+    current_reference_uf = Decimal("40000.00")
+
+    result = await _predict_june_2026(
+        current_period,
+        items,
+        uf_current=selected_uf,
+        reference_uf=current_reference_uf,
+    )
+
+    employer_uf_quantity = Decimal("8000") / current_reference_uf
+    future_employer_contribution = employer_uf_quantity * selected_uf
+    future_health_additional_uf = (
+        Decimal("35000") / current_reference_uf
+    ) * selected_uf
+    expected_gross = Decimal("3300000") + future_employer_contribution
+    expected_discount_ratio = Decimal("230000") / Decimal("3308000")
+    expected_discounts = (
+        expected_gross * expected_discount_ratio
+    ) + future_health_additional_uf
+    expected_net_pay = expected_gross - expected_discounts
+
+    assert result == expected_net_pay.quantize(Decimal("0.01"))
+
+
+@pytest.mark.asyncio
+async def test_predict_next_period_net_pay_adjusts_for_worked_days() -> None:
+    """A partial-month current period projects income/discounts to 30 days first."""
+    current_period = build_june_2026_period(worked_days=15)
+    items = [
+        (Decimal("1500000"), "SALARY_BASE"),
+        (Decimal("50000"), "PENSION_BASE"),
+        (Decimal("25000"), "INCOME_TAX"),
+    ]
+
+    result = await _predict_june_2026(current_period, items)
+
+    projected_gross = Decimal("1500000") * Decimal(30) / Decimal(15)
+    discount_ratio = Decimal("75000") / Decimal("1500000")
+    expected_net_pay = projected_gross - (projected_gross * discount_ratio)
+
+    assert result == expected_net_pay.quantize(Decimal("0.01"))

@@ -77,8 +77,15 @@ def get_reference_data_queries(
 def get_payroll_repository(
     session: AsyncSession = Depends(get_session),
 ) -> PayrollRepository:
-    """Get payroll repository."""
-    return SqlAlchemyPayrollRepository(session)
+    """Get payroll repository.
+
+    Wires in a real MarketDataRepository (PfRatesClient) so
+    list_period_ranges() can predict the first future period's net_pay_clp
+    via pf-rates-backed UF values; every other PayrollRepository consumer
+    simply never reads it. See docs/proposals/net-pay-prediction-
+    reimplementation-design-recommendation.md.
+    """
+    return SqlAlchemyPayrollRepository(session, get_market_data_repository())
 
 
 def get_market_data_repository() -> MarketDataRepository:
@@ -153,8 +160,15 @@ async def get_transactional_session() -> AsyncIterator[TransactionalSessionScope
 def get_transactional_payroll_repository(
     scope: TransactionalSessionScope = Depends(get_transactional_session),
 ) -> PayrollRepository:
-    """Get a payroll repository bound to the transactional session scope."""
-    return SqlAlchemyPayrollRepository(scope.session)
+    """Get a payroll repository bound to the transactional session scope.
+
+    Also wired with a real MarketDataRepository, mirroring
+    get_payroll_repository() above, so behavior never silently diverges
+    between the two -- list_period_ranges() is read-only and never actually
+    reached through this transactional path today, but there is no reason
+    for the two factories to drift.
+    """
+    return SqlAlchemyPayrollRepository(scope.session, get_market_data_repository())
 
 
 def get_transactional_complementary_insurance_repository(

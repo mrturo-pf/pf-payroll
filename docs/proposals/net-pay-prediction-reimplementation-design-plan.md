@@ -672,3 +672,127 @@ local Neon data: `list(data[0].keys())` now returns exactly
 
 Not yet committed/pushed -- awaiting explicit user authorization, same as
 every prior section.
+
+## 15. N-month IPC extrapolation, implemented (2026-10-02)
+
+Implements `docs/proposals/future-increase-ipc-extrapolation-design-
+recommendation.md` in full. Summary of what actually landed (the
+recommendation's own Sections 1-9 already cover the full rationale, not
+repeated here):
+
+- **`_extrapolate_cycle_ratio()`** (new, `payroll_repository_shared.py`):
+  takes the raw M-month `real_ratio` and, when `missing_months =
+  increase_frequency - months_elapsed` is positive, compounds a geometric
+  monthly rate (derived from a trailing `increase_frequency`-month IPC
+  window ending at `latest_period`) across those missing months. Falls
+  back to `real_ratio` alone -- identical to pre-change behavior -- the
+  moment there is nothing left to extrapolate (`missing_months <= 0`) or
+  the trailing-window IPC figure isn't available/valid. Exactly matches
+  the recommendation's Section 6 helper signature and Section 4's worked
+  example numerically (`4.05%` / `3,244,420.33` CLP on the brief's own
+  scenario).
+- **`_apply_ipc_step()`**: gained the `increase_frequency` parameter
+  (already available at its one call site, pure plumbing) and now computes
+  `total_ratio` via the helper above instead of the bare M-month ratio
+  inline; the deflation floor (`total_ratio < 1`) is gated on this
+  consolidated ratio, not the raw M-month one (recommendation Section 5).
+- **Tests** (`test_payroll_repository.py`): the existing worked-example
+  test (`test_project_future_months_replicates_until_next_increase`) was
+  updated with the recommendation's own trailing-anchor fixture value
+  (IPC_CL 108.00 at 2025-08) so it now asserts the corrected `4.05%` /
+  `3,244,420.33` instead of the previously-undercounted `0.86%` -- this is
+  the brief's own motivating example, it had to reflect the fixed behavior.
+  Two new tests close the coverage gap the implementation alone left open
+  (lines 298-300 of `_extrapolate_cycle_ratio()`'s happy path were
+  otherwise never exercised -- every pre-existing fixture happened to omit
+  trailing-window data, which only proved the *fallback* branch, not the
+  real extrapolation): one proves the `M >= N` cheap path never even
+  attempts the trailing-window fetch (asserts `FakeMarketDataRepository`'s
+  new call log, not just the resulting number), and one proves the
+  deflation floor is gated on the consolidated ratio by constructing a case
+  where the raw M-month ratio alone is mildly inflationary but the
+  extrapolated ratio is not.
+- **Result**: 101 tests in this file (up from 99), 526 passing overall,
+  `payroll_repository_shared.py` back to 100% line *and* branch coverage
+  (branch gaps at 190->182/223->227 are pre-existing, unrelated `for`-loop
+  partials elsewhere in the file, not touched by this change). ruff
+  check/format and mypy clean on both touched files (mypy's 21
+  pre-existing `SimpleNamespace`/`FakeResult` typing warnings elsewhere in
+  the test file are unchanged -- same count before and after, just at
+  shifted line numbers -- out of scope for this change). Full-suite
+  `--cov-fail-under=100` still fails only on `interfaces/session.py`
+  (pre-existing, requires the Docker-backed integration tests that can't
+  run in this environment -- unrelated to this change).
+
+Not yet committed/pushed -- awaiting explicit user authorization, same as
+every prior section.
+
+## 16. Increase steps now scale salary_base, not net_pay (2026-10-02)
+
+**User correction (2026-10-02):** after validating Section 15's
+extrapolation against live data (employer 9, WALMART-CHILE), the user
+flagged that an increase month's step was being applied to the whole
+`net_pay_clp` figure instead of to the salary_base-driven portion, with
+the usual per-payroll discount math reapplied from there. This was a real
+bug, independent of the extrapolation ratio itself (which the user
+confirmed was correct): `predict_next_period_net_pay()`'s first-month
+prediction already decomposes into a salary_base-driven amount (gross net
+of the period's own proportional non-UF discount ratio) and a UF-driven
+amount (`HEALTH_ADDITIONAL_UF`, netted against the employer's UF-converted
+health contribution) -- but `project_future_months()` only ever saw the
+single already-combined `net_pay_clp` number, so every later increase step
+multiplied *both* components by the same IPC-derived ratio. The UF-driven
+component tracks the UF/CLP exchange rate, not a salary raise, so
+multiplying it by the raise ratio silently mis-stated every future month's
+`net_pay_clp` for any employer with a nonzero UF-indexed discount, by an
+amount that grows with each subsequent step.
+
+- **`PredictedNetPayBaseline`** (new, `payroll_repository_shared.py`):
+  `predict_next_period_net_pay()` now returns this instead of a bare
+  `Decimal`. `net_pay_clp` is unchanged (`scalable_clp - fixed_uf_clp`,
+  both quantized to cents before subtracting so the identity holds exactly,
+  no independent-rounding drift). `scalable_clp` is the salary_base-driven
+  portion; `fixed_uf_clp` is `HEALTH_ADDITIONAL_UF`'s netted CLP amount.
+- **`project_future_months()`**: takes `first_future_baseline:
+  PredictedNetPayBaseline | None` instead of a bare Decimal. Tracks
+  `current_scalable`/`fixed_uf_clp` separately; `_apply_ipc_step()` (now
+  parameterized as `current_scalable`, same math otherwise) only ever
+  scales the former. Every displayed month recombines
+  `current_scalable - fixed_uf_clp` -- `fixed_uf_clp` itself never
+  changes after month 1, there being no future UF forecast to recompute it
+  against (same "nothing better available" reasoning as every other
+  degrade-gracefully path in this subsystem).
+- **Call site** (`payroll_repository_queries.py`): `first_future_baseline`
+  threaded through `_project_future_months_or_degrade()` unchanged in
+  spirit -- a `PayrollDependencyError` still degrades to
+  `degraded_future_months(baseline.net_pay_clp if baseline else None)`,
+  since the degraded path never steps anything regardless.
+- **Tests**: `test_predict_next_period_net_pay_calculates_correctly` and
+  `..._adjusts_for_worked_days` now assert `.net_pay_clp`/`.scalable_clp`/
+  `.fixed_uf_clp` individually instead of comparing a bare Decimal. Every
+  existing `project_future_months()` test (11 call sites) wraps its
+  Decimal fixture through a new `_baseline()` test helper defaulting
+  `fixed_uf_clp=0` -- i.e. `scalable_clp == net_pay_clp`, reproducing the
+  pre-fix numeric behavior exactly for every test not specifically about
+  this split. One new test,
+  `test_project_future_months_does_not_scale_uf_driven_portion`, pins the
+  actual fix: a baseline with `scalable_clp=1,000,000` /
+  `fixed_uf_clp=100,000` (`net_pay_clp=900,000`) stepped by a real ratio of
+  1.10 must land on `1,000,000` (`1,100,000 - 100,000`) at the next
+  replicated month, not `990,000` (`900,000 * 1.10`) -- the number the
+  pre-fix bug would have produced.
+- **Result**: 102 tests in this file (up from 101), 527 passing overall,
+  both touched production files back to 100% line coverage. ruff
+  check/format clean; mypy clean on both production files (the test
+  file's pre-existing 21 `SimpleNamespace`/`FakeResult` typing warnings are
+  unchanged in count, just shifted line numbers -- out of scope here, same
+  as Section 15). `docs/api.md`'s `/payroll/period-range` description
+  updated in the same change to describe the split. Real-data impact: any
+  employer with a nonzero `HEALTH_ADDITIONAL_UF` whose projection crosses
+  an increase month will see a (small, correct) change in its projected
+  `net_pay_clp` from this point forward; employers without that discount
+  (the common case, and every pre-existing end-to-end test fixture) are
+  numerically unaffected.
+
+Not yet committed/pushed -- awaiting explicit user authorization, same as
+every prior section.

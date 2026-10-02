@@ -50,6 +50,7 @@ from payroll.infrastructure.db.repositories.payroll_repository import (
     SqlAlchemyPayrollRepository,
 )
 from payroll.infrastructure.db.repositories.payroll_repository_shared import (
+    PredictedNetPayBaseline,
     build_net_pay_warning,
     get_last_day_of_month,
     predict_next_period_net_pay,
@@ -57,6 +58,25 @@ from payroll.infrastructure.db.repositories.payroll_repository_shared import (
     resolve_currency_equivalents,
 )
 from payroll.interfaces.api import dependencies
+
+
+def _baseline(
+    net_pay_clp: Decimal, *, fixed_uf_clp: Decimal = Decimal("0")
+) -> PredictedNetPayBaseline:
+    """Build a PredictedNetPayBaseline for tests that don't care about the UF split.
+
+    Defaults `fixed_uf_clp` to 0 -- i.e. `scalable_clp == net_pay_clp` -- which
+    reproduces the pre-split behavior exactly (the whole net_pay_clp scales at
+    an increase step) for every test that isn't specifically about the
+    UF-doesn't-scale-with-a-raise fix. Tests that do care pass a nonzero
+    `fixed_uf_clp` explicitly (see test_project_future_months_does_not_scale_
+    uf_driven_portion).
+    """
+    return PredictedNetPayBaseline(
+        net_pay_clp=net_pay_clp,
+        scalable_clp=net_pay_clp + fixed_uf_clp,
+        fixed_uf_clp=fixed_uf_clp,
+    )
 
 
 class FakeResult(FakeAllMixin):
@@ -154,6 +174,7 @@ class FakeMarketDataRepository:
         self._economic_index_by_period = economic_index_by_period or {}
         self._latest_economic_index = latest_economic_index or {}
         self._rates_by_currency_date = rates_by_currency_date or {}
+        self.economic_index_calls: list[tuple[str, int, int]] = []
 
     async def get_exchange_rate_value(
         self, currency_code: str, rate_date: date
@@ -172,6 +193,7 @@ class FakeMarketDataRepository:
         self, code: str, period_year: int, period_month: int
     ) -> Decimal | None:
         """Handle get economic index value."""
+        self.economic_index_calls.append((code, period_year, period_month))
         if self._raises is not None:
             raise self._raises
         return self._economic_index_by_period.get((code, period_year, period_month))
@@ -2871,7 +2893,7 @@ async def _predict_june_2026(
     *,
     uf_current: Decimal = Decimal("40821.18"),
     reference_uf: Decimal = Decimal("40821.18"),
-) -> Decimal | None:
+) -> PredictedNetPayBaseline | None:
     """Run predict_next_period_net_pay for a June-2026 period with the given items."""
     session = FakeSession(
         [
@@ -2933,6 +2955,7 @@ async def test_predict_next_period_net_pay_calculates_correctly() -> None:
         uf_current=selected_uf,
         reference_uf=current_reference_uf,
     )
+    assert result is not None
 
     employer_uf_quantity = Decimal("8000") / current_reference_uf
     future_employer_contribution = employer_uf_quantity * selected_uf
@@ -2941,12 +2964,19 @@ async def test_predict_next_period_net_pay_calculates_correctly() -> None:
     ) * selected_uf
     expected_gross = Decimal("3300000") + future_employer_contribution
     expected_discount_ratio = Decimal("230000") / Decimal("3308000")
-    expected_discounts = (
-        expected_gross * expected_discount_ratio
-    ) + future_health_additional_uf
-    expected_net_pay = expected_gross - expected_discounts
+    expected_non_uf_discounts = expected_gross * expected_discount_ratio
+    expected_scalable = (expected_gross - expected_non_uf_discounts).quantize(
+        Decimal("0.01")
+    )
+    expected_fixed_uf = future_health_additional_uf.quantize(Decimal("0.01"))
+    expected_net_pay = expected_scalable - expected_fixed_uf
 
-    assert result == expected_net_pay.quantize(Decimal("0.01"))
+    assert result.net_pay_clp == expected_net_pay
+    # The split: scalable_clp is what a later raise should scale, fixed_uf_clp
+    # (HEALTH_ADDITIONAL_UF, UF-driven) is what it must leave alone -- see
+    # PredictedNetPayBaseline's own docstring and project_future_months().
+    assert result.scalable_clp == expected_scalable
+    assert result.fixed_uf_clp == expected_fixed_uf
 
 
 @pytest.mark.asyncio
@@ -2960,12 +2990,16 @@ async def test_predict_next_period_net_pay_adjusts_for_worked_days() -> None:
     ]
 
     result = await _predict_june_2026(current_period, items)
+    assert result is not None
 
     projected_gross = Decimal("1500000") * Decimal(30) / Decimal(15)
     discount_ratio = Decimal("75000") / Decimal("1500000")
     expected_net_pay = projected_gross - (projected_gross * discount_ratio)
 
-    assert result == expected_net_pay.quantize(Decimal("0.01"))
+    assert result.net_pay_clp == expected_net_pay.quantize(Decimal("0.01"))
+    # No UF-driven discount item here -- the whole prediction is scalable.
+    assert result.scalable_clp == result.net_pay_clp
+    assert result.fixed_uf_clp == Decimal("0.00")
 
 
 @pytest.mark.asyncio
@@ -3002,7 +3036,7 @@ async def test_project_future_months_degrades_without_repository() -> None:
     first_future_net_pay_clp = Decimal("3118248.98")
 
     result = await project_future_months(
-        first_future_net_pay_clp,
+        _baseline(first_future_net_pay_clp),
         current_year=2026,
         current_month=9,
         first_increase_period=date(2026, 4, 1),
@@ -3022,15 +3056,25 @@ async def test_project_future_months_replicates_until_next_increase() -> None:
 
     Worked example verified against real restored Neon data during local
     debugging -- see docs/proposals/net-pay-prediction-reimplementation-
-    design-plan.md, "Extending to all 12 future months" section. Employer's
-    first_increase_period is 2026-04 with the default 12-month cadence, so
-    from a current period of 2026-09 the next increase lands on 2027-04
-    (month_offset=7); IPC_CL for 2026-04 is 112.18, latest published is
-    113.15 (2026-08) -- ratio 113.15/112.18 applied to the replicated value,
-    i.e. a reported increase_pct of 0.86.
+    design-plan.md, "Extending to all 12 future months" section, and later
+    corrected by docs/proposals/future-increase-ipc-extrapolation-design-
+    recommendation.md (Section 4) once the M-vs-N gap was identified.
+    Employer's first_increase_period is 2026-04 with the default 12-month
+    cadence, so from a current period of 2026-09 the next increase lands on
+    2027-04 (month_offset=7). Only M=4 months of real IPC exist between the
+    2026-04 anchor (112.18) and the latest published figure, 113.15
+    (2026-08) -- a naive M-only ratio would report just 0.86%, understating
+    the full N=12-month cycle. With a trailing-12-month anchor also
+    published (108.00 at 2025-08), `_extrapolate_cycle_ratio()` compounds
+    the remaining 8 months' geometric monthly rate on top of the real
+    4-month ratio, yielding the corrected 4.05% from the recommendation's
+    own worked example.
     """
     market_data_repository = FakeMarketDataRepository(
-        economic_index_by_period={("IPC_CL", 2026, 4): Decimal("112.18")},
+        economic_index_by_period={
+            ("IPC_CL", 2025, 8): Decimal("108.00"),
+            ("IPC_CL", 2026, 4): Decimal("112.18"),
+        },
         latest_economic_index={
             "IPC_CL": (date(2026, 8, 1), Decimal("113.15")),
         },
@@ -3038,7 +3082,7 @@ async def test_project_future_months_replicates_until_next_increase() -> None:
     first_future_net_pay_clp = Decimal("3118248.98")
 
     result = await project_future_months(
-        first_future_net_pay_clp,
+        _baseline(first_future_net_pay_clp),
         current_year=2026,
         current_month=9,
         first_increase_period=date(2026, 4, 1),
@@ -3051,14 +3095,157 @@ async def test_project_future_months_replicates_until_next_increase() -> None:
         assert result[month_offset].net_pay_clp == first_future_net_pay_clp
         assert result[month_offset].increase_pct == Decimal("0.00")
     stepped = result[7].net_pay_clp
-    expected_stepped = (
-        first_future_net_pay_clp * Decimal("113.15") / Decimal("112.18")
-    ).quantize(Decimal("0.01"))
-    assert stepped == expected_stepped
-    assert result[7].increase_pct == Decimal("0.86")
+    real_ratio = Decimal("113.15") / Decimal("112.18")
+    trailing_ratio = Decimal("113.15") / Decimal("108.00")
+    monthly_ratio = trailing_ratio ** (Decimal(1) / Decimal(12))
+    total_ratio = real_ratio * (monthly_ratio**8)  # 8 = 12 (N) - 4 (M) missing months
+    expected_stepped = (first_future_net_pay_clp * total_ratio).quantize(
+        Decimal("0.01")
+    )
+    expected_pct = ((total_ratio - 1) * 100).quantize(Decimal("0.01"))
+    assert stepped == expected_stepped == Decimal("3244420.33")
+    assert result[7].increase_pct == expected_pct == Decimal("4.05")
     for month_offset in range(8, 13):
         assert result[month_offset].net_pay_clp == stepped
         assert result[month_offset].increase_pct == Decimal("0.00")
+
+
+@pytest.mark.asyncio
+async def test_project_future_months_does_not_scale_uf_driven_portion() -> None:
+    """An increase step must scale only the salary_base-driven portion.
+
+    Explicit user correction (2026-10-02): a configured raise is a
+    salary_base event -- it must be applied to the salary_base-driven
+    portion of the prediction (scalable_clp) and the usual payroll discount
+    math reapplied from there, exactly like every other payroll. The
+    UF-driven portion (fixed_uf_clp, e.g. HEALTH_ADDITIONAL_UF) tracks the
+    UF/CLP exchange rate, not the employer's salary raise, so it must be
+    netted back in unchanged -- never multiplied by the same ratio.
+
+    Baseline: scalable_clp=1,000,000.00, fixed_uf_clp=100,000.00 ->
+    net_pay_clp=900,000.00. A real_ratio of 1.10 (M=N=12, no extrapolation
+    needed -- the cheap path) steps the scalable portion to 1,100,000.00.
+    Netting the *unchanged* fixed_uf_clp back in gives 1,000,000.00 --
+    *not* 900,000.00 * 1.10 = 990,000.00, which is what scaling the whole
+    net figure (the pre-fix bug) would have produced instead.
+    """
+    market_data_repository = FakeMarketDataRepository(
+        economic_index_by_period={("IPC_CL", 2025, 8): Decimal("100.00")},
+        latest_economic_index={"IPC_CL": (date(2026, 8, 1), Decimal("110.00"))},
+    )
+    baseline = _baseline(Decimal("900000.00"), fixed_uf_clp=Decimal("100000.00"))
+
+    result = await project_future_months(
+        baseline,
+        current_year=2026,
+        current_month=7,
+        # last_increase_period resolves to 2025-08; month_offset=1 (2026-08)
+        # is the increase month itself (M = N = 12 months, the cheap path),
+        # so the stepped value becomes the running baseline for month_offset=2.
+        first_increase_period=date(2025, 8, 1),
+        increase_frequency=12,
+        market_data_repository=market_data_repository,
+    )
+
+    # month_offset=1 still displays the raw baseline unchanged, by design.
+    assert result[1].net_pay_clp == Decimal("900000.00")
+    assert result[1].increase_pct == Decimal("10.00")
+    # month_offset=2 shows the real correction: NOT 990,000.00.
+    assert result[2].net_pay_clp == Decimal("1000000.00")
+    assert result[2].increase_pct == Decimal("0.00")  # not an increase month itself
+
+
+@pytest.mark.asyncio
+async def test_project_future_months_skips_extrapolation_fetch_when_cycle_covered() -> (
+    None
+):
+    """M >= N: use the real ratio as-is, never even attempt the trailing fetch.
+
+    Proves the "cheap path" claim from docs/proposals/future-increase-ipc-
+    extrapolation-design-recommendation.md Section 2.2: when the months
+    already elapsed since the last real increase (M) already cover (or
+    exceed) the employer's configured cycle (N), there is nothing left to
+    extrapolate, so `_extrapolate_cycle_ratio()` must return early without
+    ever calling `get_economic_index_value()` for the trailing-window
+    anchor. Asserting the call log (not just the resulting number) is what
+    actually proves the early return happened, not just that the answer
+    coincidentally matches.
+    """
+    market_data_repository = FakeMarketDataRepository(
+        economic_index_by_period={("IPC_CL", 2025, 8): Decimal("100.00")},
+        latest_economic_index={"IPC_CL": (date(2026, 8, 1), Decimal("105.00"))},
+    )
+    first_future_net_pay_clp = Decimal("1000000.00")
+
+    result = await project_future_months(
+        _baseline(first_future_net_pay_clp),
+        current_year=2026,
+        current_month=7,
+        # last_increase_period resolves to 2025-08 (as_of 2026-07 predates the
+        # next cadence point, 2026-08). M = (2026-08) - (2025-08) = 12 months,
+        # exactly N -- the boundary case, folded into the same "nothing left
+        # to extrapolate" guard as M > N.
+        first_increase_period=date(2025, 8, 1),
+        increase_frequency=12,
+        market_data_repository=market_data_repository,
+    )
+
+    # Only one lookup should ever happen: the last_increase_period baseline
+    # itself. A buggy implementation that always attempted the trailing-
+    # window fetch regardless of the guard would show this exact same
+    # ("IPC_CL", 2025, 8) period a *second* time here (period_back for this
+    # fixture coincides with the baseline), so call *count* -- not just the
+    # resulting number -- is what actually proves the early return fired.
+    assert market_data_repository.economic_index_calls == [("IPC_CL", 2025, 8)]
+    expected_stepped = (
+        first_future_net_pay_clp * Decimal("105.00") / Decimal("100.00")
+    ).quantize(Decimal("0.01"))
+    # 2026-08 (month_offset=1) is the first increase month within the window,
+    # but its *displayed* net_pay_clp always mirrors the raw UF prediction
+    # unchanged, by design (see project_future_months()'s own docstring) --
+    # increase_pct is where the step is visible for month_offset=1 itself,
+    # and the stepped value becomes the running baseline for month_offset=2.
+    assert result[1].net_pay_clp == first_future_net_pay_clp
+    assert result[1].increase_pct == Decimal("5.00")
+    assert result[2].net_pay_clp == expected_stepped
+
+
+@pytest.mark.asyncio
+async def test_project_future_months_deflation_floor_gates_on_consolidated_ratio() -> (
+    None
+):
+    """The deflation floor must look at the extrapolated ratio, not just M months.
+
+    Constructs a case where the raw M-month `real_ratio` alone is mildly
+    *inflationary* (would not trigger the floor on its own), but the
+    trailing-12-month anchor reveals a strong enough deflationary trend that
+    compounding it across the missing months pulls the consolidated ratio
+    below 1 -- proving the floor (docs/proposals/future-increase-ipc-
+    extrapolation-design-recommendation.md, Section 5) is gated on
+    `total_ratio`, not the pre-extrapolation `real_ratio`.
+    """
+    market_data_repository = FakeMarketDataRepository(
+        economic_index_by_period={
+            ("IPC_CL", 2025, 8): Decimal("120.00"),  # trailing-window anchor
+            ("IPC_CL", 2026, 4): Decimal("100.00"),  # last real increase anchor
+        },
+        latest_economic_index={"IPC_CL": (date(2026, 8, 1), Decimal("100.50"))},
+    )
+    first_future_net_pay_clp = Decimal("1000000.00")
+
+    result = await project_future_months(
+        _baseline(first_future_net_pay_clp),
+        current_year=2026,
+        current_month=9,
+        first_increase_period=date(2026, 4, 1),
+        increase_frequency=12,
+        market_data_repository=market_data_repository,
+    )
+
+    # real_ratio alone (100.50 / 100.00 = 1.005) is mildly inflationary and
+    # would not trip the floor -- only the extrapolated total_ratio does.
+    assert result[7].net_pay_clp == first_future_net_pay_clp
+    assert result[7].increase_pct == Decimal("0.00")
 
 
 @pytest.mark.asyncio
@@ -3076,7 +3263,7 @@ async def test_project_future_months_skips_step_without_prior_increase() -> None
     first_future_net_pay_clp = Decimal("3000000.00")
 
     result = await project_future_months(
-        first_future_net_pay_clp,
+        _baseline(first_future_net_pay_clp),
         current_year=2026,
         current_month=1,
         first_increase_period=date(2026, 4, 1),
@@ -3098,7 +3285,7 @@ async def test_project_future_months_skips_step_without_latest_ipc() -> None:
     first_future_net_pay_clp = Decimal("3000000.00")
 
     result = await project_future_months(
-        first_future_net_pay_clp,
+        _baseline(first_future_net_pay_clp),
         current_year=2026,
         current_month=9,
         first_increase_period=date(2026, 4, 1),
@@ -3127,7 +3314,7 @@ async def test_project_future_months_skips_step_without_baseline_index() -> None
     first_future_net_pay_clp = Decimal("3000000.00")
 
     result = await project_future_months(
-        first_future_net_pay_clp,
+        _baseline(first_future_net_pay_clp),
         current_year=2026,
         current_month=9,
         first_increase_period=date(2026, 4, 1),
@@ -3157,7 +3344,7 @@ async def test_project_future_months_skips_step_when_latest_ipc_too_old() -> Non
     first_future_net_pay_clp = Decimal("3000000.00")
 
     result = await project_future_months(
-        first_future_net_pay_clp,
+        _baseline(first_future_net_pay_clp),
         current_year=2026,
         current_month=9,
         first_increase_period=date(2026, 4, 1),
@@ -3193,7 +3380,7 @@ async def test_project_future_months_handles_consecutive_increase_months() -> No
     first_future_net_pay_clp = Decimal("1000000.00")
 
     result = await project_future_months(
-        first_future_net_pay_clp,
+        _baseline(first_future_net_pay_clp),
         current_year=2026,
         current_month=9,
         first_increase_period=date(2026, 9, 1),
@@ -3423,7 +3610,7 @@ async def test_project_future_months_holds_flat_on_deflation() -> None:
     first_future_net_pay_clp = Decimal("3118248.98")
 
     result = await project_future_months(
-        first_future_net_pay_clp,
+        _baseline(first_future_net_pay_clp),
         current_year=2026,
         current_month=9,
         first_increase_period=date(2026, 4, 1),
@@ -3459,7 +3646,7 @@ async def test_project_future_months_steps_on_flat_ipc() -> None:
     first_future_net_pay_clp = Decimal("3118248.98")
 
     result = await project_future_months(
-        first_future_net_pay_clp,
+        _baseline(first_future_net_pay_clp),
         current_year=2026,
         current_month=9,
         first_increase_period=date(2026, 4, 1),

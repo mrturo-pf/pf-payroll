@@ -29,6 +29,7 @@ from payroll.infrastructure.db.models.payroll import (
     PayrollPeriodModel,
 )
 from payroll.infrastructure.db.repositories.payroll_repository_shared import (
+    PredictedNetPayBaseline,
     ProjectedFutureMonth,
     SqlAlchemyPayrollRepositoryBase,
     build_payroll_summary_dto,
@@ -98,7 +99,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
 
     async def _project_future_months_or_degrade(
         self,
-        first_future_net_pay_clp: Decimal | None,
+        first_future_baseline: PredictedNetPayBaseline | None,
         *,
         current_year: int,
         current_month: int,
@@ -115,7 +116,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
         """
         try:
             return await project_future_months(
-                first_future_net_pay_clp,
+                first_future_baseline,
                 current_year=current_year,
                 current_month=current_month,
                 first_increase_period=first_increase_period,
@@ -123,7 +124,11 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                 market_data_repository=self._market_data_repository,
             )
         except PayrollDependencyError:
-            return degraded_future_months(first_future_net_pay_clp)
+            return degraded_future_months(
+                first_future_baseline.net_pay_clp
+                if first_future_baseline is not None
+                else None
+            )
 
     @staticmethod
     def _resolve_increase_frequency(*, configured_frequency: int | None) -> int:
@@ -414,20 +419,20 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
         # PayrollDependencyError (pf-rates unreachable/erroring) must not take
         # down this otherwise fully DB-only, always-available endpoint over
         # one optional field on one of its 24 rows -- degrade to None instead.
-        first_future_net_pay_clp: Decimal | None = None
+        first_future_baseline: PredictedNetPayBaseline | None = None
         if current_row is not None and not current_inferred:
             try:
-                first_future_net_pay_clp = await predict_next_period_net_pay(
+                first_future_baseline = await predict_next_period_net_pay(
                     self._session,
                     current_period,
                     date(current_year, current_month, 1),
                     self._market_data_repository,
                 )
             except PayrollDependencyError:
-                first_future_net_pay_clp = None
+                first_future_baseline = None
 
         future_months = await self._project_future_months_or_degrade(
-            first_future_net_pay_clp,
+            first_future_baseline,
             current_year=current_year,
             current_month=current_month,
             first_increase_period=first_increase_period,

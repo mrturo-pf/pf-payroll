@@ -14,6 +14,8 @@ from payroll.application.dto import (
     PayrollConceptDTO,
     PayrollItemDetailDTO,
     PayrollPeriodDetailDTO,
+    PayrollPeriodRangeContextDTO,
+    PayrollPeriodRangeDTO,
     PayrollSummaryDTO,
     PensionInstitutionDTO,
     PensionPlanDTO,
@@ -164,6 +166,59 @@ def sample_payroll_summary_dto(period_id: int = 1) -> PayrollSummaryDTO:
         total_discounts_clp=Decimal("170000"),
         net_pay_clp=Decimal("830000"),
     )
+
+
+def sample_payroll_period_range_context_dto(
+    target: PayrollPeriodRangeDTO,
+    *,
+    predecessor: PayrollPeriodRangeDTO | None = None,
+) -> PayrollPeriodRangeContextDTO:
+    """Wrap a target period-range DTO into the get_period_range() context shape.
+
+    `current` always mirrors `target` -- every test double that needs a
+    *different* current (e.g. to exercise the `previous` position) builds
+    the context DTO directly instead of reaching for this shortcut.
+    """
+    return PayrollPeriodRangeContextDTO(
+        target=target, predecessor=predecessor, current=target
+    )
+
+
+class PayrollPeriodRangesStubMixin:
+    """Share the list_period_ranges() protocol signature across test doubles.
+
+    Both the repository-level stub (unit/application) and the
+    queries-level fake (integration/api) implement the same
+    PayrollRepositoryPort/PayrollQueryPort method with an otherwise
+    completely different body -- without this mixin, the two were literal
+    clones of each other's signature+docstring block. Subclasses override
+    _build_period_ranges() (the actual per-test behavior) instead of
+    list_period_ranges() itself.
+    """
+
+    async def list_period_ranges(
+        self,
+        *,
+        today: date | None = None,
+        previous_months: int | None = None,
+        future_months: int | None = None,
+    ) -> list[PayrollPeriodRangeDTO]:
+        """List period ranges."""
+        return self._build_period_ranges(
+            today=today,
+            previous_months=previous_months,
+            future_months=future_months,
+        )
+
+    def _build_period_ranges(
+        self,
+        *,
+        today: date | None,
+        previous_months: int | None,
+        future_months: int | None,
+    ) -> list[PayrollPeriodRangeDTO]:
+        """Override in subclasses with the actual per-test period list."""
+        raise NotImplementedError
 
 
 class ReferenceDataStubMixin:

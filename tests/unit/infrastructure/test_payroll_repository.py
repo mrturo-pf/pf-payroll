@@ -79,6 +79,31 @@ def _baseline(
     )
 
 
+async def _assert_project_future_months_replicates_flat(
+    market_data_repository: "FakeMarketDataRepository", *, current_month: int = 9
+) -> None:
+    """Run project_future_months() and assert it replicates flat, zero increase.
+
+    Shared tail of every test_project_future_months_skips_step_* test: only
+    the market_data_repository fixture (what IPC data is missing/malformed)
+    varies between them -- the call and the three assertions are identical.
+    """
+    first_future_net_pay_clp = Decimal("3000000.00")
+    result = await project_future_months(
+        _baseline(first_future_net_pay_clp),
+        current_year=2026,
+        current_month=current_month,
+        first_increase_period=date(2026, 4, 1),
+        increase_frequency=12,
+        market_data_repository=market_data_repository,
+    )
+    assert len(result) == 12
+    assert all(
+        month.net_pay_clp == first_future_net_pay_clp for month in result.values()
+    )
+    assert all(month.increase_pct == Decimal("0.00") for month in result.values())
+
+
 class FakeResult(FakeAllMixin):
     """Test double for Result."""
 
@@ -435,6 +460,63 @@ def build_specific_chile_employer(
     if increase_frequency is not None:
         model.increase_frequency = increase_frequency
     return model
+
+
+def build_default_current_period(**overrides: object) -> PayrollPeriodModel:
+    """Build the baseline March-2026 'current' period shared by period-range tests.
+
+    id=17, employer_id=1, declared_net_pay_clp=2,978,086 -- any field a
+    given test needs to flex (e.g. worked_days) is passed as a keyword
+    override instead of a whole new literal PayrollPeriodModel(...) block.
+    """
+    fields: dict[str, object] = {
+        "id": 17,
+        "employer_id": 1,
+        "period_year": 2026,
+        "period_month": 3,
+        "payment_date": date(2026, 3, 28),
+        "status": PayrollStatus.ACTUAL,
+        "declared_net_pay_clp": Decimal("2978086"),
+    }
+    fields.update(overrides)
+    return PayrollPeriodModel(**fields)
+
+
+def build_default_previous_period(**overrides: object) -> PayrollPeriodModel:
+    """Build the baseline February-2026 'previous' period shared by period-range tests.
+
+    id=16, employer_id=1, declared_net_pay_clp=2,983,237 -- same
+    override-only-what-you-need approach as build_default_current_period().
+    """
+    fields: dict[str, object] = {
+        "id": 16,
+        "employer_id": 1,
+        "period_year": 2026,
+        "period_month": 2,
+        "payment_date": date(2026, 2, 26),
+        "status": PayrollStatus.ACTUAL,
+        "declared_net_pay_clp": Decimal("2983237"),
+    }
+    fields.update(overrides)
+    return PayrollPeriodModel(**fields)
+
+
+def build_repository_with_no_previous_periods(
+    current_period: PayrollPeriodModel, current_employer: EmployerModel
+) -> SqlAlchemyPayrollRepository:
+    """Build a repository stubbed with a current period and zero previous periods.
+
+    Shared by list_period_ranges() tests that only vary previous_months/
+    future_months on an otherwise-identical empty-previous-periods setup.
+    """
+    session = FakeSession(
+        [
+            FakeResult(first_row=(current_period, current_employer)),
+            FakeResult(scalar_rows=[]),
+            FakeResult(joined_rows=[]),
+        ]
+    )
+    return SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
 
 def build_acme_employer(*, ended_at: date | None = None) -> EmployerModel:
@@ -2098,25 +2180,9 @@ async def test_sqlalchemy_payroll_repository_lists_period_summaries() -> None:
 @pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_lists_period_ranges() -> None:
     """Test payroll period ranges use the latest paid payroll and employer rule."""
-    current_period = PayrollPeriodModel(
-        id=17,
-        employer_id=1,
-        period_year=2026,
-        period_month=3,
-        payment_date=date(2026, 3, 28),
-        status=PayrollStatus.ACTUAL,
-        declared_net_pay_clp=Decimal("2978086"),
-    )
+    current_period = build_default_current_period()
     current_employer = build_specific_chile_employer()
-    previous_period = PayrollPeriodModel(
-        id=16,
-        employer_id=1,
-        period_year=2026,
-        period_month=2,
-        payment_date=date(2026, 2, 26),
-        status=PayrollStatus.ACTUAL,
-        declared_net_pay_clp=Decimal("2983237"),
-    )
+    previous_period = build_default_previous_period()
     session = FakeSession(
         [
             FakeResult(first_row=(current_period, current_employer)),
@@ -2221,25 +2287,9 @@ async def test_list_period_ranges_explicit_previous_months_skips_padding() -> No
     inferred entries -- an explicit count must not, per the 2026-10-02
     design decision (padding only applies to the implicit default).
     """
-    current_period = PayrollPeriodModel(
-        id=17,
-        employer_id=1,
-        period_year=2026,
-        period_month=3,
-        payment_date=date(2026, 3, 28),
-        status=PayrollStatus.ACTUAL,
-        declared_net_pay_clp=Decimal("2978086"),
-    )
+    current_period = build_default_current_period()
     current_employer = build_specific_chile_employer()
-    previous_period = PayrollPeriodModel(
-        id=16,
-        employer_id=1,
-        period_year=2026,
-        period_month=2,
-        payment_date=date(2026, 2, 26),
-        status=PayrollStatus.ACTUAL,
-        declared_net_pay_clp=Decimal("2983237"),
-    )
+    previous_period = build_default_previous_period()
     session = FakeSession(
         [
             FakeResult(first_row=(current_period, current_employer)),
@@ -2265,24 +2315,11 @@ async def test_list_period_ranges_explicit_previous_months_skips_padding() -> No
 @pytest.mark.asyncio
 async def test_list_period_ranges_explicit_future_months_truncates() -> None:
     """An explicit future_months truncates the projection instead of 12."""
-    current_period = PayrollPeriodModel(
-        id=17,
-        employer_id=1,
-        period_year=2026,
-        period_month=3,
-        payment_date=date(2026, 3, 28),
-        status=PayrollStatus.ACTUAL,
-        declared_net_pay_clp=Decimal("2978086"),
-    )
+    current_period = build_default_current_period()
     current_employer = build_specific_chile_employer()
-    session = FakeSession(
-        [
-            FakeResult(first_row=(current_period, current_employer)),
-            FakeResult(scalar_rows=[]),
-            FakeResult(joined_rows=[]),
-        ]
+    repository = build_repository_with_no_previous_periods(
+        current_period, current_employer
     )
-    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
     result = await repository.list_period_ranges(
         today=date(2026, 3, 31), previous_months=0, future_months=3
@@ -2296,24 +2333,11 @@ async def test_list_period_ranges_explicit_future_months_truncates() -> None:
 @pytest.mark.asyncio
 async def test_list_period_ranges_zero_months_returns_only_current() -> None:
     """previous_months=0 and future_months=0 together return just the current period."""
-    current_period = PayrollPeriodModel(
-        id=17,
-        employer_id=1,
-        period_year=2026,
-        period_month=3,
-        payment_date=date(2026, 3, 28),
-        status=PayrollStatus.ACTUAL,
-        declared_net_pay_clp=Decimal("2978086"),
-    )
+    current_period = build_default_current_period()
     current_employer = build_specific_chile_employer()
-    session = FakeSession(
-        [
-            FakeResult(first_row=(current_period, current_employer)),
-            FakeResult(scalar_rows=[]),
-            FakeResult(joined_rows=[]),
-        ]
+    repository = build_repository_with_no_previous_periods(
+        current_period, current_employer
     )
-    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
 
     result = await repository.list_period_ranges(
         today=date(2026, 3, 31), previous_months=0, future_months=0
@@ -2448,25 +2472,9 @@ async def test_list_period_ranges_converts_non_future_periods_to_foreign_currenc
     future month) -- same shape, this test only adds a market_data_repository
     with real rates for both non-future start_dates.
     """
-    current_period = PayrollPeriodModel(
-        id=17,
-        employer_id=1,
-        period_year=2026,
-        period_month=3,
-        payment_date=date(2026, 3, 28),
-        status=PayrollStatus.ACTUAL,
-        declared_net_pay_clp=Decimal("2978086"),
-    )
+    current_period = build_default_current_period()
     current_employer = build_specific_chile_employer()
-    previous_period = PayrollPeriodModel(
-        id=16,
-        employer_id=1,
-        period_year=2026,
-        period_month=2,
-        payment_date=date(2026, 2, 26),
-        status=PayrollStatus.ACTUAL,
-        declared_net_pay_clp=Decimal("2983237"),
-    )
+    previous_period = build_default_previous_period()
     session = FakeSession(
         [
             FakeResult(first_row=(current_period, current_employer)),
@@ -3371,44 +3379,16 @@ async def test_project_future_months_skips_step_without_prior_increase() -> None
     market_data_repository = FakeMarketDataRepository(
         latest_economic_index={"IPC_CL": (date(2026, 8, 1), Decimal("113.15"))},
     )
-    first_future_net_pay_clp = Decimal("3000000.00")
-
-    result = await project_future_months(
-        _baseline(first_future_net_pay_clp),
-        current_year=2026,
-        current_month=1,
-        first_increase_period=date(2026, 4, 1),
-        increase_frequency=12,
-        market_data_repository=market_data_repository,
+    await _assert_project_future_months_replicates_flat(
+        market_data_repository, current_month=1
     )
-
-    assert len(result) == 12
-    assert all(
-        month.net_pay_clp == first_future_net_pay_clp for month in result.values()
-    )
-    assert all(month.increase_pct == Decimal("0.00") for month in result.values())
 
 
 @pytest.mark.asyncio
 async def test_project_future_months_skips_step_without_latest_ipc() -> None:
     """No published IPC at all -> replicate flat even through an increase month."""
     market_data_repository = FakeMarketDataRepository()
-    first_future_net_pay_clp = Decimal("3000000.00")
-
-    result = await project_future_months(
-        _baseline(first_future_net_pay_clp),
-        current_year=2026,
-        current_month=9,
-        first_increase_period=date(2026, 4, 1),
-        increase_frequency=12,
-        market_data_repository=market_data_repository,
-    )
-
-    assert len(result) == 12
-    assert all(
-        month.net_pay_clp == first_future_net_pay_clp for month in result.values()
-    )
-    assert all(month.increase_pct == Decimal("0.00") for month in result.values())
+    await _assert_project_future_months_replicates_flat(market_data_repository)
 
 
 @pytest.mark.asyncio
@@ -3422,22 +3402,7 @@ async def test_project_future_months_skips_step_without_baseline_index() -> None
     market_data_repository = FakeMarketDataRepository(
         latest_economic_index={"IPC_CL": (date(2026, 8, 1), Decimal("113.15"))},
     )
-    first_future_net_pay_clp = Decimal("3000000.00")
-
-    result = await project_future_months(
-        _baseline(first_future_net_pay_clp),
-        current_year=2026,
-        current_month=9,
-        first_increase_period=date(2026, 4, 1),
-        increase_frequency=12,
-        market_data_repository=market_data_repository,
-    )
-
-    assert len(result) == 12
-    assert all(
-        month.net_pay_clp == first_future_net_pay_clp for month in result.values()
-    )
-    assert all(month.increase_pct == Decimal("0.00") for month in result.values())
+    await _assert_project_future_months_replicates_flat(market_data_repository)
 
 
 @pytest.mark.asyncio
@@ -3452,22 +3417,7 @@ async def test_project_future_months_skips_step_when_latest_ipc_too_old() -> Non
         economic_index_by_period={("IPC_CL", 2026, 4): Decimal("112.18")},
         latest_economic_index={"IPC_CL": (date(2027, 5, 1), Decimal("200.00"))},
     )
-    first_future_net_pay_clp = Decimal("3000000.00")
-
-    result = await project_future_months(
-        _baseline(first_future_net_pay_clp),
-        current_year=2026,
-        current_month=9,
-        first_increase_period=date(2026, 4, 1),
-        increase_frequency=12,
-        market_data_repository=market_data_repository,
-    )
-
-    assert len(result) == 12
-    assert all(
-        month.net_pay_clp == first_future_net_pay_clp for month in result.values()
-    )
-    assert all(month.increase_pct == Decimal("0.00") for month in result.values())
+    await _assert_project_future_months_replicates_flat(market_data_repository)
 
 
 @pytest.mark.asyncio
@@ -3641,26 +3591,9 @@ async def test_sqlalchemy_payroll_repository_lists_period_ranges_projects_all_fu
     additionally wires a full market_data_repository (UF + IPC) to verify
     the projected net_pay_clp values themselves, not just the increase flag.
     """
-    current_period = PayrollPeriodModel(
-        id=17,
-        employer_id=1,
-        period_year=2026,
-        period_month=3,
-        payment_date=date(2026, 3, 28),
-        status=PayrollStatus.ACTUAL,
-        declared_net_pay_clp=Decimal("2978086"),
-        worked_days=30,
-    )
+    current_period = build_default_current_period(worked_days=30)
     current_employer = build_specific_chile_employer()
-    previous_period = PayrollPeriodModel(
-        id=16,
-        employer_id=1,
-        period_year=2026,
-        period_month=2,
-        payment_date=date(2026, 2, 26),
-        status=PayrollStatus.ACTUAL,
-        declared_net_pay_clp=Decimal("2983237"),
-    )
+    previous_period = build_default_previous_period()
     items = [
         (Decimal("3000000"), "SALARY_BASE"),
         (Decimal("100000"), "PENSION_BASE"),

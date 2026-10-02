@@ -36,6 +36,26 @@ def _client(ttl: int = 300, clock_values: list[float] | None = None) -> PfRatesC
     return PfRatesClient(BASE_URL, "test-key", ttl)
 
 
+def _economic_index_item(
+    period_year: int, period_month: int, index_value: str
+) -> dict[str, object]:
+    """Build one GET /economic-indices?code=... response list item.
+
+    Shared by every get_latest_economic_index() test that needs to mock a
+    200 response -- only period_year/period_month/index_value ever vary.
+    """
+    return {
+        "code": "IPC_CL",
+        "period_year": period_year,
+        "period_month": period_month,
+        "index_value": index_value,
+        "monthly_change": None,
+        "yearly_change": None,
+        "base_period": "DIC-2018",
+        "source": "manual",
+    }
+
+
 # ---------------------------------------------------------------------------
 # _normalize_exchange_rate_date
 # ---------------------------------------------------------------------------
@@ -248,26 +268,8 @@ async def test_get_latest_economic_index_returns_first_item_on_200() -> None:
         return_value=httpx.Response(
             200,
             json=[
-                {
-                    "code": "IPC_CL",
-                    "period_year": 2026,
-                    "period_month": 8,
-                    "index_value": "113.15",
-                    "monthly_change": None,
-                    "yearly_change": None,
-                    "base_period": "DIC-2018",
-                    "source": "manual",
-                },
-                {
-                    "code": "IPC_CL",
-                    "period_year": 2026,
-                    "period_month": 7,
-                    "index_value": "112.45",
-                    "monthly_change": None,
-                    "yearly_change": None,
-                    "base_period": "DIC-2018",
-                    "source": "manual",
-                },
+                _economic_index_item(2026, 8, "113.15"),
+                _economic_index_item(2026, 7, "112.45"),
             ],
         )
     )
@@ -301,21 +303,7 @@ async def test_get_latest_economic_index_caches_within_ttl() -> None:
     """Multiple calls within TTL produce exactly one HTTP request."""
     clock = [0.0, 1.0, 2.0]
     route = respx.get(f"{BASE_URL}/economic-indices").mock(
-        return_value=httpx.Response(
-            200,
-            json=[
-                {
-                    "code": "IPC_CL",
-                    "period_year": 2026,
-                    "period_month": 8,
-                    "index_value": "113.15",
-                    "monthly_change": None,
-                    "yearly_change": None,
-                    "base_period": "DIC-2018",
-                    "source": "manual",
-                }
-            ],
-        )
+        return_value=httpx.Response(200, json=[_economic_index_item(2026, 8, "113.15")])
     )
     client = _client(ttl=300, clock_values=clock)
     for _ in range(3):

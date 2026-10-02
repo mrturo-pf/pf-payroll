@@ -12,6 +12,10 @@ from payroll.application.dto import (
     PayrollPeriodRangeContextDTO,
     PayrollPeriodRangeDTO,
 )
+from helpers.reference_data import (
+    PayrollPeriodRangesStubMixin,
+    sample_payroll_period_range_context_dto,
+)
 from payroll.interfaces.api.dependencies import get_payroll_queries
 from payroll.interfaces.api.main import app
 from payroll.interfaces.api.routes.payroll import (
@@ -62,7 +66,7 @@ def _make_period_range(
     )
 
 
-class FakePayrollQueries:
+class FakePayrollQueries(PayrollPeriodRangesStubMixin):
     """Test double for Payroll Queries."""
 
     async def get_period_range(self, period_id: int) -> PayrollPeriodRangeContextDTO:
@@ -96,18 +100,16 @@ class FakePayrollQueries:
             employer_id=1,
             employer_name="ACME",
         )
-        return PayrollPeriodRangeContextDTO(
-            target=target, predecessor=predecessor, current=target
-        )
+        return sample_payroll_period_range_context_dto(target, predecessor=predecessor)
 
-    async def list_period_ranges(
+    def _build_period_ranges(
         self,
         *,
-        today: date | None = None,
-        previous_months: int | None = None,
-        future_months: int | None = None,
+        today: date | None,
+        previous_months: int | None,
+        future_months: int | None,
     ) -> list[PayrollPeriodRangeDTO]:
-        """List period ranges."""
+        """Build the fixed period triplet backing list_period_ranges()."""
         return [
             PayrollPeriodRangeDTO(
                 period_year=2025,
@@ -326,70 +328,57 @@ def test_payroll_detail_endpoint_surfaces_not_found() -> None:
     assert response.json() == {"detail": "Payroll period 9 was not found."}
 
 
+def _default_increase_current_period(**overrides: object) -> PayrollPeriodRangeDTO:
+    """Build the baseline 2026-01 'current' period shared by _compute_increase tests."""
+    fields: dict[str, object] = {
+        "net_pay_clp": None,
+        "salary_base": Decimal("1000000"),
+        "worked_days": 30,
+    }
+    fields.update(overrides)
+    net_pay_clp = fields.pop("net_pay_clp")
+    return _make_period_range(
+        2026, 1, date(2026, 1, 31), date(2026, 2, 27), net_pay_clp, **fields
+    )
+
+
+def _default_increase_predecessor_period(**overrides: object) -> PayrollPeriodRangeDTO:
+    """Build the baseline 2025-12 'predecessor' period for _compute_increase tests."""
+    fields: dict[str, object] = {
+        "net_pay_clp": None,
+        "salary_base": Decimal("1000000"),
+        "worked_days": 30,
+    }
+    fields.update(overrides)
+    net_pay_clp = fields.pop("net_pay_clp")
+    return _make_period_range(
+        2025, 12, date(2025, 12, 31), date(2026, 1, 30), net_pay_clp, **fields
+    )
+
+
 def test_compute_increase_returns_positive_pct_when_normalized_salary_rose() -> None:
     """Increase is the percentage change when (salary_base/worked_days)*30 grew."""
-    current = _make_period_range(
-        2026,
-        1,
-        date(2026, 1, 31),
-        date(2026, 2, 27),
-        Decimal("830000"),
-        salary_base=Decimal("1200000"),
-        worked_days=30,
+    current = _default_increase_current_period(
+        net_pay_clp=Decimal("830000"), salary_base=Decimal("1200000")
     )
-    predecessor = _make_period_range(
-        2025,
-        12,
-        date(2025, 12, 31),
-        date(2026, 1, 30),
-        Decimal("780000"),
-        salary_base=Decimal("1000000"),
-        worked_days=30,
-    )
+    predecessor = _default_increase_predecessor_period(net_pay_clp=Decimal("780000"))
     assert _compute_increase(current, predecessor) == Decimal("20.00")
 
 
 def test_compute_increase_returns_negative_pct_when_normalized_salary_fell() -> None:
     """Increase is the percentage change (negative) when normalized salary dropped."""
-    current = _make_period_range(
-        2026,
-        1,
-        date(2026, 1, 31),
-        date(2026, 2, 27),
-        Decimal("780000"),
-        salary_base=Decimal("1000000"),
-        worked_days=30,
-    )
-    predecessor = _make_period_range(
-        2025,
-        12,
-        date(2025, 12, 31),
-        date(2026, 1, 30),
-        Decimal("830000"),
-        salary_base=Decimal("1200000"),
-        worked_days=30,
+    current = _default_increase_current_period(net_pay_clp=Decimal("780000"))
+    predecessor = _default_increase_predecessor_period(
+        net_pay_clp=Decimal("830000"), salary_base=Decimal("1200000")
     )
     assert _compute_increase(current, predecessor) == Decimal("-16.67")
 
 
 def test_compute_increase_returns_none_when_predecessor_has_no_salary() -> None:
     """Increase is null when predecessor lacks salary_base data."""
-    current = _make_period_range(
-        2026,
-        1,
-        date(2026, 1, 31),
-        date(2026, 2, 27),
-        None,
-        salary_base=Decimal("1000000"),
-        worked_days=30,
-    )
-    predecessor = _make_period_range(
-        2025,
-        12,
-        date(2025, 12, 31),
-        date(2026, 1, 30),
-        None,
-        inferred=True,
+    current = _default_increase_current_period()
+    predecessor = _default_increase_predecessor_period(
+        inferred=True, salary_base=None, worked_days=None
     )
     assert _compute_increase(current, predecessor) is None
     assert _compute_increase(current, None) is None
@@ -398,48 +387,58 @@ def test_compute_increase_returns_none_when_predecessor_has_no_salary() -> None:
 def test_compute_increase_accounts_for_worked_days_normalization() -> None:
     """Normalized salary comparison uses worked_days, not raw salary_base."""
     # Period with fewer worked_days but same salary_base should appear higher normalized
-    current = _make_period_range(
-        2026,
-        1,
-        date(2026, 1, 31),
-        date(2026, 2, 27),
-        None,
-        salary_base=Decimal("1000000"),
-        worked_days=25,  # (1000000/25)*30 = 1200000
-    )
-    predecessor = _make_period_range(
-        2025,
-        12,
-        date(2025, 12, 31),
-        date(2026, 1, 30),
-        None,
-        salary_base=Decimal("1000000"),
-        worked_days=30,  # (1000000/30)*30 = 1000000
-    )
+    current = _default_increase_current_period(worked_days=25)  # (1000000/25)*30=1.2M
+    predecessor = _default_increase_predecessor_period()  # (1000000/30)*30 = 1000000
     assert _compute_increase(current, predecessor) == Decimal("20.00")
 
 
 def test_compute_increase_returns_none_for_zero_salary_predecessor() -> None:
     """A zero-salary predecessor baseline makes percent change undefined."""
-    current = _make_period_range(
-        2026,
-        1,
-        date(2026, 1, 31),
-        date(2026, 2, 27),
-        None,
-        salary_base=Decimal("1000000"),
-        worked_days=30,
-    )
-    predecessor = _make_period_range(
-        2025,
-        12,
-        date(2025, 12, 31),
-        date(2026, 1, 30),
-        None,
-        salary_base=Decimal("0"),
-        worked_days=30,
-    )
+    current = _default_increase_current_period()
+    predecessor = _default_increase_predecessor_period(salary_base=Decimal("0"))
     assert _compute_increase(current, predecessor) is None
+
+
+def _default_current_net_pay_period(**overrides: object) -> PayrollPeriodRangeDTO:
+    """Build the baseline 2026-09 'current' period shared by net_pay_clp_today tests.
+
+    net_pay_clp=3,000,000, net_pay_uf=75 (today's UF/CLP rate is 40,000),
+    salary_base=1,500,000, worked_days=30 -- any field a given test needs
+    to flex (salary_base, net_pay_uf, worked_days, net_pay_clp...) is
+    passed as a keyword override instead of a whole new literal block.
+    """
+    fields: dict[str, object] = {
+        "net_pay_clp": Decimal("3000000"),
+        "is_current": True,
+        "net_pay_uf": Decimal("75"),
+        "salary_base": Decimal("1500000"),
+        "worked_days": 30,
+    }
+    fields.update(overrides)
+    net_pay_clp = fields.pop("net_pay_clp")
+    return _make_period_range(
+        2026, 9, date(2026, 9, 29), date(2026, 10, 28), net_pay_clp, **fields
+    )
+
+
+def _default_previous_net_pay_period(**overrides: object) -> PayrollPeriodRangeDTO:
+    """Build the baseline 2025-09 'previous' period shared by net_pay_clp_today tests.
+
+    net_pay_clp=1,000,000, net_pay_uf=20 (that period's own UF/CLP rate
+    was 50,000), salary_base=1,500,000, worked_days=30 -- same
+    override-only-what-you-need approach as _default_current_net_pay_period().
+    """
+    fields: dict[str, object] = {
+        "net_pay_clp": Decimal("1000000"),
+        "net_pay_uf": Decimal("20"),
+        "salary_base": Decimal("1500000"),
+        "worked_days": 30,
+    }
+    fields.update(overrides)
+    net_pay_clp = fields.pop("net_pay_clp")
+    return _make_period_range(
+        2025, 9, date(2025, 9, 27), date(2025, 10, 28), net_pay_clp, **fields
+    )
 
 
 def test_compute_net_pay_clp_today_scales_salary_and_repricess_uf_discount() -> None:
@@ -457,28 +456,8 @@ def test_compute_net_pay_clp_today_scales_salary_and_repricess_uf_discount() -> 
     1,115,000 -- not a figure either a whole-net-pay UF-ratio scaling or a
     whole-net-pay salary-ratio scaling alone would produce.
     """
-    current = _make_period_range(
-        2026,
-        9,
-        date(2026, 9, 29),
-        date(2026, 10, 28),
-        Decimal("3000000"),
-        is_current=True,
-        net_pay_uf=Decimal("75"),
-        salary_base=Decimal("1650000"),
-        worked_days=30,
-    )
-    previous = _make_period_range(
-        2025,
-        9,
-        date(2025, 9, 27),
-        date(2025, 10, 28),
-        Decimal("1000000"),
-        net_pay_uf=Decimal("20"),
-        salary_base=Decimal("1500000"),
-        worked_days=30,
-        fixed_uf_clp=Decimal("50000"),
-    )
+    current = _default_current_net_pay_period(salary_base=Decimal("1650000"))
+    previous = _default_previous_net_pay_period(fixed_uf_clp=Decimal("50000"))
     result = _compute_net_pay_clp_today(previous, current)
     assert result == Decimal("1115000")
 
@@ -490,74 +469,22 @@ def test_compute_net_pay_clp_today_defaults_fixed_uf_clp_to_zero() -> None:
     is scaled purely by the real salary_base ratio (here, flat: 1.0) --
     result equals the historical net_pay_clp unchanged.
     """
-    current = _make_period_range(
-        2026,
-        9,
-        date(2026, 9, 29),
-        date(2026, 10, 28),
-        Decimal("3000000"),
-        is_current=True,
-        net_pay_uf=Decimal("75"),
-        salary_base=Decimal("1500000"),
-        worked_days=30,
-    )
-    previous = _make_period_range(
-        2025,
-        9,
-        date(2025, 9, 27),
-        date(2025, 10, 28),
-        Decimal("1000000"),
-        net_pay_uf=Decimal("20"),
-        salary_base=Decimal("1500000"),
-        worked_days=30,
-    )
+    current = _default_current_net_pay_period()
+    previous = _default_previous_net_pay_period()
     assert _compute_net_pay_clp_today(previous, current) == Decimal("1000000")
 
 
 def test_compute_net_pay_clp_today_returns_none_without_current() -> None:
     """No current period resolved (e.g. none found at all) -> None."""
-    previous = _make_period_range(
-        2025,
-        9,
-        date(2025, 9, 27),
-        date(2025, 10, 28),
-        Decimal("1000000"),
-        net_pay_uf=Decimal("20"),
-        salary_base=Decimal("1500000"),
-        worked_days=30,
-    )
+    previous = _default_previous_net_pay_period()
     assert _compute_net_pay_clp_today(previous, None) is None
 
 
 def test_compute_net_pay_clp_today_returns_none_without_salary_or_uf_data() -> None:
     """Missing net_pay_uf, salary_base or worked_days on either side -> None."""
-    current = _make_period_range(
-        2026,
-        9,
-        date(2026, 9, 29),
-        date(2026, 10, 28),
-        Decimal("3000000"),
-        is_current=True,
-        net_pay_uf=Decimal("75"),
-        salary_base=Decimal("1500000"),
-        worked_days=30,
-    )
-    base_previous_kwargs = {
-        "net_pay_clp": Decimal("1000000"),
-        "net_pay_uf": Decimal("20"),
-        "salary_base": Decimal("1500000"),
-        "worked_days": 30,
-    }
+    current = _default_current_net_pay_period()
     for missing_field in ("net_pay_uf", "salary_base", "worked_days"):
-        kwargs = {**base_previous_kwargs, missing_field: None}
-        previous = _make_period_range(
-            2025,
-            9,
-            date(2025, 9, 27),
-            date(2025, 10, 28),
-            kwargs.pop("net_pay_clp"),
-            **kwargs,
-        )
+        previous = _default_previous_net_pay_period(**{missing_field: None})
         assert _compute_net_pay_clp_today(previous, current) is None
 
 
@@ -565,23 +492,7 @@ def test_compute_net_pay_clp_today_returns_none_without_current_rate_ingredients
     None
 ):
     """current.net_pay_clp/net_pay_uf/salary_base missing or zero -> None."""
-    previous = _make_period_range(
-        2025,
-        9,
-        date(2025, 9, 27),
-        date(2025, 10, 28),
-        Decimal("1000000"),
-        net_pay_uf=Decimal("20"),
-        salary_base=Decimal("1500000"),
-        worked_days=30,
-    )
-    base_current_kwargs = {
-        "net_pay_clp": Decimal("3000000"),
-        "is_current": True,
-        "net_pay_uf": Decimal("75"),
-        "salary_base": Decimal("1500000"),
-        "worked_days": 30,
-    }
+    previous = _default_previous_net_pay_period()
     for override in (
         {"net_pay_clp": None},
         {"net_pay_uf": None},
@@ -589,41 +500,14 @@ def test_compute_net_pay_clp_today_returns_none_without_current_rate_ingredients
         {"salary_base": None},
         {"worked_days": None},
     ):
-        kwargs = {**base_current_kwargs, **override}
-        current = _make_period_range(
-            2026,
-            9,
-            date(2026, 9, 29),
-            date(2026, 10, 28),
-            kwargs.pop("net_pay_clp"),
-            **kwargs,
-        )
+        current = _default_current_net_pay_period(**override)
         assert _compute_net_pay_clp_today(previous, current) is None
 
 
 def test_compute_net_pay_clp_today_returns_none_for_zero_normalized_salary() -> None:
     """A zero historical normalized salary_base makes the ratio undefined."""
-    current = _make_period_range(
-        2026,
-        9,
-        date(2026, 9, 29),
-        date(2026, 10, 28),
-        Decimal("3000000"),
-        is_current=True,
-        net_pay_uf=Decimal("75"),
-        salary_base=Decimal("1500000"),
-        worked_days=30,
-    )
-    previous = _make_period_range(
-        2025,
-        9,
-        date(2025, 9, 27),
-        date(2025, 10, 28),
-        Decimal("1000000"),
-        net_pay_uf=Decimal("20"),
-        salary_base=Decimal("0"),
-        worked_days=30,
-    )
+    current = _default_current_net_pay_period()
+    previous = _default_previous_net_pay_period(salary_base=Decimal("0"))
     assert _compute_net_pay_clp_today(previous, current) is None
 
 

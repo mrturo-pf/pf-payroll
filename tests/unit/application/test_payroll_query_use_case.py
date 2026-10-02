@@ -14,12 +14,14 @@ from payroll.application.dto import (
 )
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from helpers.reference_data import (
+    PayrollPeriodRangesStubMixin,
     sample_payroll_period_detail_dto,
+    sample_payroll_period_range_context_dto,
     sample_payroll_summary_dto,
 )
 
 
-class StubPayrollRepository:
+class StubPayrollRepository(PayrollPeriodRangesStubMixin):
     """Test double for Payroll Repository."""
 
     last_previous_months: int | None = None
@@ -64,18 +66,16 @@ class StubPayrollRepository:
             period_id=period_id,
             employer_id=1,
         )
-        return PayrollPeriodRangeContextDTO(
-            target=target, predecessor=None, current=target
-        )
+        return sample_payroll_period_range_context_dto(target)
 
-    async def list_period_ranges(
+    def _build_period_ranges(
         self,
         *,
-        today: date | None = None,
-        previous_months: int | None = None,
-        future_months: int | None = None,
+        today: date | None,
+        previous_months: int | None,
+        future_months: int | None,
     ) -> list[PayrollPeriodRangeDTO]:
-        """List period ranges."""
+        """Build the fixed single-period list list_period_ranges() exposes."""
         self.last_previous_months = previous_months
         self.last_future_months = future_months
         return [

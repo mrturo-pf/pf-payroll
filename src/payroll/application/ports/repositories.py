@@ -161,7 +161,11 @@ class PayrollRepository(Protocol):
         ...
 
     async def list_period_ranges(
-        self, *, today: date | None = None
+        self,
+        *,
+        today: date | None = None,
+        previous_months: int | None = None,
+        future_months: int | None = None,
     ) -> list[PayrollPeriodRangeDTO]:
         """List payroll period date ranges around the current period."""
         ...

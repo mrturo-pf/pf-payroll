@@ -1006,3 +1006,94 @@ with more capacity would contend far less under the same 36-call burst).
 
 Not yet committed/pushed -- awaiting explicit user authorization, same as
 every prior section.
+
+
+## 20. Configurable previous_months/future_months on GET /payroll/period-range (2026-10-02)
+
+User request: the window was hardcoded to 12 previous + current + 12
+future. Needed configurable, with the default (no params) unchanged,
+future capped at 12, and previous uncapped. Clarified three genuinely
+ambiguous points with the user before touching code (see chat): (1)
+whether the existing "pad previous periods with inferred `net_pay_clp:
+null` placeholders up to 12 when real history is shorter" behavior should
+disappear entirely or only when a count is explicitly passed -- user chose
+**padding only applies to the implicit default**; an explicit
+`previous_months` (even the literal value 12) always skips padding and
+returns only what is genuinely in the database; (2) param names/minimum --
+**`previous_months`/`future_months`, minimum 0** (0 means omit that
+section entirely); (3) what happens above the future cap -- **422
+validation error**, not a silent clamp.
+
+**Implemented:**
+
+- **Route** (`routes/payroll.py`): two new optional query params,
+  `previous_months: int | None = Query(None, ge=0, ...)` and
+  `future_months: int | None = Query(None, ge=0, le=12, ...)` -- the `le=12`
+  alone gives the 422 for free via FastAPI/Pydantic, no custom validation
+  code needed anywhere in the stack (deliberately not re-validated at the
+  use-case/repository layer too: the route is this value's only caller in
+  production, duplicating the check there would be dead code, YAGNI).
+- **Protocol + use case** (`ports/repositories.py`,
+  `use_cases/payroll_queries.py`): both `list_period_ranges()` signatures
+  gained the same two keyword-only params, passed straight through.
+- **Repository** (`payroll_repository_queries.py::list_period_ranges()`):
+  - `previous_count = previous_months if previous_months is not None else 12`,
+    `future_count` mirrors it, `pad_previous = previous_months is None` --
+    the one flag that implements decision (1) above.
+  - The previous-periods fetch (`.limit(13)` -> `.limit(previous_count + 1)`)
+    and its lookback-ghost threshold (`> 12` -> `> previous_count`) both
+    became count-driven instead of hardcoded.
+  - The padding block itself gained `pad_previous and` to its condition
+    and swapped its two hardcoded `12`s for `previous_count` -- unchanged
+    in every other respect, so the implicit-default path behaves exactly
+    as before.
+  - Future-months block: guarded by `if future_count > 0:` so a caller
+    asking for zero future months skips `predict_next_period_net_pay()`
+    and the IPC-driven `project_future_months()` call entirely -- no
+    wasted pf-rates round trip for a result that would never be used
+    (cost-conscious, not just simpler). The internal projection helper
+    still always computes all 12 months internally when it does run (its
+    cumulative IPC-stepping logic is inherently sequential and cheap --
+    one IPC lookup regardless of how many months are kept); only the
+    final `future_ranges` list comprehension's `range(1, 13)` became
+    `range(1, future_count + 1)` to truncate the *output*, not the
+    internal computation. Renamed the local variable holding that
+    computed dict from `future_months` to `projected_future_months` to
+    stop it shadowing the new `future_months` parameter.
+  - `trailing_start` (the boundary used to compute the last emitted
+    period's `end_date`) changed from a hardcoded `+13` months offset to
+    `+future_count + 1`, so it still lands exactly one month past
+    whatever the last emitted future period is (or past `current` itself
+    when `future_count == 0`).
+- **Test doubles updated** to accept (and, where relevant, record) the two
+  new keyword-only params: `StubPayrollRepository`
+  (`test_payroll_query_use_case.py`, now also asserts pass-through),
+  `FakePayrollQueries`/`SalaryFakeQueries`/`LookbackFakeQueries`
+  (`test_payroll_queries.py`) -- all three are route-level fakes standing
+  in for `PayrollQueries` itself, called by the route with both kwargs
+  always present (None when the query params are omitted), so every one
+  of them would have raised `TypeError` on the first request otherwise.
+- **New tests**: three repository-level (`test_payroll_repository.py`) --
+  explicit `previous_months` never pads even when real history is
+  shorter, explicit `future_months` truncates the projection, both at 0
+  returns just the current period -- plus three route-level
+  (`test_payroll_queries.py`) -- query params reach the use case
+  unchanged (captured via a recording fake), `future_months=13` is 422,
+  `previous_months=-1` is 422.
+- **Docs**: `docs/api.md`'s `/payroll/period-range` row rewritten to lead
+  with the two query params and the padding-only-on-default distinction;
+  Postman request (`postman/pf-ecosystem.postman_collection.json`) gained
+  both as disabled-by-default query entries with the same explanation,
+  verified still valid JSON afterward.
+- **Result**: 545 tests passing (up from 538), 100% line coverage on
+  `payroll_repository_queries.py` specifically (178/178) and 99% overall
+  (the only gap, `interfaces/session.py`, is pre-existing and untouched
+  by this change), ruff check/format and mypy clean (97 source files).
+  Live-verified against the real local stack: default call still returns
+  25 entries exactly as before; `previous_months=3&future_months=2`
+  returns exactly 6; `future_months=13` and `previous_months=-1` both 422;
+  `previous_months=100` against an employer with only 22 real previous
+  periods returns exactly those 22, never padded toward 100.
+
+Not yet committed/pushed -- awaiting explicit user authorization, same as
+every prior section.

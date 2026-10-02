@@ -156,9 +156,31 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
         )
 
     async def list_period_ranges(
-        self, *, today: date | None = None
+        self,
+        *,
+        today: date | None = None,
+        previous_months: int | None = None,
+        future_months: int | None = None,
     ) -> list[PayrollPeriodRangeDTO]:
-        """List the current period plus 12 previous and 12 next date ranges."""
+        """List the current period plus previous and future date ranges.
+
+        previous_months/future_months default to 12/12 (today's
+        established behavior) when omitted (None) -- in that
+        implicit-default case only, previous periods missing from the DB
+        are padded with inferred (net_pay_clp=None) placeholders so the
+        window always has exactly 12 entries, same as before this became
+        configurable. The moment a caller passes previous_months
+        explicitly (any value, including 12), padding is skipped
+        entirely: the response only ever contains previous periods that
+        are genuinely in the DB, up to that count -- fewer is a valid
+        answer, inferred filler is not. future_months has no such
+        distinction (future periods are always a projection, never "in
+        the DB" to begin with) and is capped at 12 by the route's own
+        Query validation.
+        """
+        previous_count = previous_months if previous_months is not None else 12
+        future_count = future_months if future_months is not None else 12
+        pad_previous = previous_months is None
         reference_date = today or date.today()
         current_result = await self._session.execute(
             select(PayrollPeriodModel, EmployerModel)
@@ -241,7 +263,8 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             increase_frequency=effective_increase_frequency,
         )
 
-        # Fetch one extra period (13th) to serve as lookback for the oldest window entry
+        # Fetch one extra period beyond previous_count to serve as
+        # lookback for the oldest window entry.
         previous_result = await self._session.execute(
             select(PayrollPeriodModel)
             .where(PayrollPeriodModel.payment_date < current_start)
@@ -249,14 +272,14 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                 PayrollPeriodModel.payment_date.desc(),
                 PayrollPeriodModel.id.desc(),
             )
-            .limit(13)
+            .limit(previous_count + 1)
         )
         all_previous_fetched = list(previous_result.scalars().all())
         # all_previous_fetched is ordered most-recent-first (DESC);
         # the last item is oldest.
-        # If 13 were returned, the oldest is the lookback and is excluded
-        # from the window.
-        if len(all_previous_fetched) > 12:
+        # If previous_count + 1 were returned, the oldest is the lookback
+        # and is excluded from the window.
+        if len(all_previous_fetched) > previous_count:
             lookback_period_model: PayrollPeriodModel | None = all_previous_fetched[-1]
             previous_periods = all_previous_fetched[:-1]
         else:
@@ -360,7 +383,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             )
         ]
 
-        if len(previous_ranges) < 12:
+        if pad_previous and len(previous_ranges) < previous_count:
             if previous_ranges:
                 seed_month = add_months(
                     date(
@@ -373,9 +396,10 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             else:
                 seed_month = add_months(date(current_year, current_month, 1), -1)
             inferred_previous: list[PayrollPeriodRangeDTO] = []
-            for extra_offset in range(12 - len(previous_ranges)):
+            for extra_offset in range(previous_count - len(previous_ranges)):
                 inferred_month = add_months(
-                    seed_month, -(12 - len(previous_ranges) - 1) + extra_offset
+                    seed_month,
+                    -(previous_count - len(previous_ranges) - 1) + extra_offset,
                 )
                 inferred_previous.append(
                     PayrollPeriodRangeDTO(
@@ -442,24 +466,26 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
         # down this otherwise fully DB-only, always-available endpoint over
         # one optional field on one of its 24 rows -- degrade to None instead.
         first_future_baseline: PredictedNetPayBaseline | None = None
-        if current_row is not None and not current_inferred:
-            try:
-                first_future_baseline = await predict_next_period_net_pay(
-                    self._session,
-                    current_period,
-                    date(current_year, current_month, 1),
-                    self._market_data_repository,
-                )
-            except PayrollDependencyError:
-                first_future_baseline = None
+        projected_future_months: dict[int, ProjectedFutureMonth] = {}
+        if future_count > 0:
+            if current_row is not None and not current_inferred:
+                try:
+                    first_future_baseline = await predict_next_period_net_pay(
+                        self._session,
+                        current_period,
+                        date(current_year, current_month, 1),
+                        self._market_data_repository,
+                    )
+                except PayrollDependencyError:
+                    first_future_baseline = None
 
-        future_months = await self._project_future_months_or_degrade(
-            first_future_baseline,
-            current_year=current_year,
-            current_month=current_month,
-            first_increase_period=first_increase_period,
-            increase_frequency=effective_increase_frequency,
-        )
+            projected_future_months = await self._project_future_months_or_degrade(
+                first_future_baseline,
+                current_year=current_year,
+                current_month=current_month,
+                first_increase_period=first_increase_period,
+                increase_frequency=effective_increase_frequency,
+            )
         future_ranges = [
             PayrollPeriodRangeDTO(
                 period_year=period_month.year,
@@ -479,22 +505,22 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                     payment_fixed_day_roll=current_fixed_day_roll,
                 ),
                 end_date=date(period_month.year, period_month.month, 1),
-                net_pay_clp=future_months[month_offset].net_pay_clp,
+                net_pay_clp=projected_future_months[month_offset].net_pay_clp,
                 is_current=False,
                 inferred=True,
-                increase=future_months[month_offset].increase_pct,
+                increase=projected_future_months[month_offset].increase_pct,
             )
             for month_offset, period_month in (
                 (
                     month_offset,
                     add_months(date(current_year, current_month, 1), month_offset),
                 )
-                for month_offset in range(1, 13)
+                for month_offset in range(1, future_count + 1)
             )
         ]
         trailing_start = resolve_payment_date(
-            add_months(date(current_year, current_month, 1), 13).year,
-            add_months(date(current_year, current_month, 1), 13).month,
+            add_months(date(current_year, current_month, 1), future_count + 1).year,
+            add_months(date(current_year, current_month, 1), future_count + 1).month,
             country_code=current_country_code,
             payment_date_rule=current_rule,
             payment_month_offset=current_month_offset,

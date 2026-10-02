@@ -21,6 +21,9 @@ from helpers.reference_data import (
 class StubPayrollRepository:
     """Test double for Payroll Repository."""
 
+    last_previous_months: int | None = None
+    last_future_months: int | None = None
+
     async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO | None:
         """Get period detail."""
         if period_id == 404:
@@ -44,9 +47,15 @@ class StubPayrollRepository:
         return [sample_payroll_summary_dto(1)]
 
     async def list_period_ranges(
-        self, *, today: date | None = None
+        self,
+        *,
+        today: date | None = None,
+        previous_months: int | None = None,
+        future_months: int | None = None,
     ) -> list[PayrollPeriodRangeDTO]:
         """List period ranges."""
+        self.last_previous_months = previous_months
+        self.last_future_months = future_months
         return [
             PayrollPeriodRangeDTO(
                 period_year=(today or date(2026, 1, 15)).year,
@@ -98,3 +107,16 @@ async def test_payroll_queries_return_period_ranges() -> None:
             inferred=False,
         )
     ]
+
+
+@pytest.mark.asyncio
+async def test_payroll_queries_forwards_previous_and_future_months() -> None:
+    """previous_months/future_months must reach the repository unchanged."""
+    repository = StubPayrollRepository()
+
+    await PayrollQueries(repository).list_period_ranges(
+        previous_months=6, future_months=3
+    )
+
+    assert repository.last_previous_months == 6
+    assert repository.last_future_months == 3

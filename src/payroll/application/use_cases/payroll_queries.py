@@ -33,7 +33,15 @@ class PayrollQueries:
         return await self.repository.list_period_summaries()
 
     async def list_period_ranges(
-        self, *, today: date | None = None
+        self,
+        *,
+        today: date | None = None,
+        previous_months: int | None = None,
+        future_months: int | None = None,
     ) -> list[PayrollPeriodRangeDTO]:
         """List payroll period date ranges around the current period."""
-        return await self.repository.list_period_ranges(today=today)
+        return await self.repository.list_period_ranges(
+            today=today,
+            previous_months=previous_months,
+            future_months=future_months,
+        )

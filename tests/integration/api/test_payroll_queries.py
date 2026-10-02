@@ -91,7 +91,13 @@ class FakePayrollQueries:
         """List period summaries."""
         return [sample_payroll_summary_dto(7)]
 
-    async def list_period_ranges(self) -> list[PayrollPeriodRangeDTO]:
+    async def list_period_ranges(
+        self,
+        *,
+        today: date | None = None,
+        previous_months: int | None = None,
+        future_months: int | None = None,
+    ) -> list[PayrollPeriodRangeDTO]:
         """List period ranges."""
         return [
             PayrollPeriodRangeDTO(
@@ -246,6 +252,70 @@ def test_payroll_query_endpoints() -> None:
         },
         "health_institution_is_active": False,
     }
+
+
+def test_payroll_period_range_forwards_month_query_params() -> None:
+    """previous_months/future_months query params reach the use case unchanged."""
+
+    class CapturingFakeQueries:
+        """Records the previous_months/future_months it was called with."""
+
+        def __init__(self) -> None:
+            self.calls: list[tuple[int | None, int | None]] = []
+
+        async def list_period_ranges(
+            self,
+            *,
+            today: date | None = None,
+            previous_months: int | None = None,
+            future_months: int | None = None,
+        ) -> list[PayrollPeriodRangeDTO]:
+            """List period ranges, recording the requested counts."""
+            self.calls.append((previous_months, future_months))
+            return []
+
+    fake_queries = CapturingFakeQueries()
+    app.dependency_overrides[get_payroll_queries] = lambda: fake_queries
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
+
+    try:
+        no_params_response = client.get("/payroll/period-range")
+        explicit_response = client.get(
+            "/payroll/period-range",
+            params={"previous_months": 6, "future_months": 3},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert no_params_response.status_code == 200
+    assert explicit_response.status_code == 200
+    assert fake_queries.calls == [(None, None), (6, 3)]
+
+
+def test_payroll_period_range_rejects_future_months_over_12() -> None:
+    """future_months > 12 is a 422 validation error, never silently clamped."""
+    app.dependency_overrides[get_payroll_queries] = lambda: FakePayrollQueries()
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
+
+    try:
+        response = client.get("/payroll/period-range", params={"future_months": 13})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+
+
+def test_payroll_period_range_rejects_negative_previous_months() -> None:
+    """A negative previous_months is a 422 validation error."""
+    app.dependency_overrides[get_payroll_queries] = lambda: FakePayrollQueries()
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
+
+    try:
+        response = client.get("/payroll/period-range", params={"previous_months": -1})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
 
 
 def test_payroll_detail_endpoint_surfaces_not_found() -> None:
@@ -583,7 +653,13 @@ def test_period_range_endpoint_computes_increase_for_previous_with_salary_data()
     class SalaryFakeQueries:
         """Test double returning previous periods with salary data."""
 
-        async def list_period_ranges(self) -> list[PayrollPeriodRangeDTO]:
+        async def list_period_ranges(
+            self,
+            *,
+            today: date | None = None,
+            previous_months: int | None = None,
+            future_months: int | None = None,
+        ) -> list[PayrollPeriodRangeDTO]:
             """List period ranges."""
             return [
                 # Oldest previous: no predecessor in window → null
@@ -660,7 +736,13 @@ def test_period_range_oldest_previous_uses_lookback_as_predecessor() -> None:
     class LookbackFakeQueries:
         """Test double with a lookback DTO at the start of the range list."""
 
-        async def list_period_ranges(self) -> list[PayrollPeriodRangeDTO]:
+        async def list_period_ranges(
+            self,
+            *,
+            today: date | None = None,
+            previous_months: int | None = None,
+            future_months: int | None = None,
+        ) -> list[PayrollPeriodRangeDTO]:
             """List period ranges with a lookback ghost."""
             return [
                 # Lookback ghost — not emitted, salary context for oldest previous

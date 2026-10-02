@@ -2213,6 +2213,117 @@ async def test_sqlalchemy_payroll_repository_attaches_lookback_for_full_previous
 
 
 @pytest.mark.asyncio
+async def test_list_period_ranges_explicit_previous_months_skips_padding() -> None:
+    """An explicit previous_months never pads with inferred placeholders.
+
+    Only 1 real previous period exists; previous_months=5 is requested.
+    The default (omitted) path would pad up to 5 with net_pay_clp=None
+    inferred entries -- an explicit count must not, per the 2026-10-02
+    design decision (padding only applies to the implicit default).
+    """
+    current_period = PayrollPeriodModel(
+        id=17,
+        employer_id=1,
+        period_year=2026,
+        period_month=3,
+        payment_date=date(2026, 3, 28),
+        status=PayrollStatus.ACTUAL,
+        declared_net_pay_clp=Decimal("2978086"),
+    )
+    current_employer = build_specific_chile_employer()
+    previous_period = PayrollPeriodModel(
+        id=16,
+        employer_id=1,
+        period_year=2026,
+        period_month=2,
+        payment_date=date(2026, 2, 26),
+        status=PayrollStatus.ACTUAL,
+        declared_net_pay_clp=Decimal("2983237"),
+    )
+    session = FakeSession(
+        [
+            FakeResult(first_row=(current_period, current_employer)),
+            FakeResult(scalar_rows=[previous_period]),
+            FakeResult(joined_rows=[]),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_period_ranges(
+        today=date(2026, 3, 31), previous_months=5
+    )
+
+    previous_entries = [
+        item for item in result if item.start_date < current_period.payment_date
+    ]
+    assert len(previous_entries) == 1
+    assert previous_entries[0].net_pay_clp == Decimal("2983237")
+    assert previous_entries[0].inferred is False
+    assert len(result) == 1 + 1 + 12  # 1 real previous + current + 12 future
+
+
+@pytest.mark.asyncio
+async def test_list_period_ranges_explicit_future_months_truncates() -> None:
+    """An explicit future_months truncates the projection instead of 12."""
+    current_period = PayrollPeriodModel(
+        id=17,
+        employer_id=1,
+        period_year=2026,
+        period_month=3,
+        payment_date=date(2026, 3, 28),
+        status=PayrollStatus.ACTUAL,
+        declared_net_pay_clp=Decimal("2978086"),
+    )
+    current_employer = build_specific_chile_employer()
+    session = FakeSession(
+        [
+            FakeResult(first_row=(current_period, current_employer)),
+            FakeResult(scalar_rows=[]),
+            FakeResult(joined_rows=[]),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_period_ranges(
+        today=date(2026, 3, 31), previous_months=0, future_months=3
+    )
+
+    future_entries = [item for item in result if not item.is_current]
+    assert len(future_entries) == 3
+    assert len(result) == 1 + 3  # current + 3 future, no previous at all
+
+
+@pytest.mark.asyncio
+async def test_list_period_ranges_zero_months_returns_only_current() -> None:
+    """previous_months=0 and future_months=0 together return just the current period."""
+    current_period = PayrollPeriodModel(
+        id=17,
+        employer_id=1,
+        period_year=2026,
+        period_month=3,
+        payment_date=date(2026, 3, 28),
+        status=PayrollStatus.ACTUAL,
+        declared_net_pay_clp=Decimal("2978086"),
+    )
+    current_employer = build_specific_chile_employer()
+    session = FakeSession(
+        [
+            FakeResult(first_row=(current_period, current_employer)),
+            FakeResult(scalar_rows=[]),
+            FakeResult(joined_rows=[]),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_period_ranges(
+        today=date(2026, 3, 31), previous_months=0, future_months=0
+    )
+
+    assert len(result) == 1
+    assert result[0].is_current is True
+
+
+@pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_applies_effective_processing_dates() -> (
     None
 ):

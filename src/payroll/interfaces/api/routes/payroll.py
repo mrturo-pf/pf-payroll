@@ -6,7 +6,16 @@ from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING, Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Path,
+    Query,
+    UploadFile,
+)
 from dataclasses import dataclass
 from pydantic import BaseModel, PlainSerializer
 
@@ -1239,10 +1248,34 @@ async def list_payroll_summaries(
 
 @router.get("/period-range", response_model=list[PayrollPeriodRangeRead])
 async def list_payroll_period_ranges(
+    previous_months: int | None = Query(
+        None,
+        ge=0,
+        description=(
+            "How many previous periods to include. Defaults to 12 when "
+            "omitted, padding missing history with inferred placeholders "
+            "(today's established behavior). Passing this explicitly (even "
+            "as 12) disables that padding -- only periods genuinely in the "
+            "database are returned, up to this count."
+        ),
+    ),
+    future_months: int | None = Query(
+        None,
+        ge=0,
+        le=12,
+        description=(
+            "How many future (projected) periods to include. Defaults to "
+            "12, capped at 12."
+        ),
+    ),
     queries: PayrollQueries = Depends(get_payroll_queries),
 ) -> list[PayrollPeriodRangeRead]:
     """List payroll period date ranges around the current period."""
-    return to_payroll_period_range_reads(await queries.list_period_ranges())
+    return to_payroll_period_range_reads(
+        await queries.list_period_ranges(
+            previous_months=previous_months, future_months=future_months
+        )
+    )
 
 
 @router.get("/{period_id}", response_model=PayrollPeriodDetailRead)

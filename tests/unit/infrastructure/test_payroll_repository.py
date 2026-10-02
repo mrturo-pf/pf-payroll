@@ -2222,6 +2222,58 @@ async def test_sqlalchemy_payroll_repository_lists_period_ranges() -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_period_ranges_resolves_names_for_other_employers() -> None:
+    """A previous period belonging to a different employer gets its own name.
+
+    current_employer's name is already known for free (its full row was
+    already loaded to resolve "current"), but a previous period from a
+    *different* employer_id is fetched with no employer filter -- exercises
+    the other_employer_ids batch-resolution branch (and, transitively,
+    _fetch_employer_names_map() itself) that every other list_period_ranges()
+    test in this file never triggers because they all use a single employer.
+    """
+    current_period = build_default_current_period()
+    current_employer = build_specific_chile_employer()
+    previous_period = build_default_previous_period(employer_id=2)
+    session = FakeSession(
+        [
+            FakeResult(first_row=(current_period, current_employer)),
+            FakeResult(scalar_rows=[previous_period]),
+            FakeResult(joined_rows=[]),  # salary_base/fixed_uf_clp aggregates
+            FakeResult(joined_rows=[]),  # PAY_MV_SUMARY amounts
+            FakeResult(joined_rows=[(2, "OTHER CO")]),  # other employer names
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.list_period_ranges(
+        today=date(2026, 3, 31), previous_months=1, future_months=0
+    )
+
+    previous_entry = next(item for item in result if not item.is_current)
+    assert previous_entry.employer_id == 2
+    assert previous_entry.employer_name == "OTHER CO"
+
+
+@pytest.mark.asyncio
+async def test_fetch_employer_names_map_skips_round_trip_for_empty_input() -> None:
+    """An empty employer_ids list short-circuits to {} with zero DB round trips.
+
+    The only real call site (list_period_ranges()) already guards this with
+    `if other_employer_ids:` to avoid the round trip in the (overwhelmingly
+    common) single-employer case -- this test exercises the method's own
+    defensive guard directly, since no call site can ever reach it live.
+    """
+    session = FakeSession([])
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository._fetch_employer_names_map([])
+
+    assert result == {}
+    assert session.executed == []
+
+
+@pytest.mark.asyncio
 async def test_sqlalchemy_payroll_repository_attaches_lookback_for_full_previous_window() -> (  # noqa: E501
     None
 ):
@@ -2345,6 +2397,148 @@ async def test_list_period_ranges_zero_months_returns_only_current() -> None:
 
     assert len(result) == 1
     assert result[0].is_current is True
+
+
+@pytest.mark.asyncio
+async def test_get_period_range_returns_none_when_period_not_found() -> None:
+    """An unknown period_id -> None, same absence contract as get_period_detail()."""
+    session = FakeSession([FakeResult(first_row=None)])
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    result = await repository.get_period_range(999)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_period_range_builds_context_for_current_period() -> None:
+    """Target IS the resolved current period -> is_current True, no predecessor.
+
+    Exercises the "not is_previous" branch of get_period_range() (single
+    target_currency_task awaited directly, current_dto built from the same
+    row as target) plus the None-predecessor branch of predecessor_dto.
+    """
+    current_period = build_default_current_period()
+    current_employer = build_specific_chile_employer()
+    session = FakeSession(
+        [
+            FakeResult(first_row=(current_period, current_employer)),  # target
+            FakeResult(scalar_one=None),  # predecessor -> none
+            FakeResult(first_row=(current_period, current_employer)),  # current
+            FakeResult(joined_rows=[(17, Decimal("1500000"), Decimal("0"))]),
+            FakeResult(
+                joined_rows=[
+                    SimpleNamespace(
+                        period_id=17,
+                        gross_income_clp=Decimal("2000000"),
+                        taxable_income_clp=Decimal("1800000"),
+                        total_discounts_clp=Decimal("300000"),
+                    )
+                ]
+            ),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    context = await repository.get_period_range(17)
+
+    assert context is not None
+    assert context.predecessor is None
+    assert context.target.period_id == 17
+    assert context.target.is_current is True
+    assert context.target.salary_base == Decimal("1500000")
+    assert context.target.gross_income_clp == Decimal("2000000")
+    assert context.target.taxable_income_clp == Decimal("1800000")
+    assert context.target.total_discounts_clp == Decimal("300000")
+    assert context.current is not None
+    assert context.current.period_id == 17
+    assert context.current.is_current is True
+
+
+@pytest.mark.asyncio
+async def test_get_period_range_builds_context_for_previous_period() -> None:
+    """Target older than the resolved current -> is_previous True, has a predecessor.
+
+    Exercises the is_previous branch (asyncio.gather of both currency
+    tasks) plus a populated predecessor_dto.
+    """
+    target_period = build_default_previous_period()  # id=16, Feb 2026
+    target_employer = build_specific_chile_employer()
+    predecessor_period = build_default_previous_period(
+        id=15,
+        period_month=1,
+        payment_date=date(2026, 1, 29),
+        declared_net_pay_clp=Decimal("2900000"),
+    )
+    current_period = build_default_current_period()  # id=17, March 2026
+    session = FakeSession(
+        [
+            FakeResult(first_row=(target_period, target_employer)),  # target
+            FakeResult(scalar_one=predecessor_period),  # predecessor
+            FakeResult(first_row=(current_period, target_employer)),  # current
+            FakeResult(
+                joined_rows=[
+                    (16, Decimal("1200000"), Decimal("0")),
+                    (15, Decimal("1100000"), Decimal("0")),
+                    (17, Decimal("1500000"), Decimal("0")),
+                ]
+            ),
+            FakeResult(
+                joined_rows=[
+                    SimpleNamespace(
+                        period_id=16,
+                        gross_income_clp=Decimal("1300000"),
+                        taxable_income_clp=Decimal("1200000"),
+                        total_discounts_clp=Decimal("100000"),
+                    )
+                ]
+            ),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    context = await repository.get_period_range(16)
+
+    assert context is not None
+    assert context.target.period_id == 16
+    assert context.target.is_current is False
+    assert context.target.salary_base == Decimal("1200000")
+    assert context.predecessor is not None
+    assert context.predecessor.period_month == 1
+    assert context.predecessor.salary_base == Decimal("1100000")
+    assert context.current is not None
+    assert context.current.period_id == 17
+    assert context.current.is_current is True
+
+
+@pytest.mark.asyncio
+async def test_get_period_range_handles_no_current_period_anywhere() -> None:
+    """No period anywhere qualifies as "current" yet -> current_dto stays None.
+
+    A brand-new system with only not-yet-declared periods: _resolve_current_period_row()
+    returns None, so is_previous is always False regardless of dates, and
+    current_dto is never built (the is-not-None guard short-circuits).
+    """
+    target_period = build_default_current_period()
+    target_employer = build_specific_chile_employer()
+    session = FakeSession(
+        [
+            FakeResult(first_row=(target_period, target_employer)),  # target
+            FakeResult(scalar_one=None),  # predecessor -> none
+            FakeResult(first_row=None),  # no current period at all
+            FakeResult(joined_rows=[(17, Decimal("1500000"), Decimal("0"))]),
+            FakeResult(joined_rows=[]),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
+
+    context = await repository.get_period_range(17)
+
+    assert context is not None
+    assert context.target.is_current is False
+    assert context.target.gross_income_clp is None
+    assert context.predecessor is None
+    assert context.current is None
 
 
 @pytest.mark.asyncio

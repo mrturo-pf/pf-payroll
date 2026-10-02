@@ -6,12 +6,15 @@ from decimal import Decimal
 from payroll.application.dto import (
     ImportedContributionValidationDTO,
     ImportedPayrollPeriodDTO,
+    PayrollPeriodRangeContextDTO,
+    PayrollPeriodRangeDTO,
 )
 from payroll.domain.contributions import EmploymentContractKind
 from payroll.interfaces.api.routes.payroll import (
     ImportedContributionValidationRead,
     build_reconciliation_conflict_detail,
     to_imported_contribution_validation_read,
+    to_payroll_period_read,
 )
 
 
@@ -121,3 +124,99 @@ def test_build_reconciliation_conflict_detail_empty_when_all_clean() -> None:
     )
 
     assert detail == {"message": "Cannot commit.", "conflicting_periods": []}
+
+
+def _make_period_range_dto(**overrides: object) -> PayrollPeriodRangeDTO:
+    """Build a minimal real PayrollPeriodRangeDTO for /{period_id} tests."""
+    defaults: dict[str, object] = {
+        "period_year": 2026,
+        "period_month": 3,
+        "start_date": date(2026, 3, 28),
+        "end_date": date(2026, 3, 28),
+        "net_pay_clp": Decimal("1000000"),
+        "is_current": False,
+        "inferred": False,
+        "period_id": 7,
+    }
+    defaults.update(overrides)
+    return PayrollPeriodRangeDTO(**defaults)  # type: ignore[arg-type]
+
+
+def test_to_payroll_period_read_resolves_previous_position() -> None:
+    """Target older than current -> position 'previous', net_pay_clp_today computed.
+
+    GET /payroll/{period_id}'s own position resolution (_resolve_single_position)
+    is distinct from list_period_ranges()'s index-based one -- this is the one
+    spot that exercises it against a target that is NOT the resolved current.
+    """
+    target = _make_period_range_dto(
+        period_year=2026,
+        period_month=2,
+        start_date=date(2026, 2, 26),
+        end_date=date(2026, 2, 26),
+        period_id=6,
+        salary_base=Decimal("1200000"),
+        worked_days=30,
+        fixed_uf_clp=Decimal("0"),
+        net_pay_uf=Decimal("30.0"),
+    )
+    current = _make_period_range_dto(
+        period_year=2026,
+        period_month=3,
+        start_date=date(2026, 3, 28),
+        end_date=date(2026, 3, 28),
+        period_id=7,
+        is_current=True,
+        salary_base=Decimal("1500000"),
+        worked_days=30,
+        fixed_uf_clp=Decimal("0"),
+        net_pay_uf=Decimal("32.0"),
+    )
+    context = PayrollPeriodRangeContextDTO(
+        target=target, predecessor=None, current=current
+    )
+
+    read = to_payroll_period_read(context)
+
+    assert read.position == "previous"
+    assert read.net_pay_clp_today is not None
+
+
+def test_to_payroll_period_read_resolves_future_position() -> None:
+    """Target newer than current -> position 'future', net_pay_clp_today stays None."""
+    target = _make_period_range_dto(
+        period_year=2026,
+        period_month=4,
+        start_date=date(2026, 4, 28),
+        end_date=date(2026, 4, 28),
+        period_id=8,
+    )
+    current = _make_period_range_dto(
+        period_year=2026,
+        period_month=3,
+        start_date=date(2026, 3, 28),
+        end_date=date(2026, 3, 28),
+        period_id=7,
+        is_current=True,
+    )
+    context = PayrollPeriodRangeContextDTO(
+        target=target, predecessor=None, current=current
+    )
+
+    read = to_payroll_period_read(context)
+
+    assert read.position == "future"
+    assert read.net_pay_clp_today is None
+
+
+def test_to_payroll_period_read_defaults_to_previous_without_any_current() -> None:
+    """No period anywhere qualifies as current yet -> degrade to 'previous'."""
+    target = _make_period_range_dto()
+    context = PayrollPeriodRangeContextDTO(
+        target=target, predecessor=None, current=None
+    )
+
+    read = to_payroll_period_read(context)
+
+    assert read.position == "previous"
+    assert read.net_pay_clp_today is None

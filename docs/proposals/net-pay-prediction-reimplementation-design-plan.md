@@ -636,3 +636,39 @@ the period).
 
 Same as prior sections: no commit, no push, awaiting explicit user
 authorization.
+
+## 14. `PayrollPeriodRangeRead` field order (2026-10-01)
+
+User requested a specific JSON key order for `GET /payroll/period-range`
+items: `period_year, period_month, start_date, end_date, position,
+net_pay_clp, net_pay_uf, net_pay_usd, net_pay_eur, increase`.
+
+Plain dataclasses (and FastAPI/Pydantic's handling of them) serialize
+fields in declaration order -- base class fields first
+(`PayrollPeriodRangeFields`: `period_year`/`period_month`/`start_date`/
+`end_date`, already in the right order and untouched), then the subclass's
+own fields in whatever order they're declared. Reordered
+`PayrollPeriodRangeRead`'s own fields from `net_pay_clp, position,
+increase, net_pay_usd, net_pay_eur, net_pay_uf` to `position, net_pay_clp,
+net_pay_uf, net_pay_usd, net_pay_eur, increase` to match exactly.
+
+`increase` needed an explicit `= None` default added (it had none before
+-- always passed explicitly) since Python dataclasses require every
+no-default field to precede any defaulted ones, and it now sits after
+three already-defaulted currency fields. Harmless: every construction call
+site already passes every field explicitly by keyword, so this changes
+nothing about how the dataclass is built, only what happens if a future
+caller omits `increase` (defaults to `None`, same as the already-optional
+currency fields). The single construction call site in
+`to_payroll_period_range_reads()` was reordered to match too, purely for
+readability -- keyword arguments mean this was never functionally
+required.
+
+**Validation**: full suite still 524 passing / 100% coverage on every
+touched file, ruff/format/mypy clean. Live-verified against the restored
+local Neon data: `list(data[0].keys())` now returns exactly
+`['period_year', 'period_month', 'start_date', 'end_date', 'position',
+'net_pay_clp', 'net_pay_uf', 'net_pay_usd', 'net_pay_eur', 'increase']`.
+
+Not yet committed/pushed -- awaiting explicit user authorization, same as
+every prior section.

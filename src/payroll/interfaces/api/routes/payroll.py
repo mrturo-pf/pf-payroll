@@ -662,12 +662,12 @@ class PayrollSummaryRead(BaseModel):
 class PayrollPeriodRangeRead(PayrollPeriodRangeFields):
     """Represent Payroll Period Range Read."""
 
-    net_pay_clp: int | None
     position: Literal["previous", "current", "future"]
-    increase: float | None
+    net_pay_clp: int | None
+    net_pay_uf: float | None = None
     net_pay_usd: float | None = None
     net_pay_eur: float | None = None
-    net_pay_uf: float | None = None
+    increase: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -761,22 +761,22 @@ def to_payroll_period_range_reads(
                 period_month=item.period_month,
                 start_date=item.start_date,
                 end_date=item.end_date,
+                position=position,
                 net_pay_clp=(
                     int(quantize_clp(item.net_pay_clp))
                     if item.net_pay_clp is not None
                     else None
                 ),
-                position=position,
-                increase=(float(increase) if increase is not None else None),
+                net_pay_uf=(
+                    float(item.net_pay_uf) if item.net_pay_uf is not None else None
+                ),
                 net_pay_usd=(
                     float(item.net_pay_usd) if item.net_pay_usd is not None else None
                 ),
                 net_pay_eur=(
                     float(item.net_pay_eur) if item.net_pay_eur is not None else None
                 ),
-                net_pay_uf=(
-                    float(item.net_pay_uf) if item.net_pay_uf is not None else None
-                ),
+                increase=(float(increase) if increase is not None else None),
             )
         )
     return ranges

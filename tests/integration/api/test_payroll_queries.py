@@ -165,78 +165,90 @@ def test_payroll_query_endpoints() -> None:
     assert list_response.status_code == 200
     assert list_response.json() == [
         {
-            "period_id": None,
+            "id": None,
             "employer": None,
-            "period_year": 2025,
-            "period_month": 12,
-            "start_date": "2025-12-31",
-            "end_date": "2026-01-30",
-            "net_pay_clp": None,
-            "position": "previous",
-            "gross_income_clp": None,
-            "taxable_income_clp": None,
-            "total_discounts_clp": None,
-            "increase": None,
-            "net_pay_clp_today": None,
-            "net_pay_usd": None,
-            "net_pay_eur": None,
-            "net_pay_uf": None,
+            "period": {
+                "year": 2025,
+                "month": 12,
+                "date_range": {"start": "2025-12-31", "end": "2026-01-30"},
+                "timeframe": "previous",
+            },
+            "amount": {
+                "gross_income_clp": None,
+                "taxable_income_clp": None,
+                "total_discounts_clp": None,
+                "net_pay_clp": None,
+                "net_pay_uf": None,
+                "net_pay_usd": None,
+                "net_pay_eur": None,
+                "increase": None,
+                "net_pay_clp_today": None,
+            },
         },
         {
-            "period_id": 7,
+            "id": 7,
             "employer": {"id": 1, "name": "ACME"},
-            "period_year": 2026,
-            "period_month": 1,
-            "start_date": "2026-01-31",
-            "end_date": "2026-02-27",
-            "net_pay_clp": 830000,
-            "position": "current",
-            "gross_income_clp": 1000000,
-            "taxable_income_clp": 1000000,
-            "total_discounts_clp": 170000,
-            "increase": None,
-            "net_pay_clp_today": None,
-            "net_pay_usd": None,
-            "net_pay_eur": None,
-            "net_pay_uf": None,
+            "period": {
+                "year": 2026,
+                "month": 1,
+                "date_range": {"start": "2026-01-31", "end": "2026-02-27"},
+                "timeframe": "current",
+            },
+            "amount": {
+                "gross_income_clp": 1000000,
+                "taxable_income_clp": 1000000,
+                "total_discounts_clp": 170000,
+                "net_pay_clp": 830000,
+                "net_pay_uf": None,
+                "net_pay_usd": None,
+                "net_pay_eur": None,
+                "increase": None,
+                "net_pay_clp_today": None,
+            },
         },
         {
-            "period_id": None,
+            "id": None,
             "employer": None,
-            "period_year": 2026,
-            "period_month": 2,
-            "start_date": "2026-02-28",
-            "end_date": "2026-03-30",
-            "net_pay_clp": None,
-            "position": "future",
-            "gross_income_clp": None,
-            "taxable_income_clp": None,
-            "total_discounts_clp": None,
-            "increase": 0.0,
-            "net_pay_clp_today": None,
-            "net_pay_usd": None,
-            "net_pay_eur": None,
-            "net_pay_uf": None,
+            "period": {
+                "year": 2026,
+                "month": 2,
+                "date_range": {"start": "2026-02-28", "end": "2026-03-30"},
+                "timeframe": "future",
+            },
+            "amount": {
+                "gross_income_clp": None,
+                "taxable_income_clp": None,
+                "total_discounts_clp": None,
+                "net_pay_clp": None,
+                "net_pay_uf": None,
+                "net_pay_usd": None,
+                "net_pay_eur": None,
+                "increase": 0.0,
+                "net_pay_clp_today": None,
+            },
         },
     ]
     assert detail_response.status_code == 200
     assert detail_response.json() == {
-        "period_id": 7,
+        "id": 7,
         "employer": {"id": 1, "name": "ACME"},
-        "period_year": 2026,
-        "period_month": 1,
-        "start_date": "2026-01-31",
-        "end_date": "2026-02-27",
-        "position": "current",
-        "gross_income_clp": 1000000,
-        "taxable_income_clp": 1000000,
-        "total_discounts_clp": 170000,
-        "net_pay_clp": 830000,
-        "increase": 25.0,  # (1500000-1200000)/1200000 * 100
-        "net_pay_clp_today": None,  # only computed for position == previous
-        "net_pay_usd": None,
-        "net_pay_eur": None,
-        "net_pay_uf": None,
+        "period": {
+            "year": 2026,
+            "month": 1,
+            "date_range": {"start": "2026-01-31", "end": "2026-02-27"},
+            "timeframe": "current",
+        },
+        "amount": {
+            "gross_income_clp": 1000000,
+            "taxable_income_clp": 1000000,
+            "total_discounts_clp": 170000,
+            "net_pay_clp": 830000,
+            "net_pay_uf": None,
+            "net_pay_usd": None,
+            "net_pay_eur": None,
+            "increase": 25.0,  # (1500000-1200000)/1200000 * 100
+            "net_pay_clp_today": None,  # only computed for timeframe == previous
+        },
     }
 
 
@@ -586,14 +598,14 @@ def test_period_range_endpoint_computes_increase_for_previous_with_salary_data()
 
     assert response.status_code == 200
     data = response.json()
-    assert data[0]["position"] == "previous"
-    assert data[0]["increase"] is None  # no predecessor in window
-    assert data[1]["position"] == "previous"
-    assert data[1]["increase"] == 20.0  # (1200000-1000000)/1000000 * 100
-    assert data[2]["position"] == "current"
-    assert data[2]["increase"] == 25.0  # (1500000-1200000)/1200000 * 100
-    assert data[3]["position"] == "future"
-    assert data[3]["increase"] == 0.0
+    assert data[0]["period"]["timeframe"] == "previous"
+    assert data[0]["amount"]["increase"] is None  # no predecessor in window
+    assert data[1]["period"]["timeframe"] == "previous"
+    assert data[1]["amount"]["increase"] == 20.0  # (1200000-1000000)/1000000 * 100
+    assert data[2]["period"]["timeframe"] == "current"
+    assert data[2]["amount"]["increase"] == 25.0  # (1500000-1200000)/1200000 * 100
+    assert data[3]["period"]["timeframe"] == "future"
+    assert data[3]["amount"]["increase"] == 0.0
 
 
 def test_period_range_oldest_previous_uses_lookback_as_predecessor() -> None:
@@ -671,12 +683,12 @@ def test_period_range_oldest_previous_uses_lookback_as_predecessor() -> None:
     data = response.json()
     # Lookback is NOT in the response
     assert len(data) == 3
-    assert data[0]["position"] == "previous"
-    assert data[0]["period_month"] == 11
-    assert data[0]["increase"] == 20.0  # (1200000-1000000)/1000000 * 100 (lookback)
-    assert data[1]["position"] == "current"
-    assert data[1]["increase"] == 0.0  # 1200000 == 1200000 -> 0% change
-    assert data[2]["position"] == "future"
+    assert data[0]["period"]["timeframe"] == "previous"
+    assert data[0]["period"]["month"] == 11
+    assert data[0]["amount"]["increase"] == 20.0  # vs lookback: +20%
+    assert data[1]["period"]["timeframe"] == "current"
+    assert data[1]["amount"]["increase"] == 0.0  # 1200000 == 1200000 -> 0% change
+    assert data[2]["period"]["timeframe"] == "future"
 
 
 @pytest.mark.asyncio

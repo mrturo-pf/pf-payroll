@@ -654,27 +654,45 @@ class PayrollPeriodEmployerRead:
 
 
 @dataclass(frozen=True, slots=True)
-class PayrollPeriodRead:
-    """Represent the unified payroll period read.
+class PayrollPeriodDateRangeRead:
+    """Represent the nested start/end date range on a PayrollPeriodInfoRead."""
 
-    Shared verbatim by GET /payroll (a list of these) and GET
-    /payroll/{period_id} (one of these) -- replaces the previously
-    diverging PayrollPeriodRangeRead/PayrollSummaryRead/
-    PayrollPeriodDetailRead shapes those three endpoints used to return.
-    period_id/employer/gross_income_clp/taxable_income_clp/
-    total_discounts_clp are None for synthetic entries that have no real
-    backing DB row -- inferred (padded) previous periods and every future
-    (always-projected) period -- same honesty-over-fabrication philosophy
-    as every other field here.
+    start: date
+    end: date
+
+
+@dataclass(frozen=True, slots=True)
+class PayrollPeriodInfoRead:
+    """Represent the nested temporal identity of a PayrollPeriodRead.
+
+    Groups year/month/date_range/timeframe -- everything that answers "when
+    is this period, and where does it sit relative to today" -- under one
+    key, mirroring `employer` (relationship) and `amount` (financial
+    breakdown) as the three value-object buckets making up PayrollPeriodRead.
+
+    `timeframe` deliberately uses "future", not "next": this field answers
+    "what temporal *direction* is this period relative to today", a
+    category that -- exactly like "previous" -- can describe many periods at
+    once (list_period_ranges() returns up to 12 of each by default), not a
+    single immediately-adjacent one the way "next" would imply.
     """
 
-    period_id: int | None
-    employer: PayrollPeriodEmployerRead | None
-    period_year: int
-    period_month: int
-    start_date: date
-    end_date: date
-    position: Literal["previous", "current", "future"]
+    year: int
+    month: int
+    date_range: PayrollPeriodDateRangeRead
+    timeframe: Literal["previous", "current", "future"]
+
+
+@dataclass(frozen=True, slots=True)
+class PayrollPeriodAmountRead:
+    """Represent the nested financial breakdown of a PayrollPeriodRead.
+
+    gross_income_clp/taxable_income_clp/total_discounts_clp are None for
+    synthetic entries that have no real backing DB row -- inferred (padded)
+    previous periods and every future (always-projected) period -- same
+    honesty-over-fabrication philosophy as every other field here.
+    """
+
     gross_income_clp: int | None
     taxable_income_clp: int | None
     total_discounts_clp: int | None
@@ -684,6 +702,28 @@ class PayrollPeriodRead:
     net_pay_eur: float | None = None
     increase: float | None = None
     net_pay_clp_today: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PayrollPeriodRead:
+    """Represent the unified payroll period read.
+
+    Shared verbatim by GET /payroll (a list of these) and GET
+    /payroll/{period_id} (one of these) -- replaces the previously
+    diverging PayrollPeriodRangeRead/PayrollSummaryRead/
+    PayrollPeriodDetailRead shapes those three endpoints used to return.
+    `id`/`employer` are None for synthetic entries that have no real
+    backing DB row -- inferred (padded) previous periods and every future
+    (always-projected) period -- same honesty-over-fabrication philosophy
+    as every other field here. `period` and `amount` are never None
+    themselves (only their inner fields are) -- see PayrollPeriodInfoRead
+    and PayrollPeriodAmountRead.
+    """
+
+    id: int | None
+    employer: PayrollPeriodEmployerRead | None
+    period: PayrollPeriodInfoRead
+    amount: PayrollPeriodAmountRead
 
 
 def _compute_increase(
@@ -818,7 +858,7 @@ def _build_employer_read(
 def _build_payroll_period_read(
     item: PayrollPeriodRangeDTO,
     *,
-    position: Literal["previous", "current", "future"],
+    timeframe: Literal["previous", "current", "future"],
     increase: Decimal | None,
     net_pay_clp_today: Decimal | None,
 ) -> PayrollPeriodRead:
@@ -829,29 +869,34 @@ def _build_payroll_period_read(
     the two endpoints can never describe the same period differently.
     """
     return PayrollPeriodRead(
-        period_id=item.period_id,
+        id=item.period_id,
         employer=_build_employer_read(item),
-        period_year=item.period_year,
-        period_month=item.period_month,
-        start_date=item.start_date,
-        end_date=item.end_date,
-        position=position,
-        gross_income_clp=_to_money_int(item.gross_income_clp),
-        taxable_income_clp=_to_money_int(item.taxable_income_clp),
-        total_discounts_clp=_to_money_int(item.total_discounts_clp),
-        net_pay_clp=_to_money_int(item.net_pay_clp),
-        net_pay_uf=_to_optional_float(item.net_pay_uf),
-        net_pay_usd=_to_optional_float(item.net_pay_usd),
-        net_pay_eur=_to_optional_float(item.net_pay_eur),
-        increase=_to_optional_float(increase),
-        net_pay_clp_today=_to_money_int(net_pay_clp_today),
+        period=PayrollPeriodInfoRead(
+            year=item.period_year,
+            month=item.period_month,
+            date_range=PayrollPeriodDateRangeRead(
+                start=item.start_date, end=item.end_date
+            ),
+            timeframe=timeframe,
+        ),
+        amount=PayrollPeriodAmountRead(
+            gross_income_clp=_to_money_int(item.gross_income_clp),
+            taxable_income_clp=_to_money_int(item.taxable_income_clp),
+            total_discounts_clp=_to_money_int(item.total_discounts_clp),
+            net_pay_clp=_to_money_int(item.net_pay_clp),
+            net_pay_uf=_to_optional_float(item.net_pay_uf),
+            net_pay_usd=_to_optional_float(item.net_pay_usd),
+            net_pay_eur=_to_optional_float(item.net_pay_eur),
+            increase=_to_optional_float(increase),
+            net_pay_clp_today=_to_money_int(net_pay_clp_today),
+        ),
     )
 
 
 def to_payroll_period_reads(
     period_ranges: list[PayrollPeriodRangeDTO],
 ) -> list[PayrollPeriodRead]:
-    """Convert payroll period ranges to API reads with relative positions."""
+    """Convert payroll period ranges to API reads with relative timeframes."""
     current_index = next(
         (index for index, item in enumerate(period_ranges) if item.is_current),
         None,
@@ -861,14 +906,14 @@ def to_payroll_period_reads(
     for index, item in enumerate(period_ranges):
         if item.is_lookback:
             continue  # ghost predecessor — not emitted, used only via index lookup
-        position: Literal["previous", "current", "future"] = (
+        timeframe: Literal["previous", "current", "future"] = (
             "current"
             if item.is_current
             else "previous"
             if current_index is not None and index < current_index
             else "future"
         )
-        if position in {"previous", "current"}:
+        if timeframe in {"previous", "current"}:
             increase: Decimal | None = _compute_increase(
                 item, period_ranges[index - 1] if index > 0 else None
             )
@@ -876,13 +921,13 @@ def to_payroll_period_reads(
             increase = item.increase
         net_pay_clp_today = (
             _compute_net_pay_clp_today(item, current_item)
-            if position == "previous"
+            if timeframe == "previous"
             else None
         )
         ranges.append(
             _build_payroll_period_read(
                 item,
-                position=position,
+                timeframe=timeframe,
                 increase=increase,
                 net_pay_clp_today=net_pay_clp_today,
             )
@@ -890,13 +935,13 @@ def to_payroll_period_reads(
     return ranges
 
 
-def _resolve_single_position(
+def _resolve_single_timeframe(
     target: PayrollPeriodRangeDTO,
     current: PayrollPeriodRangeDTO | None,
 ) -> Literal["previous", "current", "future"]:
-    """Resolve a single real period's position relative to today's current.
+    """Resolve a single real period's timeframe relative to today's current.
 
-    Unlike to_payroll_period_reads()'s index-into-a-list approach (position
+    Unlike to_payroll_period_reads()'s index-into-a-list approach (timeframe
     is relative to where the item sits in an already-ordered window), this
     compares target directly against the independently-resolved `current`
     DTO -- get_period_range() has no window/list, just the one period.
@@ -920,16 +965,16 @@ def to_payroll_period_read(context: PayrollPeriodRangeContextDTO) -> PayrollPeri
     just applied to one period plus its own predecessor/current context
     instead of a whole window.
     """
-    position = _resolve_single_position(context.target, context.current)
+    timeframe = _resolve_single_timeframe(context.target, context.current)
     increase = _compute_increase(context.target, context.predecessor)
     net_pay_clp_today = (
         _compute_net_pay_clp_today(context.target, context.current)
-        if position == "previous"
+        if timeframe == "previous"
         else None
     )
     return _build_payroll_period_read(
         context.target,
-        position=position,
+        timeframe=timeframe,
         increase=increase,
         net_pay_clp_today=net_pay_clp_today,
     )

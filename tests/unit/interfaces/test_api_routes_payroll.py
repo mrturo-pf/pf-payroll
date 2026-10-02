@@ -142,12 +142,13 @@ def _make_period_range_dto(**overrides: object) -> PayrollPeriodRangeDTO:
     return PayrollPeriodRangeDTO(**defaults)  # type: ignore[arg-type]
 
 
-def test_to_payroll_period_read_resolves_previous_position() -> None:
-    """Target older than current -> position 'previous', net_pay_clp_today computed.
+def test_to_payroll_period_read_resolves_previous_timeframe() -> None:
+    """Target older than current -> timeframe 'previous', net_pay_clp_today computed.
 
-    GET /payroll/{period_id}'s own position resolution (_resolve_single_position)
-    is distinct from list_period_ranges()'s index-based one -- this is the one
-    spot that exercises it against a target that is NOT the resolved current.
+    GET /payroll/{period_id}'s own timeframe resolution
+    (_resolve_single_timeframe) is distinct from list_period_ranges()'s
+    index-based one -- this is the one spot that exercises it against a
+    target that is NOT the resolved current.
     """
     target = _make_period_range_dto(
         period_year=2026,
@@ -178,12 +179,12 @@ def test_to_payroll_period_read_resolves_previous_position() -> None:
 
     read = to_payroll_period_read(context)
 
-    assert read.position == "previous"
-    assert read.net_pay_clp_today is not None
+    assert read.period.timeframe == "previous"
+    assert read.amount.net_pay_clp_today is not None
 
 
-def test_to_payroll_period_read_resolves_future_position() -> None:
-    """Target newer than current -> position 'future', net_pay_clp_today stays None."""
+def test_to_payroll_period_read_resolves_future_timeframe() -> None:
+    """Target newer than current -> timeframe 'future', net_pay_clp_today stays None."""
     target = _make_period_range_dto(
         period_year=2026,
         period_month=4,
@@ -205,8 +206,8 @@ def test_to_payroll_period_read_resolves_future_position() -> None:
 
     read = to_payroll_period_read(context)
 
-    assert read.position == "future"
-    assert read.net_pay_clp_today is None
+    assert read.period.timeframe == "future"
+    assert read.amount.net_pay_clp_today is None
 
 
 def test_to_payroll_period_read_defaults_to_previous_without_any_current() -> None:
@@ -218,5 +219,5 @@ def test_to_payroll_period_read_defaults_to_previous_without_any_current() -> No
 
     read = to_payroll_period_read(context)
 
-    assert read.position == "previous"
-    assert read.net_pay_clp_today is None
+    assert read.period.timeframe == "previous"
+    assert read.amount.net_pay_clp_today is None

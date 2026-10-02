@@ -524,6 +524,9 @@ class PayrollPeriodRangeDTO(PayrollPeriodRangeFields):
     salary_base: Decimal | None = None
     worked_days: int | None = None
     is_lookback: bool = False
+    net_pay_usd: Decimal | None = None
+    net_pay_eur: Decimal | None = None
+    net_pay_uf: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)

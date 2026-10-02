@@ -1,5 +1,6 @@
 """Shared helpers for SQLAlchemy payroll repositories."""
 
+import asyncio
 from calendar import monthrange
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -17,7 +18,7 @@ from payroll.application.errors import (
 )
 from payroll.application.dto import PayrollSummaryDTO
 from payroll.application.ports.repositories import MarketDataRepository
-from payroll.domain.quantizers import quantize_percent
+from payroll.domain.quantizers import quantize_currency_amount, quantize_percent
 from payroll.infrastructure.db.models import (
     ContributionCapModel,
     EmployerModel,
@@ -409,6 +410,84 @@ async def project_future_months(
             net_pay_clp=displayed_net_pay, increase_pct=increase_pct
         )
     return series
+
+
+_FOREIGN_CURRENCY_CODES = ("USD", "EUR", "UF")
+
+
+@dataclass(frozen=True, slots=True)
+class CurrencyEquivalents:
+    """A CLP amount expressed in USD, EUR, and UF for a given date.
+
+    Each currency degrades independently to None -- see
+    resolve_currency_equivalents() for exactly when and why.
+    """
+
+    usd: Decimal | None
+    eur: Decimal | None
+    uf: Decimal | None
+
+
+_NO_CURRENCY_EQUIVALENTS = CurrencyEquivalents(usd=None, eur=None, uf=None)
+
+
+def _convert_to_currency(
+    amount_clp: Decimal, rate_or_error: Decimal | None | BaseException
+) -> Decimal | None:
+    """Convert amount_clp using rate_or_error, degrading any failure to None.
+
+    `rate_or_error` comes straight out of an `asyncio.gather(...,
+    return_exceptions=True)` slot: it is either the resolved Decimal rate,
+    None (pf-rates has no rate for that currency/date), or a raised
+    exception object (e.g. PayrollDependencyError on a pf-rates outage).
+    `isinstance(..., Decimal)` filters out both non-Decimal cases in one
+    guard; a non-positive rate is also rejected defensively even though
+    pf-rates should never publish one.
+    """
+    if not isinstance(rate_or_error, Decimal) or rate_or_error <= 0:
+        return None
+    return quantize_currency_amount(amount_clp / rate_or_error)
+
+
+async def resolve_currency_equivalents(
+    net_pay_clp: Decimal | None,
+    *,
+    rate_date: date,
+    market_data_repository: MarketDataRepository | None,
+) -> CurrencyEquivalents:
+    """Convert net_pay_clp into USD/EUR/UF equivalents for rate_date.
+
+    Each of the three currencies degrades independently to None: no
+    market_data_repository wired in at all, nothing to convert (net_pay_clp
+    itself is None -- e.g. an inferred period with no declared pay), that
+    specific currency's rate for rate_date is simply not published by
+    pf-rates, or pf-rates raised (PayrollDependencyError or otherwise).
+
+    Unlike predict_next_period_net_pay()/project_future_months(), this
+    helper never raises -- it is a 3-way best-effort enrichment where each
+    currency is independent of the other two, not a single pipeline that
+    benefits from letting list_period_ranges() be the one try/except
+    boundary. The three lookups run concurrently (`asyncio.gather`) since
+    list_period_ranges() calls this once per previous/current period in
+    the window (up to 13 times), and sequential currency-by-currency,
+    period-by-period calls would otherwise serialize dozens of independent
+    HTTP round trips to pf-rates.
+    """
+    if net_pay_clp is None or market_data_repository is None:
+        return _NO_CURRENCY_EQUIVALENTS
+
+    usd_rate, eur_rate, uf_rate = await asyncio.gather(
+        *(
+            market_data_repository.get_exchange_rate_value(code, rate_date)
+            for code in _FOREIGN_CURRENCY_CODES
+        ),
+        return_exceptions=True,
+    )
+    return CurrencyEquivalents(
+        usd=_convert_to_currency(net_pay_clp, usd_rate),
+        eur=_convert_to_currency(net_pay_clp, eur_rate),
+        uf=_convert_to_currency(net_pay_clp, uf_rate),
+    )
 
 
 def build_payroll_summary_dto(

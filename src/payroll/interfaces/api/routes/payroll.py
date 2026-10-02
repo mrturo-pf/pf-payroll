@@ -665,6 +665,9 @@ class PayrollPeriodRangeRead(PayrollPeriodRangeFields):
     net_pay_clp: int | None
     position: Literal["previous", "current", "future"]
     increase: float | None
+    net_pay_usd: float | None = None
+    net_pay_eur: float | None = None
+    net_pay_uf: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -765,6 +768,15 @@ def to_payroll_period_range_reads(
                 ),
                 position=position,
                 increase=(float(increase) if increase is not None else None),
+                net_pay_usd=(
+                    float(item.net_pay_usd) if item.net_pay_usd is not None else None
+                ),
+                net_pay_eur=(
+                    float(item.net_pay_eur) if item.net_pay_eur is not None else None
+                ),
+                net_pay_uf=(
+                    float(item.net_pay_uf) if item.net_pay_uf is not None else None
+                ),
             )
         )
     return ranges

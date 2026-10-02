@@ -54,6 +54,7 @@ from payroll.infrastructure.db.repositories.payroll_repository_shared import (
     get_last_day_of_month,
     predict_next_period_net_pay,
     project_future_months,
+    resolve_currency_equivalents,
 )
 from payroll.interfaces.api import dependencies
 
@@ -145,12 +146,14 @@ class FakeMarketDataRepository:
         raises: Exception | None = None,
         economic_index_by_period: dict[tuple[str, int, int], Decimal] | None = None,
         latest_economic_index: dict[str, tuple[date, Decimal]] | None = None,
+        rates_by_currency_date: dict[tuple[str, date], Decimal | None] | None = None,
     ) -> None:
         """Initialize the instance."""
         self._rates_by_date = rates_by_date or {}
         self._raises = raises
         self._economic_index_by_period = economic_index_by_period or {}
         self._latest_economic_index = latest_economic_index or {}
+        self._rates_by_currency_date = rates_by_currency_date or {}
 
     async def get_exchange_rate_value(
         self, currency_code: str, rate_date: date
@@ -158,6 +161,9 @@ class FakeMarketDataRepository:
         """Handle get exchange rate value."""
         if self._raises is not None:
             raise self._raises
+        key = (currency_code, rate_date)
+        if key in self._rates_by_currency_date:
+            return self._rates_by_currency_date[key]
         if currency_code != "UF":
             return None
         return self._rates_by_date.get(rate_date)
@@ -2297,6 +2303,89 @@ async def test_list_period_ranges_degrades_to_none_on_market_data_outage() -> No
     assert result[13].net_pay_clp is None
 
 
+@pytest.mark.asyncio
+async def test_list_period_ranges_converts_non_future_periods_to_foreign_currencies() -> (  # noqa: E501
+    None
+):
+    """previous/current periods get real USD/EUR/UF equivalents; future ones don't.
+
+    Uses the id=17/March-2026 current + id=16/February-2026 previous fixture
+    from test_sqlalchemy_payroll_repository_lists_period_ranges (result[11]
+    is that previous period, result[12] is current, result[13] is the first
+    future month) -- same shape, this test only adds a market_data_repository
+    with real rates for both non-future start_dates.
+    """
+    current_period = PayrollPeriodModel(
+        id=17,
+        employer_id=1,
+        period_year=2026,
+        period_month=3,
+        payment_date=date(2026, 3, 28),
+        status=PayrollStatus.ACTUAL,
+        declared_net_pay_clp=Decimal("2978086"),
+    )
+    current_employer = build_specific_chile_employer()
+    previous_period = PayrollPeriodModel(
+        id=16,
+        employer_id=1,
+        period_year=2026,
+        period_month=2,
+        payment_date=date(2026, 2, 26),
+        status=PayrollStatus.ACTUAL,
+        declared_net_pay_clp=Decimal("2983237"),
+    )
+    session = FakeSession(
+        [
+            FakeResult(first_row=(current_period, current_employer)),
+            FakeResult(scalar_rows=[previous_period]),
+        ]
+    )
+    market_data_repository = FakeMarketDataRepository(
+        rates_by_currency_date={
+            ("USD", date(2026, 2, 26)): Decimal("950.00"),
+            ("EUR", date(2026, 2, 26)): Decimal("1030.00"),
+            ("UF", date(2026, 2, 26)): Decimal("38500.00"),
+            ("USD", date(2026, 3, 28)): Decimal("955.00"),
+            ("EUR", date(2026, 3, 28)): Decimal("1035.00"),
+            ("UF", date(2026, 3, 28)): Decimal("38600.00"),
+        }
+    )
+    repository = SqlAlchemyPayrollRepository(  # type: ignore[arg-type]
+        session, market_data_repository
+    )
+
+    result = await repository.list_period_ranges(today=date(2026, 3, 31))
+
+    assert result[11].net_pay_usd == (Decimal("2983237") / Decimal("950.00")).quantize(
+        Decimal("0.01")
+    )
+    assert result[11].net_pay_eur == (Decimal("2983237") / Decimal("1030.00")).quantize(
+        Decimal("0.01")
+    )
+    assert result[11].net_pay_uf == (Decimal("2983237") / Decimal("38500.00")).quantize(
+        Decimal("0.01")
+    )
+    assert result[12].is_current is True
+    assert result[12].net_pay_usd == (Decimal("2978086") / Decimal("955.00")).quantize(
+        Decimal("0.01")
+    )
+    assert result[12].net_pay_eur == (Decimal("2978086") / Decimal("1035.00")).quantize(
+        Decimal("0.01")
+    )
+    assert result[12].net_pay_uf == (Decimal("2978086") / Decimal("38600.00")).quantize(
+        Decimal("0.01")
+    )
+    # Future periods never get a currency conversion -- regardless of
+    # whether net_pay_clp itself could be predicted (it can't here: this
+    # fixture's market_data_repository has no UF rate configured for the
+    # month-end date predict_next_period_net_pay() needs, which is a
+    # separate concern from the per-period-start_date rates this test is
+    # actually about).
+    assert result[13].net_pay_usd is None
+    assert result[13].net_pay_eur is None
+    assert result[13].net_pay_uf is None
+
+
 def test_sqlalchemy_payroll_repository_keeps_configured_offset_when_unmatched() -> None:
     """Test month-offset inference falls back to the configured offset."""
     repository = SqlAlchemyPayrollRepository(None)  # type: ignore[arg-type]
@@ -3129,6 +3218,114 @@ async def test_project_future_months_handles_consecutive_increase_months() -> No
     )
     assert result[3].net_pay_clp == step_two
     assert result[3].increase_pct == Decimal("0.98")
+
+
+@pytest.mark.asyncio
+async def test_resolve_currency_equivalents_converts_all_three_currencies() -> None:
+    """Happy path: net_pay_clp / rate for each of USD, EUR, UF."""
+    rate_date = date(2026, 9, 1)
+    market_data_repository = FakeMarketDataRepository(
+        rates_by_currency_date={
+            ("USD", rate_date): Decimal("950.00"),
+            ("EUR", rate_date): Decimal("1030.00"),
+            ("UF", rate_date): Decimal("38500.00"),
+        }
+    )
+
+    result = await resolve_currency_equivalents(
+        Decimal("3001910"),
+        rate_date=rate_date,
+        market_data_repository=market_data_repository,
+    )
+
+    assert result.usd == (Decimal("3001910") / Decimal("950.00")).quantize(
+        Decimal("0.01")
+    )
+    assert result.eur == (Decimal("3001910") / Decimal("1030.00")).quantize(
+        Decimal("0.01")
+    )
+    assert result.uf == (Decimal("3001910") / Decimal("38500.00")).quantize(
+        Decimal("0.01")
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_currency_equivalents_returns_none_without_net_pay() -> None:
+    """net_pay_clp is None (nothing to convert) -> all three are None.
+
+    Short-circuits before ever calling market_data_repository, so a Fake
+    configured to raise on every call proves no call was actually made.
+    """
+    result = await resolve_currency_equivalents(
+        None,
+        rate_date=date(2026, 9, 1),
+        market_data_repository=FakeMarketDataRepository(raises=RuntimeError("boom")),
+    )
+
+    assert result.usd is None
+    assert result.eur is None
+    assert result.uf is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_currency_equivalents_returns_none_without_repository() -> None:
+    """No market_data_repository wired in at all -> all three are None."""
+    result = await resolve_currency_equivalents(
+        Decimal("3001910"),
+        rate_date=date(2026, 9, 1),
+        market_data_repository=None,
+    )
+
+    assert result.usd is None
+    assert result.eur is None
+    assert result.uf is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_currency_equivalents_degrades_missing_currency_independently() -> (  # noqa: E501
+    None
+):
+    """One currency unpublished for rate_date doesn't block the other two."""
+    rate_date = date(2026, 9, 1)
+    market_data_repository = FakeMarketDataRepository(
+        rates_by_currency_date={
+            ("USD", rate_date): Decimal("950.00"),
+            ("EUR", rate_date): None,
+            ("UF", rate_date): Decimal("38500.00"),
+        }
+    )
+
+    result = await resolve_currency_equivalents(
+        Decimal("3001910"),
+        rate_date=rate_date,
+        market_data_repository=market_data_repository,
+    )
+
+    assert result.usd is not None
+    assert result.eur is None
+    assert result.uf is not None
+
+
+@pytest.mark.asyncio
+async def test_resolve_currency_equivalents_degrades_on_pf_rates_outage() -> None:
+    """pf-rates raising for every currency degrades all three to None.
+
+    resolve_currency_equivalents() never propagates -- unlike
+    predict_next_period_net_pay()/project_future_months(), it is a 3-way
+    best-effort enrichment, not a single pipeline with one try/except
+    boundary at list_period_ranges() -- see its own docstring.
+    """
+    result = await resolve_currency_equivalents(
+        Decimal("3001910"),
+        rate_date=date(2026, 9, 1),
+        market_data_repository=FakeMarketDataRepository(
+            raises=PayrollDependencyError("pf-rates unreachable")
+        ),
+    )
+
+    assert result.usd is None
+    assert result.eur is None
+    assert result.uf is None
 
 
 @pytest.mark.asyncio

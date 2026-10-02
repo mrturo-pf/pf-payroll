@@ -513,3 +513,126 @@ not new:
 
 Same as prior sections: no commit, no push, awaiting explicit user
 authorization.
+
+## 13. USD/EUR/UF equivalents for non-future periods (2026-10-01)
+
+User request: for every non-future period (`previous`/`current`) on
+`GET /payroll/period-range`, expose how many US dollars, euros, and UF
+`net_pay_clp` equates to on that period's own `start_date` (first day of
+the period).
+
+### Design
+
+- **New DTO/Read fields**: `net_pay_usd`, `net_pay_eur`, `net_pay_uf` on
+  both `PayrollPeriodRangeDTO` (`Decimal | None`) and
+  `PayrollPeriodRangeRead` (`float | None`, plain JSON numbers -- same
+  convention as `net_pay_clp`/`increase`). All three default to `None` so
+  every existing DTO-construction call site across the codebase (tests
+  included) keeps working unchanged.
+- **New `domain/quantizers.py::quantize_currency_amount()`**: 2 decimals,
+  the conventional display precision for USD/EUR/UF amounts -- a new,
+  separate function from `quantize_percent()` even though both currently
+  quantize to the same `0.01` constant, because they are semantically
+  different concerns (a currency amount vs. a percentage) that happen to
+  share a quantum today; collapsing them into one function would be a
+  coincidence-driven abstraction, not a real one.
+- **`pf-rates`' `get_exchange_rate_value(currency_code, date)`** is already
+  fully generic -- the existing UF-only call sites (net_pay prediction, UF
+  discount computation) never needed USD/EUR before, but the port and the
+  HTTP client both already treat `currency_code` as an open string, so no
+  interface change was needed there. Confirmed against the live local
+  `pf-rates` service that it really does carry `USD`/`EUR`/`UF` (and
+  `UTM`) data, not just `UF`, and that `value_clp` always means "CLP per 1
+  unit of that currency/index" (already the implicit convention this
+  codebase assumed for UF everywhere else -- e.g.
+  `predict_next_period_net_pay()`'s `amount_clp / uf_rate` pattern), so
+  `net_pay_clp / rate` is the correct, consistent conversion for all three.
+- **New `payroll_repository_shared.py::resolve_currency_equivalents()`**
+  (+ `CurrencyEquivalents` dataclass, `_convert_to_currency()` helper):
+  given a `net_pay_clp` and a `rate_date`, concurrently resolves USD/EUR/UF
+  via `asyncio.gather(..., return_exceptions=True)` and converts each
+  independently. Deliberately **never raises** -- unlike
+  `predict_next_period_net_pay()`/`project_future_months()` (which
+  propagate `PayrollDependencyError` for `list_period_ranges()` to catch
+  once), this is a 3-way-independent best-effort enrichment: one missing
+  rate, one unpublished date, or pf-rates raising for one specific
+  currency must never block the other two, so catching per-call via
+  `return_exceptions=True` and treating any non-`Decimal` result
+  (`None` or an exception object) as "no value" in one `isinstance` check
+  is simpler and more correct here than threading a shared try/except
+  around three independent lookups.
+- **Call sites, deliberately excluding `future`**: `list_period_ranges()`
+  calls `resolve_currency_equivalents()` once per *real* previous period
+  (`previous_periods_ordered`, built once and reused both for the
+  concurrent `asyncio.gather` and the final DTO-construction `zip`) and
+  once for the current period, **not** for the lookback ghost (never
+  emitted in the response -- would be 3 wasted pf-rates calls) and **not**
+  for inferred/data-less previous periods (`net_pay_clp` is already `None`
+  for those, so the function would short-circuit to all-`None` instantly
+  anyway, but skipping the call outright still avoids the construction
+  overhead). `future_ranges` never calls it at all: the user explicitly
+  scoped this to non-future periods, and `future` entries' `net_pay_clp`
+  is itself already only a projection -- converting a projection to
+  foreign currency would stack two layers of approximation into one
+  number with no way to tell them apart later.
+- **Concurrency**: up to 13 non-future periods x 3 currencies = up to 39
+  independent HTTP calls to `pf-rates` on a fully cold cache. All 39 run
+  concurrently via nested `asyncio.gather` (one gather per period's 3
+  currencies, all 13 of those gathers themselves gathered together) rather
+  than sequentially -- `PfRatesClient` already has its own per-
+  `(currency_code, date)` TTL cache (same cache instance used by the UF
+  lookups elsewhere), so repeat requests for the same window are cheap
+  regardless, but the very first cold request still benefits enormously
+  from not serializing 39 round trips. Live-verified: ~1.65s cold,
+  ~0.94s warm (same JSON output byte-for-byte both times), against the
+  restored local Neon data + local `pf-rates`.
+- **`completed_ranges`'s final re-wrap loop** (the step that recomputes
+  every item's `end_date` from its successor's `start_date`) had to be
+  updated too -- it reconstructs every `PayrollPeriodRangeDTO` field by
+  field, so forgetting to carry `net_pay_usd`/`net_pay_eur`/`net_pay_uf`
+  through there would have silently reset them all back to `None` right
+  before the function returns (caught immediately by the new end-to-end
+  repository test below, not by inspection -- a good reminder this
+  specific "rebuild every field" step is the one place in this file most
+  likely to silently drop a newly added DTO field).
+
+### Tests
+
+- `test_payroll_repository.py`'s local `FakeMarketDataRepository` (used across this whole test
+  file) extended with an optional `rates_by_currency_date: dict[tuple[str,
+  date], Decimal | None]` param, checked before falling back to its
+  original UF-only `rates_by_date` behavior -- fully backward compatible
+  with every existing test that doesn't pass it.
+- 5 new unit tests directly against `resolve_currency_equivalents()`:
+  happy path (all 3 convert correctly), `net_pay_clp=None` short-circuits
+  without ever calling the repository (proven via a repository configured
+  to raise on any call), no repository wired in at all, one currency
+  unpublished for the date while the other two still succeed, and a full
+  `PayrollDependencyError` outage degrading all three to `None` without
+  propagating.
+- 1 new end-to-end `list_period_ranges()` test
+  (`test_list_period_ranges_converts_non_future_periods_to_foreign_currencies`)
+  reusing the existing previous+current fixture, asserting both the
+  previous and current period get real USD/EUR/UF values from their own
+  `start_date`'s configured rate, and that the first future month -- which
+  does get a real projected `net_pay_clp` in other tests, though not in
+  this particular fixture -- never gets currency fields regardless.
+
+### Validation
+
+- `pytest`: 524 tests passing (3 pre-existing Docker-dependent tests still
+  deselected, same root cause as every prior section), 100% coverage on
+  every file this change touched (`interfaces/session.py` is exactly those
+  3 deselected tests, unrelated).
+- `ruff check` / `ruff format --check` / `mypy src` / `vulture src`: all
+  clean.
+- Live-verified against the restored local Neon data + local `pf-rates`:
+  all 13 non-future periods in the window returned real, distinct
+  USD/EUR/UF figures; all 12 future periods returned `null` for all three
+  as designed; a repeat request returned byte-for-byte identical JSON
+  roughly 43% faster (cache warm).
+
+### Not yet done
+
+Same as prior sections: no commit, no push, awaiting explicit user
+authorization.

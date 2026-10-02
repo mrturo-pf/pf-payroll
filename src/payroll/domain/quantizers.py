@@ -2,11 +2,17 @@
 
 from decimal import Decimal
 
-__all__ = ["quantize_clp", "quantize_percent", "quantize_utm"]
+__all__ = [
+    "quantize_clp",
+    "quantize_currency_amount",
+    "quantize_percent",
+    "quantize_utm",
+]
 
 _CLP_QUANT = Decimal("1")
 _UTM_QUANT = Decimal("0.000001")
 _PERCENT_QUANT = Decimal("0.01")
+_CURRENCY_QUANT = Decimal("0.01")
 
 
 def quantize_clp(value: Decimal) -> Decimal:
@@ -22,3 +28,8 @@ def quantize_utm(value: Decimal) -> Decimal:
 def quantize_percent(value: Decimal) -> Decimal:
     """Quantize a percentage value to two decimal places."""
     return value.quantize(_PERCENT_QUANT)
+
+
+def quantize_currency_amount(value: Decimal) -> Decimal:
+    """Quantize a non-CLP currency/index amount (USD, EUR, UF) to 2 decimals."""
+    return value.quantize(_CURRENCY_QUANT)

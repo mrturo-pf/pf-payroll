@@ -118,7 +118,7 @@ class FakePayrollQueries:
                 net_pay_clp=None,
                 is_current=False,
                 inferred=True,
-                increase=True,
+                increase=Decimal("0.00"),
             ),
         ]
 
@@ -145,6 +145,9 @@ def test_payroll_query_endpoints() -> None:
             "net_pay_clp": None,
             "position": "previous",
             "increase": None,
+            "net_pay_usd": None,
+            "net_pay_eur": None,
+            "net_pay_uf": None,
         },
         {
             "period_year": 2026,
@@ -154,6 +157,9 @@ def test_payroll_query_endpoints() -> None:
             "net_pay_clp": 830000,
             "position": "current",
             "increase": None,
+            "net_pay_usd": None,
+            "net_pay_eur": None,
+            "net_pay_uf": None,
         },
         {
             "period_year": 2026,
@@ -162,7 +168,10 @@ def test_payroll_query_endpoints() -> None:
             "end_date": "2026-03-30",
             "net_pay_clp": None,
             "position": "future",
-            "increase": True,
+            "increase": 0.0,
+            "net_pay_usd": None,
+            "net_pay_eur": None,
+            "net_pay_uf": None,
         },
     ]
     assert summary_response.status_code == 200

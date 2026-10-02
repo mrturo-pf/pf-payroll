@@ -1,5 +1,6 @@
 """Query-oriented payroll repository operations."""
 
+import asyncio
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -34,6 +35,7 @@ from payroll.infrastructure.db.repositories.payroll_repository_shared import (
     degraded_future_months,
     predict_next_period_net_pay,
     project_future_months,
+    resolve_currency_equivalents,
 )
 from payroll.shared.dates import add_months, resolve_payment_date
 
@@ -282,6 +284,34 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             )
             salary_base_map = {row[0]: row[1] for row in salary_result.all()}
 
+        # Resolve USD/EUR/UF equivalents for every non-future period's
+        # start_date, concurrently -- see resolve_currency_equivalents()'s
+        # docstring for why this is a 3-way-independent, never-raising
+        # best-effort enrichment rather than something list_period_ranges()
+        # itself needs to catch PayrollDependencyError around. The lookback
+        # ghost and any inferred (data-less) previous periods are
+        # deliberately excluded: the former is never emitted in the
+        # response at all, and the latter has no net_pay_clp to convert in
+        # the first place (resolve_currency_equivalents() would short-
+        # circuit to None for them anyway, but skipping the call outright
+        # avoids wasted pf-rates round trips).
+        previous_periods_ordered = list(reversed(previous_periods))
+        *previous_currencies, current_currency = await asyncio.gather(
+            *(
+                resolve_currency_equivalents(
+                    period.declared_net_pay_clp,
+                    rate_date=period.payment_date,
+                    market_data_repository=self._market_data_repository,
+                )
+                for period in previous_periods_ordered
+            ),
+            resolve_currency_equivalents(
+                current_net_pay_clp,
+                rate_date=current_start,
+                market_data_repository=self._market_data_repository,
+            ),
+        )
+
         previous_ranges = [
             PayrollPeriodRangeDTO(
                 period_year=period.period_year,
@@ -294,8 +324,13 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                 increase=None,
                 salary_base=salary_base_map.get(period.id),
                 worked_days=period.worked_days,
+                net_pay_usd=currency.usd,
+                net_pay_eur=currency.eur,
+                net_pay_uf=currency.uf,
             )
-            for period in reversed(previous_periods)
+            for period, currency in zip(
+                previous_periods_ordered, previous_currencies, strict=True
+            )
         ]
 
         if len(previous_ranges) < 12:
@@ -370,6 +405,9 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             worked_days=(
                 current_period.worked_days if current_row is not None else None
             ),
+            net_pay_usd=current_currency.usd,
+            net_pay_eur=current_currency.eur,
+            net_pay_uf=current_currency.uf,
         )
 
         # Calculate predicted net_pay for the first future period. A
@@ -462,6 +500,9 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                     salary_base=period_range.salary_base,
                     worked_days=period_range.worked_days,
                     is_lookback=period_range.is_lookback,
+                    net_pay_usd=period_range.net_pay_usd,
+                    net_pay_eur=period_range.net_pay_eur,
+                    net_pay_uf=period_range.net_pay_uf,
                 )
             )
         return completed_ranges

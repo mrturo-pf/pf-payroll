@@ -43,10 +43,8 @@ from payroll.application.dto import (
     DeflateAmountsCommandDTO,
     DeflatedAmountDTO,
     ComputeIncomeTaxCommandDTO,
-    PayrollPeriodDetailFields,
-    PayrollPeriodRangeFields,
+    PayrollPeriodRangeContextDTO,
     PayrollPeriodRangeDTO,
-    PayrollSummaryDTO,
 )
 from payroll.domain.contributions import EmploymentContractKind
 from payroll.domain.quantizers import quantize_clp, quantize_percent
@@ -641,72 +639,51 @@ class DeflateAmountsResponse(BaseModel):
     net_pay: DeflatedAmountRead
 
 
-class PayrollItemDetailRead(BaseModel):
-    """Represent Payroll Item Detail Read."""
+@dataclass(frozen=True, slots=True)
+class PayrollPeriodEmployerRead:
+    """Represent the nested employer object on a PayrollPeriodRead.
 
-    concept_code: str
-    concept_name: str
-    kind: str
-    is_taxable: bool
-    amount_clp: str
-    notes: str | None
+    A proper nested object rather than a flat employer_id -- room to grow
+    (e.g. tax_id, country_code) without another breaking reshape of
+    PayrollPeriodRead later. None (the whole object, not its fields) on
+    PayrollPeriodRead for any synthetic entry with no real backing row.
+    """
 
-
-class PayrollSummaryRead(BaseModel):
-    """Represent Payroll Summary Read."""
-
-    period_id: int
-    employer_id: int
-    employer_name: str
-    period_year: int
-    period_month: int
-    payment_date: date
-    taxable_income_clp: str
-    gross_income_clp: str
-    total_discounts_clp: str
-    net_pay_clp: str
+    id: int
+    name: str
 
 
 @dataclass(frozen=True, slots=True)
-class PayrollPeriodRangeRead(PayrollPeriodRangeFields):
-    """Represent Payroll Period Range Read."""
+class PayrollPeriodRead:
+    """Represent the unified payroll period read.
 
+    Shared verbatim by GET /payroll (a list of these) and GET
+    /payroll/{period_id} (one of these) -- replaces the previously
+    diverging PayrollPeriodRangeRead/PayrollSummaryRead/
+    PayrollPeriodDetailRead shapes those three endpoints used to return.
+    period_id/employer/gross_income_clp/taxable_income_clp/
+    total_discounts_clp are None for synthetic entries that have no real
+    backing DB row -- inferred (padded) previous periods and every future
+    (always-projected) period -- same honesty-over-fabrication philosophy
+    as every other field here.
+    """
+
+    period_id: int | None
+    employer: PayrollPeriodEmployerRead | None
+    period_year: int
+    period_month: int
+    start_date: date
+    end_date: date
     position: Literal["previous", "current", "future"]
+    gross_income_clp: int | None
+    taxable_income_clp: int | None
+    total_discounts_clp: int | None
     net_pay_clp: int | None
     net_pay_uf: float | None = None
     net_pay_usd: float | None = None
     net_pay_eur: float | None = None
     increase: float | None = None
     net_pay_clp_today: int | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class PayrollPeriodDetailRead(PayrollPeriodDetailFields):
-    """Represent Payroll Period Detail Read."""
-
-    status: str
-    employment_contract_kind: str
-    pension_plan_id: int | None
-    health_plan_id: int | None
-    items: list[PayrollItemDetailRead]
-    summary: PayrollSummaryRead | None
-    health_institution_is_active: bool | None = None
-
-
-def to_payroll_summary_read(summary: PayrollSummaryDTO) -> PayrollSummaryRead:
-    """Convert to payroll summary read."""
-    return PayrollSummaryRead(
-        period_id=summary.period_id,
-        employer_id=summary.employer_id,
-        employer_name=summary.employer_name,
-        period_year=summary.period_year,
-        period_month=summary.period_month,
-        payment_date=summary.payment_date,
-        taxable_income_clp=str(summary.taxable_income_clp),
-        gross_income_clp=str(summary.gross_income_clp),
-        total_discounts_clp=str(summary.total_discounts_clp),
-        net_pay_clp=str(summary.net_pay_clp),
-    )
 
 
 def _compute_increase(
@@ -807,16 +784,80 @@ def _compute_net_pay_clp_today(
     return quantize_clp(scalable_today - fixed_uf_today)
 
 
-def to_payroll_period_range_reads(
+def _to_money_int(value: Decimal | None) -> int | None:
+    """Quantize a CLP Decimal amount to the nearest peso, as an int.
+
+    Shared by every CLP-denominated field in PayrollPeriodRead (net_pay_clp,
+    net_pay_clp_today, and now gross_income_clp/taxable_income_clp/
+    total_discounts_clp too) so all of them use one consistent whole-peso
+    representation -- deliberately not the `str`-preserving-cents
+    representation the now-removed PayrollSummaryRead used to use for the
+    same three summary fields.
+    """
+    return int(quantize_clp(value)) if value is not None else None
+
+
+def _to_optional_float(value: Decimal | None) -> float | None:
+    """Convert an optional Decimal to an optional float."""
+    return float(value) if value is not None else None
+
+
+def _build_employer_read(
+    item: PayrollPeriodRangeDTO,
+) -> PayrollPeriodEmployerRead | None:
+    """Build the nested employer object, or None for a synthetic entry.
+
+    Both employer_id and employer_name come from the same real DB row --
+    either both are present or neither is (never a half-built employer).
+    """
+    if item.employer_id is None or item.employer_name is None:
+        return None
+    return PayrollPeriodEmployerRead(id=item.employer_id, name=item.employer_name)
+
+
+def _build_payroll_period_read(
+    item: PayrollPeriodRangeDTO,
+    *,
+    position: Literal["previous", "current", "future"],
+    increase: Decimal | None,
+    net_pay_clp_today: Decimal | None,
+) -> PayrollPeriodRead:
+    """Build one PayrollPeriodRead from a DTO plus its derived fields.
+
+    Shared by to_payroll_period_reads() (the GET /payroll list) and
+    to_payroll_period_read() (the GET /payroll/{period_id} single item) so
+    the two endpoints can never describe the same period differently.
+    """
+    return PayrollPeriodRead(
+        period_id=item.period_id,
+        employer=_build_employer_read(item),
+        period_year=item.period_year,
+        period_month=item.period_month,
+        start_date=item.start_date,
+        end_date=item.end_date,
+        position=position,
+        gross_income_clp=_to_money_int(item.gross_income_clp),
+        taxable_income_clp=_to_money_int(item.taxable_income_clp),
+        total_discounts_clp=_to_money_int(item.total_discounts_clp),
+        net_pay_clp=_to_money_int(item.net_pay_clp),
+        net_pay_uf=_to_optional_float(item.net_pay_uf),
+        net_pay_usd=_to_optional_float(item.net_pay_usd),
+        net_pay_eur=_to_optional_float(item.net_pay_eur),
+        increase=_to_optional_float(increase),
+        net_pay_clp_today=_to_money_int(net_pay_clp_today),
+    )
+
+
+def to_payroll_period_reads(
     period_ranges: list[PayrollPeriodRangeDTO],
-) -> list[PayrollPeriodRangeRead]:
+) -> list[PayrollPeriodRead]:
     """Convert payroll period ranges to API reads with relative positions."""
     current_index = next(
         (index for index, item in enumerate(period_ranges) if item.is_current),
         None,
     )
     current_item = period_ranges[current_index] if current_index is not None else None
-    ranges: list[PayrollPeriodRangeRead] = []
+    ranges: list[PayrollPeriodRead] = []
     for index, item in enumerate(period_ranges):
         if item.is_lookback:
             continue  # ghost predecessor — not emitted, used only via index lookup
@@ -839,33 +880,59 @@ def to_payroll_period_range_reads(
             else None
         )
         ranges.append(
-            PayrollPeriodRangeRead(
-                period_year=item.period_year,
-                period_month=item.period_month,
-                start_date=item.start_date,
-                end_date=item.end_date,
+            _build_payroll_period_read(
+                item,
                 position=position,
-                net_pay_clp=(
-                    int(quantize_clp(item.net_pay_clp))
-                    if item.net_pay_clp is not None
-                    else None
-                ),
-                net_pay_uf=(
-                    float(item.net_pay_uf) if item.net_pay_uf is not None else None
-                ),
-                net_pay_usd=(
-                    float(item.net_pay_usd) if item.net_pay_usd is not None else None
-                ),
-                net_pay_eur=(
-                    float(item.net_pay_eur) if item.net_pay_eur is not None else None
-                ),
-                increase=(float(increase) if increase is not None else None),
-                net_pay_clp_today=(
-                    int(net_pay_clp_today) if net_pay_clp_today is not None else None
-                ),
+                increase=increase,
+                net_pay_clp_today=net_pay_clp_today,
             )
         )
     return ranges
+
+
+def _resolve_single_position(
+    target: PayrollPeriodRangeDTO,
+    current: PayrollPeriodRangeDTO | None,
+) -> Literal["previous", "current", "future"]:
+    """Resolve a single real period's position relative to today's current.
+
+    Unlike to_payroll_period_reads()'s index-into-a-list approach (position
+    is relative to where the item sits in an already-ordered window), this
+    compares target directly against the independently-resolved `current`
+    DTO -- get_period_range() has no window/list, just the one period.
+    Falls back to "previous" in the rare edge case where no period
+    anywhere qualifies as "current" yet (a fresh system with only
+    not-yet-declared periods) -- same "never crash, degrade to the most
+    conservative honest answer" philosophy used throughout this endpoint.
+    """
+    if current is not None and target.period_id == current.period_id:
+        return "current"
+    if current is None or target.start_date < current.start_date:
+        return "previous"
+    return "future"
+
+
+def to_payroll_period_read(context: PayrollPeriodRangeContextDTO) -> PayrollPeriodRead:
+    """Convert a single period range context to the unified API read.
+
+    Backs GET /payroll/{period_id} -- same field shape and same
+    increase/net_pay_clp_today derivation helpers as to_payroll_period_reads(),
+    just applied to one period plus its own predecessor/current context
+    instead of a whole window.
+    """
+    position = _resolve_single_position(context.target, context.current)
+    increase = _compute_increase(context.target, context.predecessor)
+    net_pay_clp_today = (
+        _compute_net_pay_clp_today(context.target, context.current)
+        if position == "previous"
+        else None
+    )
+    return _build_payroll_period_read(
+        context.target,
+        position=position,
+        increase=increase,
+        net_pay_clp_today=net_pay_clp_today,
+    )
 
 
 def to_deflated_amount_read(amount: DeflatedAmountDTO) -> DeflatedAmountRead:
@@ -1236,18 +1303,8 @@ async def preview_pdf_import(
     return [to_pdf_import_preview_response(preview) for preview in previews]
 
 
-@router.get("/summary", response_model=list[PayrollSummaryRead])
-async def list_payroll_summaries(
-    queries: PayrollQueries = Depends(get_payroll_queries),
-) -> list[PayrollSummaryRead]:
-    """List payroll summaries."""
-    return [
-        to_payroll_summary_read(item) for item in await queries.list_period_summaries()
-    ]
-
-
-@router.get("/period-range", response_model=list[PayrollPeriodRangeRead])
-async def list_payroll_period_ranges(
+@router.get("", response_model=list[PayrollPeriodRead])
+async def list_payroll_periods(
     previous_months: int | None = Query(
         None,
         ge=0,
@@ -1269,58 +1326,35 @@ async def list_payroll_period_ranges(
         ),
     ),
     queries: PayrollQueries = Depends(get_payroll_queries),
-) -> list[PayrollPeriodRangeRead]:
-    """List payroll period date ranges around the current period."""
-    return to_payroll_period_range_reads(
+) -> list[PayrollPeriodRead]:
+    """List payroll periods around the current period.
+
+    Unifies the previously separate GET /payroll/period-range and GET
+    /payroll/summary into a single response shape -- see PayrollPeriodRead's
+    own docstring for exactly which fields are None on synthetic entries.
+    """
+    return to_payroll_period_reads(
         await queries.list_period_ranges(
             previous_months=previous_months, future_months=future_months
         )
     )
 
 
-@router.get("/{period_id}", response_model=PayrollPeriodDetailRead)
+@router.get("/{period_id}", response_model=PayrollPeriodRead)
 async def get_payroll_period(
     period_id: int = Path(..., gt=0),
     queries: PayrollQueries = Depends(get_payroll_queries),
-) -> PayrollPeriodDetailRead:
-    """Get payroll period."""
+) -> PayrollPeriodRead:
+    """Get a single payroll period in the same shape as GET /payroll.
+
+    Works for any period_id regardless of age -- not bounded by GET
+    /payroll's own default previous_months/future_months window.
+    """
     try:
-        detail = await queries.get_period_detail(period_id)
+        context = await queries.get_period_range(period_id)
     except PayrollError as exc:
         raise to_http_exception(exc, default_status=404) from exc
-
-    return PayrollPeriodDetailRead(
-        id=detail.id,
-        employer_id=detail.employer_id,
-        employer_name=detail.employer_name,
-        employer_tax_id=detail.employer_tax_id,
-        employer_country_code=detail.employer_country_code,
-        employer_started_at=detail.employer_started_at,
-        employer_ended_at=detail.employer_ended_at,
-        period_year=detail.period_year,
-        period_month=detail.period_month,
-        payment_date=detail.payment_date,
-        worked_days=detail.worked_days,
-        status=detail.status,
-        employment_contract_kind=detail.employment_contract_kind.value,
-        pension_plan_id=detail.pension_plan_id,
-        health_plan_id=detail.health_plan_id,
-        items=[
-            PayrollItemDetailRead(
-                concept_code=item.concept_code,
-                concept_name=item.concept_name,
-                kind=item.kind,
-                is_taxable=item.is_taxable,
-                amount_clp=str(item.amount_clp),
-                notes=item.notes,
-            )
-            for item in detail.items
-        ],
-        summary=to_payroll_summary_read(detail.summary)
-        if detail.summary is not None
-        else None,
-        health_institution_is_active=detail.health_institution_is_active,
-    )
+    return to_payroll_period_read(context)
 
 
 @router.post("/{period_id}/assign-plans", response_model=AssignPlansResponse)

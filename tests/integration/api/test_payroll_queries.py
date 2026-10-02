@@ -9,10 +9,8 @@ from fastapi.testclient import TestClient
 
 from payroll.application.errors import PayrollPeriodNotFoundError
 from payroll.application.dto import (
-    PayrollItemDetailDTO,
-    PayrollPeriodDetailDTO,
+    PayrollPeriodRangeContextDTO,
     PayrollPeriodRangeDTO,
-    PayrollSummaryDTO,
 )
 from payroll.interfaces.api.dependencies import get_payroll_queries
 from payroll.interfaces.api.main import app
@@ -20,10 +18,6 @@ from payroll.interfaces.api.routes.payroll import (
     _compute_increase,
     _compute_net_pay_clp_today,
     get_payroll_period,
-)
-from helpers.reference_data import (
-    sample_payroll_period_detail_dto,
-    sample_payroll_summary_dto,
 )
 
 
@@ -40,6 +34,12 @@ def _make_period_range(
     worked_days: int | None = None,
     net_pay_uf: Decimal | None = None,
     fixed_uf_clp: Decimal = Decimal("0"),
+    period_id: int | None = None,
+    employer_id: int | None = None,
+    employer_name: str | None = None,
+    gross_income_clp: Decimal | None = None,
+    taxable_income_clp: Decimal | None = None,
+    total_discounts_clp: Decimal | None = None,
 ) -> PayrollPeriodRangeDTO:
     return PayrollPeriodRangeDTO(
         period_year=period_year,
@@ -53,43 +53,52 @@ def _make_period_range(
         worked_days=worked_days,
         net_pay_uf=net_pay_uf,
         fixed_uf_clp=fixed_uf_clp,
+        period_id=period_id,
+        employer_id=employer_id,
+        employer_name=employer_name,
+        gross_income_clp=gross_income_clp,
+        taxable_income_clp=taxable_income_clp,
+        total_discounts_clp=total_discounts_clp,
     )
 
 
 class FakePayrollQueries:
     """Test double for Payroll Queries."""
 
-    async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO:
-        """Get period detail."""
+    async def get_period_range(self, period_id: int) -> PayrollPeriodRangeContextDTO:
+        """Get a single period in the unified shape."""
         assert period_id == 7
-        return sample_payroll_period_detail_dto(
-            7,
-            employer_tax_id="76.123.456-7",
-            employer_ended_at=date(2025, 12, 31),
-            health_institution_is_active=False,
-            items=[
-                PayrollItemDetailDTO(
-                    concept_code="SALARY_BASE",
-                    concept_name="Base Salary",
-                    kind="income",
-                    is_taxable=True,
-                    amount_clp=Decimal("1000000"),
-                    notes=None,
-                ),
-                PayrollItemDetailDTO(
-                    concept_code="PENSION_BASE",
-                    concept_name="Pension Base",
-                    kind="discount",
-                    is_taxable=False,
-                    amount_clp=Decimal("100000"),
-                    notes="computed",
-                ),
-            ],
+        target = _make_period_range(
+            2026,
+            1,
+            date(2026, 1, 31),
+            date(2026, 2, 27),
+            Decimal("830000"),
+            is_current=True,
+            salary_base=Decimal("1500000"),
+            worked_days=30,
+            period_id=7,
+            employer_id=1,
+            employer_name="ACME",
+            gross_income_clp=Decimal("1000000"),
+            taxable_income_clp=Decimal("1000000"),
+            total_discounts_clp=Decimal("170000"),
         )
-
-    async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
-        """List period summaries."""
-        return [sample_payroll_summary_dto(7)]
+        predecessor = _make_period_range(
+            2025,
+            12,
+            date(2025, 12, 31),
+            date(2026, 1, 30),
+            Decimal("780000"),
+            salary_base=Decimal("1200000"),
+            worked_days=30,
+            period_id=6,
+            employer_id=1,
+            employer_name="ACME",
+        )
+        return PayrollPeriodRangeContextDTO(
+            target=target, predecessor=predecessor, current=target
+        )
 
     async def list_period_ranges(
         self,
@@ -120,6 +129,12 @@ class FakePayrollQueries:
                 is_current=True,
                 inferred=False,
                 increase=None,
+                period_id=7,
+                employer_id=1,
+                employer_name="ACME",
+                gross_income_clp=Decimal("1000000"),
+                taxable_income_clp=Decimal("1000000"),
+                total_discounts_clp=Decimal("170000"),
             ),
             PayrollPeriodRangeDTO(
                 period_year=2026,
@@ -140,21 +155,25 @@ def test_payroll_query_endpoints() -> None:
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
-        range_response = client.get("/payroll/period-range")
-        summary_response = client.get("/payroll/summary")
+        list_response = client.get("/payroll")
         detail_response = client.get("/payroll/7")
     finally:
         app.dependency_overrides.clear()
 
-    assert range_response.status_code == 200
-    assert range_response.json() == [
+    assert list_response.status_code == 200
+    assert list_response.json() == [
         {
+            "period_id": None,
+            "employer": None,
             "period_year": 2025,
             "period_month": 12,
             "start_date": "2025-12-31",
             "end_date": "2026-01-30",
             "net_pay_clp": None,
             "position": "previous",
+            "gross_income_clp": None,
+            "taxable_income_clp": None,
+            "total_discounts_clp": None,
             "increase": None,
             "net_pay_clp_today": None,
             "net_pay_usd": None,
@@ -162,12 +181,17 @@ def test_payroll_query_endpoints() -> None:
             "net_pay_uf": None,
         },
         {
+            "period_id": 7,
+            "employer": {"id": 1, "name": "ACME"},
             "period_year": 2026,
             "period_month": 1,
             "start_date": "2026-01-31",
             "end_date": "2026-02-27",
             "net_pay_clp": 830000,
             "position": "current",
+            "gross_income_clp": 1000000,
+            "taxable_income_clp": 1000000,
+            "total_discounts_clp": 170000,
             "increase": None,
             "net_pay_clp_today": None,
             "net_pay_usd": None,
@@ -175,12 +199,17 @@ def test_payroll_query_endpoints() -> None:
             "net_pay_uf": None,
         },
         {
+            "period_id": None,
+            "employer": None,
             "period_year": 2026,
             "period_month": 2,
             "start_date": "2026-02-28",
             "end_date": "2026-03-30",
             "net_pay_clp": None,
             "position": "future",
+            "gross_income_clp": None,
+            "taxable_income_clp": None,
+            "total_discounts_clp": None,
             "increase": 0.0,
             "net_pay_clp_today": None,
             "net_pay_usd": None,
@@ -188,69 +217,24 @@ def test_payroll_query_endpoints() -> None:
             "net_pay_uf": None,
         },
     ]
-    assert summary_response.status_code == 200
-    assert summary_response.json() == [
-        {
-            "period_id": 7,
-            "employer_id": 1,
-            "employer_name": "ACME",
-            "period_year": 2026,
-            "period_month": 1,
-            "payment_date": "2026-01-31",
-            "taxable_income_clp": "1000000",
-            "gross_income_clp": "1000000",
-            "total_discounts_clp": "170000",
-            "net_pay_clp": "830000",
-        }
-    ]
     assert detail_response.status_code == 200
     assert detail_response.json() == {
-        "id": 7,
-        "employer_id": 1,
-        "employer_name": "ACME",
-        "employer_tax_id": "76.123.456-7",
-        "employer_country_code": "CL",
-        "employer_started_at": "2020-01-01",
-        "employer_ended_at": "2025-12-31",
+        "period_id": 7,
+        "employer": {"id": 1, "name": "ACME"},
         "period_year": 2026,
         "period_month": 1,
-        "payment_date": "2026-01-31",
-        "worked_days": 30,
-        "status": "actual",
-        "employment_contract_kind": "indefinite",
-        "pension_plan_id": 1,
-        "health_plan_id": 2,
-        "items": [
-            {
-                "concept_code": "SALARY_BASE",
-                "concept_name": "Base Salary",
-                "kind": "income",
-                "is_taxable": True,
-                "amount_clp": "1000000",
-                "notes": None,
-            },
-            {
-                "concept_code": "PENSION_BASE",
-                "concept_name": "Pension Base",
-                "kind": "discount",
-                "is_taxable": False,
-                "amount_clp": "100000",
-                "notes": "computed",
-            },
-        ],
-        "summary": {
-            "period_id": 7,
-            "employer_id": 1,
-            "employer_name": "ACME",
-            "period_year": 2026,
-            "period_month": 1,
-            "payment_date": "2026-01-31",
-            "taxable_income_clp": "1000000",
-            "gross_income_clp": "1000000",
-            "total_discounts_clp": "170000",
-            "net_pay_clp": "830000",
-        },
-        "health_institution_is_active": False,
+        "start_date": "2026-01-31",
+        "end_date": "2026-02-27",
+        "position": "current",
+        "gross_income_clp": 1000000,
+        "taxable_income_clp": 1000000,
+        "total_discounts_clp": 170000,
+        "net_pay_clp": 830000,
+        "increase": 25.0,  # (1500000-1200000)/1200000 * 100
+        "net_pay_clp_today": None,  # only computed for position == previous
+        "net_pay_usd": None,
+        "net_pay_eur": None,
+        "net_pay_uf": None,
     }
 
 
@@ -279,9 +263,9 @@ def test_payroll_period_range_forwards_month_query_params() -> None:
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
-        no_params_response = client.get("/payroll/period-range")
+        no_params_response = client.get("/payroll")
         explicit_response = client.get(
-            "/payroll/period-range",
+            "/payroll",
             params={"previous_months": 6, "future_months": 3},
         )
     finally:
@@ -298,7 +282,7 @@ def test_payroll_period_range_rejects_future_months_over_12() -> None:
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
-        response = client.get("/payroll/period-range", params={"future_months": 13})
+        response = client.get("/payroll", params={"future_months": 13})
     finally:
         app.dependency_overrides.clear()
 
@@ -311,7 +295,7 @@ def test_payroll_period_range_rejects_negative_previous_months() -> None:
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
-        response = client.get("/payroll/period-range", params={"previous_months": -1})
+        response = client.get("/payroll", params={"previous_months": -1})
     finally:
         app.dependency_overrides.clear()
 
@@ -324,13 +308,11 @@ def test_payroll_detail_endpoint_surfaces_not_found() -> None:
     class ErrorPayrollQueries:
         """Represent the error payroll queries."""
 
-        async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO:
-            """Get period detail."""
+        async def get_period_range(
+            self, period_id: int
+        ) -> PayrollPeriodRangeContextDTO:
+            """Get period range."""
             raise PayrollPeriodNotFoundError("Payroll period 9 was not found.")
-
-        async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
-            """List period summaries."""
-            return []
 
     app.dependency_overrides[get_payroll_queries] = lambda: ErrorPayrollQueries()
     client = TestClient(app, headers={"X-API-Key": "test-key"})
@@ -714,7 +696,7 @@ def test_period_range_endpoint_computes_increase_for_previous_with_salary_data()
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
-        response = client.get("/payroll/period-range")
+        response = client.get("/payroll")
     finally:
         app.dependency_overrides.clear()
 
@@ -797,7 +779,7 @@ def test_period_range_oldest_previous_uses_lookback_as_predecessor() -> None:
     client = TestClient(app, headers={"X-API-Key": "test-key"})
 
     try:
-        response = client.get("/payroll/period-range")
+        response = client.get("/payroll")
     finally:
         app.dependency_overrides.clear()
 
@@ -820,8 +802,10 @@ async def test_payroll_detail_handler_maps_value_errors() -> None:
     class ErrorPayrollQueries:
         """Represent the error payroll queries."""
 
-        async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO:
-            """Get period detail."""
+        async def get_period_range(
+            self, period_id: int
+        ) -> PayrollPeriodRangeContextDTO:
+            """Get period range."""
             raise PayrollPeriodNotFoundError("Payroll period 9 was not found.")
 
     with pytest.raises(HTTPException, match="Payroll period 9 was not found."):

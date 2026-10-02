@@ -14,7 +14,7 @@ from payroll.interfaces.api.main import app
 def test_protected_route_returns_403_when_key_is_missing() -> None:
     """A request to a protected route with no X-API-Key header returns 403."""
     client = TestClient(app, raise_server_exceptions=False)
-    response = client.get("/payroll/summary")
+    response = client.get("/payroll")
     assert response.status_code == 403
     assert response.json() == {"detail": "Invalid or missing API key."}
 

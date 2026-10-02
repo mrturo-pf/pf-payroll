@@ -80,7 +80,7 @@ async def get_payroll_spreadsheet(
 
     Always bulk, per the design brief's own scope decision -- a filter that
     happens to match exactly one period, or no filter at all (returning
-    every persisted period, mirroring GET /payroll/summary's own no-filter
+    every persisted period, mirroring GET /payroll's own no-filter
     behavior), is not a special case needing its own endpoint. Round-trip
     parity with POST /payroll/import/spreadsheet (export, then re-import
     unmodified, in both mode="validate" and mode="commit") is a tested

@@ -24,6 +24,7 @@ from payroll.application.dto import (
     IncomeTaxContextDTO,
     PayrollConceptDTO,
     PayrollPeriodDetailDTO,
+    PayrollPeriodRangeContextDTO,
     PayrollPeriodRangeDTO,
     PayrollSummaryDTO,
     PensionInstitutionDTO,
@@ -168,6 +169,17 @@ class PayrollRepository(Protocol):
         future_months: int | None = None,
     ) -> list[PayrollPeriodRangeDTO]:
         """List payroll period date ranges around the current period."""
+        ...
+
+    async def get_period_range(
+        self, period_id: int
+    ) -> PayrollPeriodRangeContextDTO | None:
+        """Get a single real period in the unified period-range shape.
+
+        Unlike list_period_ranges(), not bounded by any window around
+        "today" -- works for any period_id regardless of age. Returns None
+        when no period with that id exists.
+        """
         ...
 
     async def get_income_tax_context(

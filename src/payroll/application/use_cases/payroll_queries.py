@@ -7,6 +7,7 @@ from datetime import date
 
 from payroll.application.dto import (
     PayrollPeriodDetailDTO,
+    PayrollPeriodRangeContextDTO,
     PayrollPeriodRangeDTO,
     PayrollSummaryDTO,
 )
@@ -45,3 +46,12 @@ class PayrollQueries:
             previous_months=previous_months,
             future_months=future_months,
         )
+
+    async def get_period_range(self, period_id: int) -> PayrollPeriodRangeContextDTO:
+        """Get a single real period in the unified period-range shape."""
+        context = await self.repository.get_period_range(period_id)
+        if context is None:
+            raise PayrollPeriodNotFoundError(
+                f"Payroll period {period_id} was not found."
+            )
+        return context

@@ -8,6 +8,7 @@ import pytest
 from payroll.application.dto import (
     PayrollItemDetailDTO,
     PayrollPeriodDetailDTO,
+    PayrollPeriodRangeContextDTO,
     PayrollPeriodRangeDTO,
     PayrollSummaryDTO,
 )
@@ -45,6 +46,27 @@ class StubPayrollRepository:
     async def list_period_summaries(self) -> list[PayrollSummaryDTO]:
         """List period summaries."""
         return [sample_payroll_summary_dto(1)]
+
+    async def get_period_range(
+        self, period_id: int
+    ) -> PayrollPeriodRangeContextDTO | None:
+        """Get a single period in the unified range shape."""
+        if period_id == 404:
+            return None
+        target = PayrollPeriodRangeDTO(
+            period_year=2026,
+            period_month=1,
+            start_date=date(2026, 1, 31),
+            end_date=date(2026, 2, 27),
+            net_pay_clp=Decimal("830000"),
+            is_current=True,
+            inferred=False,
+            period_id=period_id,
+            employer_id=1,
+        )
+        return PayrollPeriodRangeContextDTO(
+            target=target, predecessor=None, current=target
+        )
 
     async def list_period_ranges(
         self,
@@ -120,3 +142,19 @@ async def test_payroll_queries_forwards_previous_and_future_months() -> None:
 
     assert repository.last_previous_months == 6
     assert repository.last_future_months == 3
+
+
+@pytest.mark.asyncio
+async def test_payroll_queries_return_period_range() -> None:
+    """get_period_range() passes the repository's context DTO through."""
+    context = await PayrollQueries(StubPayrollRepository()).get_period_range(7)
+
+    assert context.target.period_id == 7
+    assert context.target.net_pay_clp == Decimal("830000")
+
+
+@pytest.mark.asyncio
+async def test_payroll_queries_raise_for_missing_period_range() -> None:
+    """get_period_range() raises PayrollPeriodNotFoundError for an unknown id."""
+    with pytest.raises(ValueError, match="Payroll period 404 was not found."):
+        await PayrollQueries(StubPayrollRepository()).get_period_range(404)

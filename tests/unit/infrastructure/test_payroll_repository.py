@@ -3671,6 +3671,7 @@ async def test_sqlalchemy_payroll_repository_lists_period_ranges_projects_all_fu
             FakeResult(first_row=(current_period, current_employer)),
             FakeResult(scalar_rows=[previous_period]),
             FakeResult(joined_rows=[]),  # salary_base aggregation
+            FakeResult(joined_rows=[]),  # PAY_MV_SUMARY amounts
             FakeResult(joined_rows=items),  # predict_next_period_net_pay's items
         ]
     )

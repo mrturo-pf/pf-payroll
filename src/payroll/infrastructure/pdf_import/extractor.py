@@ -136,7 +136,7 @@ def _resolve_payment_date(
     """Best-effort payment_date: the generic last-Chilean-business-day rule.
 
     Same default `resolve_payment_date()` already falls back to elsewhere in
-    the system (see docs/api.md's /payroll/period-range) when an employer's
+    the system (see docs/api.md's GET /payroll) when an employer's
     actual payment rule isn't known. This extractor has no database access
     itself (see `templates.py`'s module docstring -- template matching is
     pure static-file config), so it can never resolve a real per-employer

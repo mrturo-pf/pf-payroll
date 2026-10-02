@@ -229,7 +229,7 @@ After that, the period status becomes `reviewed`.
 Period summary and detail:
 
 ```bash
-curl http://127.0.0.1:8000/payroll/summary
+curl http://127.0.0.1:8000/payroll
 curl http://127.0.0.1:8000/payroll/1
 python -m payroll.interfaces.cli.main summary
 python -m payroll.interfaces.cli.main period-detail 1

@@ -528,6 +528,29 @@ class PayrollPeriodRangeDTO(PayrollPeriodRangeFields):
     net_pay_eur: Decimal | None = None
     net_pay_uf: Decimal | None = None
     fixed_uf_clp: Decimal = Decimal("0")
+    period_id: int | None = None
+    employer_id: int | None = None
+    employer_name: str | None = None
+    gross_income_clp: Decimal | None = None
+    taxable_income_clp: Decimal | None = None
+    total_discounts_clp: Decimal | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PayrollPeriodRangeContextDTO:
+    """Bundle a single real period with the context needed to describe it.
+
+    Backs GET /payroll/{period_id}: unlike list_period_ranges() (anchored to
+    a fixed window around "today"), this works for *any* period_id
+    regardless of age. `predecessor` and `current` are never part of the
+    response themselves -- they only supply the salary_base/net_pay_clp
+    history `target`'s own `increase`/`net_pay_clp_today` are derived from,
+    same two helpers list_period_ranges() already uses per-item.
+    """
+
+    target: PayrollPeriodRangeDTO
+    predecessor: PayrollPeriodRangeDTO | None
+    current: PayrollPeriodRangeDTO | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -643,7 +666,7 @@ class ExportPayrollFiltersDTO:
     """Represent Export Payroll Filters DTO.
 
     All optional; omitting every field means "export every persisted
-    period", mirroring GET /payroll/summary's own no-filter "return
+    period", mirroring GET /payroll's own no-filter "return
     everything" behavior. Only fields with a concrete precedent as an
     existing filter elsewhere in this API are included here (YAGNI).
     """

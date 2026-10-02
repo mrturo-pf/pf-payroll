@@ -3,13 +3,16 @@
 import asyncio
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import NamedTuple
 
 from sqlalchemy import func, select
+from sqlalchemy.engine import Row
 
 from payroll.application.dto import (
     ExportPayrollFiltersDTO,
     PayrollItemDetailDTO,
     PayrollPeriodDetailDTO,
+    PayrollPeriodRangeContextDTO,
     PayrollPeriodRangeDTO,
     PayrollSummaryDTO,
 )
@@ -40,6 +43,14 @@ from payroll.infrastructure.db.repositories.payroll_repository_shared import (
 )
 from payroll.shared.constants import HEALTH_ADDITIONAL_CONCEPT_CODE
 from payroll.shared.dates import add_months, resolve_payment_date
+
+
+class _SummaryAmounts(NamedTuple):
+    """PAY_MV_SUMARY's three derived CLP totals for a single period."""
+
+    gross_income_clp: Decimal
+    taxable_income_clp: Decimal
+    total_discounts_clp: Decimal
 
 
 class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
@@ -155,6 +166,80 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             increase_frequency,
         )
 
+    async def _resolve_current_period_row(
+        self, reference_date: date
+    ) -> Row[tuple[PayrollPeriodModel, EmployerModel]] | None:
+        """Return the most recent declared period on or before reference_date.
+
+        Shared by list_period_ranges() (to anchor its window) and
+        get_period_range() (to resolve position/net_pay_clp_today context
+        for an arbitrary period_id) -- identical "current period" semantics
+        in both places, kept in one place to avoid the two ever silently
+        drifting apart.
+        """
+        result = await self._session.execute(
+            select(PayrollPeriodModel, EmployerModel)
+            .join(EmployerModel, PayrollPeriodModel.employer_id == EmployerModel.id)
+            .where(PayrollPeriodModel.declared_net_pay_clp.is_not(None))
+            .where(PayrollPeriodModel.payment_date <= reference_date)
+            .order_by(
+                PayrollPeriodModel.payment_date.desc(),
+                PayrollPeriodModel.id.desc(),
+            )
+            .limit(1)
+        )
+        return result.first()
+
+    async def _fetch_summary_amounts_map(
+        self, period_ids: list[int]
+    ) -> dict[int, _SummaryAmounts]:
+        """Batch-fetch PAY_MV_SUMARY gross/taxable/discount totals by period_id.
+
+        One round trip regardless of how many period_ids are requested --
+        same "batch it, never N+1" discipline as the SALARY_BASE/
+        HEALTH_ADDITIONAL_UF aggregate query just below. A period genuinely
+        absent from the map (no row yet in the materialized view) is the
+        caller's cue to leave gross_income_clp/taxable_income_clp/
+        total_discounts_clp as None -- never fabricated.
+        """
+        if not period_ids:
+            return {}
+        result = await self._session.execute(
+            select(
+                PayrollSummaryModel.period_id,
+                PayrollSummaryModel.gross_income_clp,
+                PayrollSummaryModel.taxable_income_clp,
+                PayrollSummaryModel.total_discounts_clp,
+            ).where(PayrollSummaryModel.period_id.in_(period_ids))
+        )
+        return {
+            row.period_id: _SummaryAmounts(
+                gross_income_clp=row.gross_income_clp,
+                taxable_income_clp=row.taxable_income_clp,
+                total_discounts_clp=row.total_discounts_clp,
+            )
+            for row in result.all()
+        }
+
+    async def _fetch_employer_names_map(
+        self, employer_ids: list[int]
+    ) -> dict[int, str]:
+        """Batch-fetch employer names for the given ids, one round trip.
+
+        Same discipline as _fetch_summary_amounts_map(): previous/lookback
+        periods in list_period_ranges() may belong to employer_ids other
+        than the already-loaded `current_employer`, so their names are
+        resolved here in bulk rather than one query per period.
+        """
+        if not employer_ids:
+            return {}
+        result = await self._session.execute(
+            select(EmployerModel.id, EmployerModel.name).where(
+                EmployerModel.id.in_(employer_ids)
+            )
+        )
+        return {row[0]: row[1] for row in result.all()}
+
     async def list_period_ranges(
         self,
         *,
@@ -182,18 +267,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
         future_count = future_months if future_months is not None else 12
         pad_previous = previous_months is None
         reference_date = today or date.today()
-        current_result = await self._session.execute(
-            select(PayrollPeriodModel, EmployerModel)
-            .join(EmployerModel, PayrollPeriodModel.employer_id == EmployerModel.id)
-            .where(PayrollPeriodModel.declared_net_pay_clp.is_not(None))
-            .where(PayrollPeriodModel.payment_date <= reference_date)
-            .order_by(
-                PayrollPeriodModel.payment_date.desc(),
-                PayrollPeriodModel.id.desc(),
-            )
-            .limit(1)
-        )
-        current_row = current_result.first()
+        current_row = await self._resolve_current_period_row(reference_date)
         if current_row is None:
             current_year = reference_date.year
             current_month = reference_date.month
@@ -212,6 +286,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             current_effective_on_processing_next_day = False
             current_fixed_day_roll = EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY.value
             current_inferred = True
+            current_employer_id = None
         else:
             current_period, current_employer = current_row
             current_year = current_period.period_year
@@ -232,6 +307,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             current_business_day_offset = current_employer.payment_business_day_offset
             current_calendar_day_offset = current_employer.payment_calendar_day_offset
             current_net_pay_clp = current_period.declared_net_pay_clp
+            current_employer_id = current_employer.id
             current_effective_on_processing_next_day = (
                 current_employer.payment_effective_on_processing_next_day
             )
@@ -333,6 +409,37 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                 for row in all_aggregate_rows
             }
 
+        # Fetch PAY_MV_SUMARY's gross/taxable/discount totals for the same
+        # real periods -- unavailable (missing from the map) for any period
+        # the materialized view hasn't computed yet, which simply means
+        # None on the resulting DTO, same degrade-honestly philosophy as
+        # every other derived field here.
+        summary_amounts_map = await self._fetch_summary_amounts_map(period_ids)
+
+        # Resolve employer names for every real period touched above.
+        # `current_employer` is already a fully loaded EmployerModel (no
+        # extra query needed for it), but previous/lookback periods are
+        # fetched with no employer filter and may belong to a different
+        # employer, so their names are batch-resolved for whichever ids
+        # aren't already covered by `current_employer`.
+        employer_names_map: dict[int, str] = (
+            {current_employer_id: current_employer.name}
+            if current_row is not None and current_employer_id is not None
+            else {}
+        )
+        other_employer_ids = {
+            period.employer_id
+            for period in previous_periods
+            if period.employer_id not in employer_names_map
+        }
+        if lookback_period_model is not None:
+            other_employer_ids.add(lookback_period_model.employer_id)
+            other_employer_ids.discard(current_employer_id)
+        if other_employer_ids:
+            employer_names_map.update(
+                await self._fetch_employer_names_map(list(other_employer_ids))
+            )
+
         # Resolve USD/EUR/UF equivalents for every non-future period's
         # start_date, concurrently -- see resolve_currency_equivalents()'s
         # docstring for why this is a 3-way-independent, never-raising
@@ -377,9 +484,24 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                 net_pay_eur=currency.eur,
                 net_pay_uf=currency.uf,
                 fixed_uf_clp=fixed_uf_clp_map.get(period.id, Decimal("0")),
+                period_id=period.id,
+                employer_id=period.employer_id,
+                employer_name=employer_names_map.get(period.employer_id),
+                gross_income_clp=(
+                    amounts.gross_income_clp if amounts is not None else None
+                ),
+                taxable_income_clp=(
+                    amounts.taxable_income_clp if amounts is not None else None
+                ),
+                total_discounts_clp=(
+                    amounts.total_discounts_clp if amounts is not None else None
+                ),
             )
-            for period, currency in zip(
-                previous_periods_ordered, previous_currencies, strict=True
+            for period, currency, amounts in (
+                (period, currency, summary_amounts_map.get(period.id))
+                for period, currency in zip(
+                    previous_periods_ordered, previous_currencies, strict=True
+                )
             )
         ]
 
@@ -439,6 +561,11 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             )
             previous_ranges = [lookback_dto] + previous_ranges
 
+        current_summary_amounts = (
+            summary_amounts_map.get(current_period_id)
+            if current_period_id is not None
+            else None
+        )
         current_range = PayrollPeriodRangeDTO(
             period_year=current_year,
             period_month=current_month,
@@ -459,6 +586,24 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             net_pay_usd=current_currency.usd,
             net_pay_eur=current_currency.eur,
             net_pay_uf=current_currency.uf,
+            period_id=current_period_id,
+            employer_id=current_employer_id,
+            employer_name=(current_employer.name if current_row is not None else None),
+            gross_income_clp=(
+                current_summary_amounts.gross_income_clp
+                if current_summary_amounts is not None
+                else None
+            ),
+            taxable_income_clp=(
+                current_summary_amounts.taxable_income_clp
+                if current_summary_amounts is not None
+                else None
+            ),
+            total_discounts_clp=(
+                current_summary_amounts.total_discounts_clp
+                if current_summary_amounts is not None
+                else None
+            ),
         )
 
         # Calculate predicted net_pay for the first future period. A
@@ -556,9 +701,187 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                     net_pay_usd=period_range.net_pay_usd,
                     net_pay_eur=period_range.net_pay_eur,
                     net_pay_uf=period_range.net_pay_uf,
+                    period_id=period_range.period_id,
+                    employer_id=period_range.employer_id,
+                    employer_name=period_range.employer_name,
+                    gross_income_clp=period_range.gross_income_clp,
+                    taxable_income_clp=period_range.taxable_income_clp,
+                    total_discounts_clp=period_range.total_discounts_clp,
                 )
             )
         return completed_ranges
+
+    async def get_period_range(
+        self, period_id: int
+    ) -> PayrollPeriodRangeContextDTO | None:
+        """Get a single real period in the unified period-range shape.
+
+        Unlike list_period_ranges() (anchored to a fixed window around
+        "today"), this works for any period_id regardless of age -- it
+        fetches exactly the one requested period, its immediate real
+        predecessor (for `increase`), and today's resolved "current"
+        period (for `net_pay_clp_today`, only ever computed when the
+        target turns out to be `previous`). Every period this method
+        touches is a real DB row -- there is no "projection" concept here,
+        unlike list_period_ranges()'s synthetic future entries -- so
+        `increase` is always derived the same way regardless of the
+        target's eventual position.
+        """
+        target_result = await self._session.execute(
+            select(PayrollPeriodModel, EmployerModel)
+            .join(EmployerModel, PayrollPeriodModel.employer_id == EmployerModel.id)
+            .where(PayrollPeriodModel.id == period_id)
+        )
+        target_row = target_result.first()
+        if target_row is None:
+            return None
+        target_period, target_employer = target_row
+
+        predecessor_result = await self._session.execute(
+            select(PayrollPeriodModel)
+            .where(PayrollPeriodModel.payment_date < target_period.payment_date)
+            .order_by(
+                PayrollPeriodModel.payment_date.desc(),
+                PayrollPeriodModel.id.desc(),
+            )
+            .limit(1)
+        )
+        predecessor_period = predecessor_result.scalar_one_or_none()
+
+        current_row = await self._resolve_current_period_row(date.today())
+        current_period = current_row[0] if current_row is not None else None
+        is_previous = (
+            current_period is not None
+            and target_period.payment_date < current_period.payment_date
+        )
+
+        period_ids = [target_period.id]
+        if predecessor_period is not None:
+            period_ids.append(predecessor_period.id)
+        if current_period is not None:
+            period_ids.append(current_period.id)
+
+        salary_base_map: dict[int, Decimal] = {}
+        fixed_uf_clp_map: dict[int, Decimal] = {}
+        aggregates_result = await self._session.execute(
+            select(
+                PayrollItemModel.period_id,
+                func.sum(PayrollItemModel.amount_clp)
+                .filter(PayrollConceptModel.code == "SALARY_BASE")
+                .label("salary_base"),
+                func.sum(PayrollItemModel.amount_clp)
+                .filter(PayrollConceptModel.code == HEALTH_ADDITIONAL_CONCEPT_CODE)
+                .label("fixed_uf_clp"),
+            )
+            .join(
+                PayrollConceptModel,
+                PayrollItemModel.concept_id == PayrollConceptModel.id,
+            )
+            .where(PayrollItemModel.period_id.in_(period_ids))
+            .where(
+                PayrollConceptModel.code.in_(
+                    ("SALARY_BASE", HEALTH_ADDITIONAL_CONCEPT_CODE)
+                )
+            )
+            .group_by(PayrollItemModel.period_id)
+        )
+        aggregate_rows = aggregates_result.all()
+        salary_base_map = {row[0]: row[1] for row in aggregate_rows}
+        fixed_uf_clp_map = {
+            row[0]: (row[2] if row[2] is not None else Decimal("0"))
+            for row in aggregate_rows
+        }
+        summary_amounts_map = await self._fetch_summary_amounts_map([target_period.id])
+
+        target_currency_task = resolve_currency_equivalents(
+            target_period.declared_net_pay_clp,
+            rate_date=target_period.payment_date,
+            market_data_repository=self._market_data_repository,
+        )
+        if is_previous and current_period is not None:
+            current_currency_task = resolve_currency_equivalents(
+                current_period.declared_net_pay_clp,
+                rate_date=current_period.payment_date,
+                market_data_repository=self._market_data_repository,
+            )
+            target_currency, current_currency = await asyncio.gather(
+                target_currency_task, current_currency_task
+            )
+        else:
+            target_currency = await target_currency_task
+            current_currency = None
+
+        target_amounts = summary_amounts_map.get(target_period.id)
+        target_dto = PayrollPeriodRangeDTO(
+            period_year=target_period.period_year,
+            period_month=target_period.period_month,
+            start_date=target_period.payment_date,
+            end_date=target_period.payment_date,
+            net_pay_clp=target_period.declared_net_pay_clp,
+            is_current=(
+                current_period is not None and target_period.id == current_period.id
+            ),
+            inferred=False,
+            salary_base=salary_base_map.get(target_period.id),
+            worked_days=target_period.worked_days,
+            net_pay_usd=target_currency.usd,
+            net_pay_eur=target_currency.eur,
+            net_pay_uf=target_currency.uf,
+            fixed_uf_clp=fixed_uf_clp_map.get(target_period.id, Decimal("0")),
+            period_id=target_period.id,
+            employer_id=target_period.employer_id,
+            employer_name=target_employer.name,
+            gross_income_clp=(
+                target_amounts.gross_income_clp if target_amounts is not None else None
+            ),
+            taxable_income_clp=(
+                target_amounts.taxable_income_clp
+                if target_amounts is not None
+                else None
+            ),
+            total_discounts_clp=(
+                target_amounts.total_discounts_clp
+                if target_amounts is not None
+                else None
+            ),
+        )
+        predecessor_dto = (
+            PayrollPeriodRangeDTO(
+                period_year=predecessor_period.period_year,
+                period_month=predecessor_period.period_month,
+                start_date=predecessor_period.payment_date,
+                end_date=predecessor_period.payment_date,
+                net_pay_clp=predecessor_period.declared_net_pay_clp,
+                is_current=False,
+                inferred=False,
+                salary_base=salary_base_map.get(predecessor_period.id),
+                worked_days=predecessor_period.worked_days,
+            )
+            if predecessor_period is not None
+            else None
+        )
+        current_dto = (
+            PayrollPeriodRangeDTO(
+                period_year=current_period.period_year,
+                period_month=current_period.period_month,
+                start_date=current_period.payment_date,
+                end_date=current_period.payment_date,
+                net_pay_clp=current_period.declared_net_pay_clp,
+                is_current=True,
+                inferred=False,
+                period_id=current_period.id,
+                salary_base=salary_base_map.get(current_period.id),
+                worked_days=current_period.worked_days,
+                net_pay_uf=(
+                    current_currency.uf if current_currency is not None else None
+                ),
+            )
+            if current_period is not None
+            else None
+        )
+        return PayrollPeriodRangeContextDTO(
+            target=target_dto, predecessor=predecessor_dto, current=current_dto
+        )
 
     async def get_period_detail(self, period_id: int) -> PayrollPeriodDetailDTO | None:
         """Get period detail."""

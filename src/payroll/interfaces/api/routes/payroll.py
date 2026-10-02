@@ -668,6 +668,7 @@ class PayrollPeriodRangeRead(PayrollPeriodRangeFields):
     net_pay_usd: float | None = None
     net_pay_eur: float | None = None
     increase: float | None = None
+    net_pay_clp_today: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -730,6 +731,73 @@ def _compute_increase(
     )
 
 
+def _compute_net_pay_clp_today(
+    item: PayrollPeriodRangeDTO,
+    current: PayrollPeriodRangeDTO | None,
+) -> Decimal | None:
+    """Reprice a `previous` period's net_pay_clp using today's real drivers.
+
+    Splits `item`'s historical net_pay into the same two components
+    `PredictedNetPayBaseline` already uses for future projections --
+    `scalable_clp` (salary_base-driven: `net_pay_clp + fixed_uf_clp`) and
+    `fixed_uf_clp` (the UF/CLP-exchange-rate-driven `HEALTH_ADDITIONAL_UF`
+    discount) -- and reprices each with its *own* real driver instead of a
+    single blanket UF ratio applied to the whole net figure:
+
+    - `scalable_clp` is scaled by the real salary_base growth between
+      `item` and `current` (the same `(salary_base / worked_days) * 30`
+      normalization `_compute_increase()` already uses) -- this reflects
+      *this employee's own recorded raises*, not a general inflation
+      proxy.
+    - `fixed_uf_clp` is repriced by holding its UF quantity constant and
+      applying today's UF/CLP rate -- it is genuinely UF-denominated (an
+      Isapre plan top-up), so this is exact, not an approximation.
+
+    Both `item`'s own and today's UF/CLP rate are derived purely from
+    already-resolved DTO fields (`net_pay_clp / net_pay_uf`, per period --
+    see resolve_currency_equivalents()), so no extra `pf-rates` lookup is
+    needed here, same as before this split.
+
+    None whenever any ingredient is missing: no `current` period, either
+    side's `net_pay_clp`/`net_pay_uf`/`salary_base`/`worked_days` didn't
+    resolve, either side's own UF rate or normalized salary_base would
+    require dividing by zero -- same independent-degradation philosophy as
+    every other derived field in this endpoint.
+    """
+    if (
+        current is None
+        or item.net_pay_clp is None
+        or item.net_pay_uf is None
+        or item.net_pay_uf == 0
+        or item.salary_base is None
+        or not item.worked_days
+        or current.net_pay_clp is None
+        or current.net_pay_uf is None
+        or current.net_pay_uf == 0
+        or current.salary_base is None
+        or not current.worked_days
+    ):
+        return None
+
+    item_normalized_salary = (item.salary_base / item.worked_days) * Decimal(30)
+    if item_normalized_salary == 0:
+        return None
+    current_normalized_salary = (current.salary_base / current.worked_days) * Decimal(
+        30
+    )
+    salary_base_ratio = current_normalized_salary / item_normalized_salary
+
+    scalable_historical = item.net_pay_clp + item.fixed_uf_clp
+    scalable_today = scalable_historical * salary_base_ratio
+
+    item_uf_rate = item.net_pay_clp / item.net_pay_uf
+    today_uf_rate = current.net_pay_clp / current.net_pay_uf
+    fixed_uf_quantity = item.fixed_uf_clp / item_uf_rate
+    fixed_uf_today = fixed_uf_quantity * today_uf_rate
+
+    return quantize_clp(scalable_today - fixed_uf_today)
+
+
 def to_payroll_period_range_reads(
     period_ranges: list[PayrollPeriodRangeDTO],
 ) -> list[PayrollPeriodRangeRead]:
@@ -738,6 +806,7 @@ def to_payroll_period_range_reads(
         (index for index, item in enumerate(period_ranges) if item.is_current),
         None,
     )
+    current_item = period_ranges[current_index] if current_index is not None else None
     ranges: list[PayrollPeriodRangeRead] = []
     for index, item in enumerate(period_ranges):
         if item.is_lookback:
@@ -755,6 +824,11 @@ def to_payroll_period_range_reads(
             )
         else:
             increase = item.increase
+        net_pay_clp_today = (
+            _compute_net_pay_clp_today(item, current_item)
+            if position == "previous"
+            else None
+        )
         ranges.append(
             PayrollPeriodRangeRead(
                 period_year=item.period_year,
@@ -777,6 +851,9 @@ def to_payroll_period_range_reads(
                     float(item.net_pay_eur) if item.net_pay_eur is not None else None
                 ),
                 increase=(float(increase) if increase is not None else None),
+                net_pay_clp_today=(
+                    int(net_pay_clp_today) if net_pay_clp_today is not None else None
+                ),
             )
         )
     return ranges

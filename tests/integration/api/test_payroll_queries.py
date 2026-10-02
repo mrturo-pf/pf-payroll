@@ -18,6 +18,7 @@ from payroll.interfaces.api.dependencies import get_payroll_queries
 from payroll.interfaces.api.main import app
 from payroll.interfaces.api.routes.payroll import (
     _compute_increase,
+    _compute_net_pay_clp_today,
     get_payroll_period,
 )
 from helpers.reference_data import (
@@ -37,6 +38,8 @@ def _make_period_range(
     inferred: bool = False,
     salary_base: Decimal | None = None,
     worked_days: int | None = None,
+    net_pay_uf: Decimal | None = None,
+    fixed_uf_clp: Decimal = Decimal("0"),
 ) -> PayrollPeriodRangeDTO:
     return PayrollPeriodRangeDTO(
         period_year=period_year,
@@ -48,6 +51,8 @@ def _make_period_range(
         inferred=inferred,
         salary_base=salary_base,
         worked_days=worked_days,
+        net_pay_uf=net_pay_uf,
+        fixed_uf_clp=fixed_uf_clp,
     )
 
 
@@ -145,6 +150,7 @@ def test_payroll_query_endpoints() -> None:
             "net_pay_clp": None,
             "position": "previous",
             "increase": None,
+            "net_pay_clp_today": None,
             "net_pay_usd": None,
             "net_pay_eur": None,
             "net_pay_uf": None,
@@ -157,6 +163,7 @@ def test_payroll_query_endpoints() -> None:
             "net_pay_clp": 830000,
             "position": "current",
             "increase": None,
+            "net_pay_clp_today": None,
             "net_pay_usd": None,
             "net_pay_eur": None,
             "net_pay_uf": None,
@@ -169,6 +176,7 @@ def test_payroll_query_endpoints() -> None:
             "net_pay_clp": None,
             "position": "future",
             "increase": 0.0,
+            "net_pay_clp_today": None,
             "net_pay_usd": None,
             "net_pay_eur": None,
             "net_pay_uf": None,
@@ -380,6 +388,191 @@ def test_compute_increase_returns_none_for_zero_salary_predecessor() -> None:
         worked_days=30,
     )
     assert _compute_increase(current, predecessor) is None
+
+
+def test_compute_net_pay_clp_today_scales_salary_and_repricess_uf_discount() -> None:
+    """net_pay_clp_today splits scalable_clp (salary-driven) from fixed_uf_clp.
+
+    Synthetic but clean numbers, hand-verified: previous period paid
+    1,000,000 net (of which 50,000 is a UF-denominated health top-up, so
+    scalable_clp = 1,050,000) when its own UF/CLP rate was 50,000
+    (1,000,000/20). The employee's *real* recorded salary_base grew 10%
+    since then (1,650,000 vs. 1,500,000 normalized) -- that 1.1 ratio is
+    what scales the salary-driven 1,050,000 to 1,155,000, *not* any UF
+    appreciation. Today's UF/CLP rate is 40,000 (3,000,000/75): the
+    50,000-CLP health top-up was exactly 1 UF back then (50,000/50,000),
+    so it reprices to 1 x 40,000 = 40,000 today. Net: 1,155,000 - 40,000 =
+    1,115,000 -- not a figure either a whole-net-pay UF-ratio scaling or a
+    whole-net-pay salary-ratio scaling alone would produce.
+    """
+    current = _make_period_range(
+        2026,
+        9,
+        date(2026, 9, 29),
+        date(2026, 10, 28),
+        Decimal("3000000"),
+        is_current=True,
+        net_pay_uf=Decimal("75"),
+        salary_base=Decimal("1650000"),
+        worked_days=30,
+    )
+    previous = _make_period_range(
+        2025,
+        9,
+        date(2025, 9, 27),
+        date(2025, 10, 28),
+        Decimal("1000000"),
+        net_pay_uf=Decimal("20"),
+        salary_base=Decimal("1500000"),
+        worked_days=30,
+        fixed_uf_clp=Decimal("50000"),
+    )
+    result = _compute_net_pay_clp_today(previous, current)
+    assert result == Decimal("1115000")
+
+
+def test_compute_net_pay_clp_today_defaults_fixed_uf_clp_to_zero() -> None:
+    """No HEALTH_ADDITIONAL_UF item for the period -> fixed_uf_clp defaults to 0.
+
+    With no UF-driven discount at all, the whole net_pay is "scalable" and
+    is scaled purely by the real salary_base ratio (here, flat: 1.0) --
+    result equals the historical net_pay_clp unchanged.
+    """
+    current = _make_period_range(
+        2026,
+        9,
+        date(2026, 9, 29),
+        date(2026, 10, 28),
+        Decimal("3000000"),
+        is_current=True,
+        net_pay_uf=Decimal("75"),
+        salary_base=Decimal("1500000"),
+        worked_days=30,
+    )
+    previous = _make_period_range(
+        2025,
+        9,
+        date(2025, 9, 27),
+        date(2025, 10, 28),
+        Decimal("1000000"),
+        net_pay_uf=Decimal("20"),
+        salary_base=Decimal("1500000"),
+        worked_days=30,
+    )
+    assert _compute_net_pay_clp_today(previous, current) == Decimal("1000000")
+
+
+def test_compute_net_pay_clp_today_returns_none_without_current() -> None:
+    """No current period resolved (e.g. none found at all) -> None."""
+    previous = _make_period_range(
+        2025,
+        9,
+        date(2025, 9, 27),
+        date(2025, 10, 28),
+        Decimal("1000000"),
+        net_pay_uf=Decimal("20"),
+        salary_base=Decimal("1500000"),
+        worked_days=30,
+    )
+    assert _compute_net_pay_clp_today(previous, None) is None
+
+
+def test_compute_net_pay_clp_today_returns_none_without_salary_or_uf_data() -> None:
+    """Missing net_pay_uf, salary_base or worked_days on either side -> None."""
+    current = _make_period_range(
+        2026,
+        9,
+        date(2026, 9, 29),
+        date(2026, 10, 28),
+        Decimal("3000000"),
+        is_current=True,
+        net_pay_uf=Decimal("75"),
+        salary_base=Decimal("1500000"),
+        worked_days=30,
+    )
+    base_previous_kwargs = {
+        "net_pay_clp": Decimal("1000000"),
+        "net_pay_uf": Decimal("20"),
+        "salary_base": Decimal("1500000"),
+        "worked_days": 30,
+    }
+    for missing_field in ("net_pay_uf", "salary_base", "worked_days"):
+        kwargs = {**base_previous_kwargs, missing_field: None}
+        previous = _make_period_range(
+            2025,
+            9,
+            date(2025, 9, 27),
+            date(2025, 10, 28),
+            kwargs.pop("net_pay_clp"),
+            **kwargs,
+        )
+        assert _compute_net_pay_clp_today(previous, current) is None
+
+
+def test_compute_net_pay_clp_today_returns_none_without_current_rate_ingredients() -> (
+    None
+):
+    """current.net_pay_clp/net_pay_uf/salary_base missing or zero -> None."""
+    previous = _make_period_range(
+        2025,
+        9,
+        date(2025, 9, 27),
+        date(2025, 10, 28),
+        Decimal("1000000"),
+        net_pay_uf=Decimal("20"),
+        salary_base=Decimal("1500000"),
+        worked_days=30,
+    )
+    base_current_kwargs = {
+        "net_pay_clp": Decimal("3000000"),
+        "is_current": True,
+        "net_pay_uf": Decimal("75"),
+        "salary_base": Decimal("1500000"),
+        "worked_days": 30,
+    }
+    for override in (
+        {"net_pay_clp": None},
+        {"net_pay_uf": None},
+        {"net_pay_uf": Decimal("0")},
+        {"salary_base": None},
+        {"worked_days": None},
+    ):
+        kwargs = {**base_current_kwargs, **override}
+        current = _make_period_range(
+            2026,
+            9,
+            date(2026, 9, 29),
+            date(2026, 10, 28),
+            kwargs.pop("net_pay_clp"),
+            **kwargs,
+        )
+        assert _compute_net_pay_clp_today(previous, current) is None
+
+
+def test_compute_net_pay_clp_today_returns_none_for_zero_normalized_salary() -> None:
+    """A zero historical normalized salary_base makes the ratio undefined."""
+    current = _make_period_range(
+        2026,
+        9,
+        date(2026, 9, 29),
+        date(2026, 10, 28),
+        Decimal("3000000"),
+        is_current=True,
+        net_pay_uf=Decimal("75"),
+        salary_base=Decimal("1500000"),
+        worked_days=30,
+    )
+    previous = _make_period_range(
+        2025,
+        9,
+        date(2025, 9, 27),
+        date(2025, 10, 28),
+        Decimal("1000000"),
+        net_pay_uf=Decimal("20"),
+        salary_base=Decimal("0"),
+        worked_days=30,
+    )
+    assert _compute_net_pay_clp_today(previous, current) is None
 
 
 def test_period_range_endpoint_computes_increase_for_previous_with_salary_data() -> (

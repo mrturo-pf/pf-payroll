@@ -38,6 +38,7 @@ from payroll.infrastructure.db.repositories.payroll_repository_shared import (
     project_future_months,
     resolve_currency_equivalents,
 )
+from payroll.shared.constants import HEALTH_ADDITIONAL_CONCEPT_CODE
 from payroll.shared.dates import add_months, resolve_payment_date
 
 
@@ -262,9 +263,15 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             lookback_period_model = None
             previous_periods = all_previous_fetched
 
-        # Fetch salary_base (sum of SALARY_BASE items) for previous,
-        # lookback and current
+        # Fetch salary_base (sum of SALARY_BASE items) and fixed_uf_clp (sum
+        # of HEALTH_ADDITIONAL_UF items -- the only UF/CLP-exchange-rate-
+        # driven discount, same concept _compute_net_pay_clp_today() uses to
+        # split a previous period's net_pay into its salary_base-driven vs.
+        # UF-driven components, mirroring PredictedNetPayBaseline's split
+        # for future months) for previous, lookback and current -- one
+        # round trip, two conditional aggregates, not two separate queries.
         salary_base_map: dict[int, Decimal] = {}
+        fixed_uf_clp_map: dict[int, Decimal] = {}
         period_ids = [period.id for period in previous_periods]
         if lookback_period_model is not None:
             period_ids.append(lookback_period_model.id)
@@ -274,20 +281,34 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
         if current_period_id is not None:
             period_ids.append(current_period_id)
         if period_ids:
-            salary_result = await self._session.execute(
+            aggregates_result = await self._session.execute(
                 select(
                     PayrollItemModel.period_id,
-                    func.sum(PayrollItemModel.amount_clp).label("salary_base"),
+                    func.sum(PayrollItemModel.amount_clp)
+                    .filter(PayrollConceptModel.code == "SALARY_BASE")
+                    .label("salary_base"),
+                    func.sum(PayrollItemModel.amount_clp)
+                    .filter(PayrollConceptModel.code == HEALTH_ADDITIONAL_CONCEPT_CODE)
+                    .label("fixed_uf_clp"),
                 )
                 .join(
                     PayrollConceptModel,
                     PayrollItemModel.concept_id == PayrollConceptModel.id,
                 )
                 .where(PayrollItemModel.period_id.in_(period_ids))
-                .where(PayrollConceptModel.code == "SALARY_BASE")
+                .where(
+                    PayrollConceptModel.code.in_(
+                        ("SALARY_BASE", HEALTH_ADDITIONAL_CONCEPT_CODE)
+                    )
+                )
                 .group_by(PayrollItemModel.period_id)
             )
-            salary_base_map = {row[0]: row[1] for row in salary_result.all()}
+            all_aggregate_rows = aggregates_result.all()
+            salary_base_map = {row[0]: row[1] for row in all_aggregate_rows}
+            fixed_uf_clp_map = {
+                row[0]: (row[2] if row[2] is not None else Decimal("0"))
+                for row in all_aggregate_rows
+            }
 
         # Resolve USD/EUR/UF equivalents for every non-future period's
         # start_date, concurrently -- see resolve_currency_equivalents()'s
@@ -332,6 +353,7 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                 net_pay_usd=currency.usd,
                 net_pay_eur=currency.eur,
                 net_pay_uf=currency.uf,
+                fixed_uf_clp=fixed_uf_clp_map.get(period.id, Decimal("0")),
             )
             for period, currency in zip(
                 previous_periods_ordered, previous_currencies, strict=True

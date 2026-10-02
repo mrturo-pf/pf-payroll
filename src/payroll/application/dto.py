@@ -527,6 +527,7 @@ class PayrollPeriodRangeDTO(PayrollPeriodRangeFields):
     net_pay_usd: Decimal | None = None
     net_pay_eur: Decimal | None = None
     net_pay_uf: Decimal | None = None
+    fixed_uf_clp: Decimal = Decimal("0")
 
 
 @dataclass(frozen=True, slots=True)

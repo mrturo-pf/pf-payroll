@@ -796,3 +796,125 @@ amount that grows with each subsequent step.
 
 Not yet committed/pushed -- awaiting explicit user authorization, same as
 every prior section.
+
+## 17. `net_pay_clp_today`: reprice `previous` periods at today's UF rate (2026-10-02)
+
+**User request (2026-10-02):** for `position: previous` entries, show what
+that historical salary would be worth if paid today, using the UF it was
+worth back then repriced at today's UF/CLP rate -- UF already strips out
+CLP inflation by design, so this is a real purchasing-power comparison,
+not another projection.
+
+- **`_compute_net_pay_clp_today()`** (new, `routes/payroll.py`, alongside
+  `_compute_increase()` -- same "derive purely from already-resolved DTO
+  fields, no new repository call" pattern): today's UF/CLP rate is derived
+  from the `current` entry alone -- `current.net_pay_clp /
+  current.net_pay_uf` -- since both were already resolved against the
+  exact same real `pf-rates` UF value for `current`'s own `start_date` (see
+  `resolve_currency_equivalents()`). Multiplying a `previous` entry's own
+  `net_pay_uf` by that derived rate needs no extra `pf-rates` lookup at
+  all. Quantized with the same `quantize_clp()` (nearest peso) as
+  `net_pay_clp` itself. `None` whenever any ingredient is missing: no
+  `current` entry, either side's `net_pay_uf` unresolved, or
+  `current.net_pay_clp`/`current.net_pay_uf` missing or zero.
+- **`PayrollPeriodRangeRead`**: new `net_pay_clp_today: int | None = None`
+  field. Initially placed right after `net_pay_uf`, then moved to the very
+  end (after `increase`) per explicit user request -- it is a derived,
+  comparison-only figure (not one of the core currency conversions grouped
+  together earlier in the object), so it reads more naturally last.
+- **`to_payroll_period_range_reads()`**: resolves the `current` DTO once
+  (reusing the existing `current_index` lookup) and calls the helper only
+  for `position == "previous"` rows; `current`/`future` always carry
+  `null` -- `current` already *is* today's value, `future` is itself only
+  a projection, so repricing either would be meaningless.
+- **Tests** (`tests/integration/api/test_payroll_queries.py`): `_make_period_range()`
+  gained a `net_pay_uf` kwarg; four new unit tests for
+  `_compute_net_pay_clp_today()` (happy path using the user's own real
+  worked example -- 76.29 UF from 2025-09 repriced at the 2026-09 current
+  period's derived rate of ~41,048.95 CLP/UF lands on 3,131,625 CLP, not
+  the original 3,012,409 nominal figure -- plus the three missing-
+  ingredient degradations). The existing full-response JSON assertion in
+  `test_payroll_query_endpoints` was extended with `net_pay_clp_today:
+  None` on all three entries (none of that fixture's periods carry
+  `net_pay_uf`).
+- **Result**: 531 tests passing overall (up from 527), `routes/payroll.py`
+  at 100% line coverage, ruff check/format and mypy clean. `docs/api.md`'s
+  `/payroll/period-range` description updated in the same change.
+
+Not yet committed/pushed -- awaiting explicit user authorization, same as
+every prior section.
+
+## 18. `net_pay_clp_today` v2: real salary_base ratio, not a blanket UF ratio (2026-10-02)
+
+**User follow-up (2026-10-02):** Section 17's formula (`net_pay_uf *
+today_uf_rate`) treats the *entire* historical `net_pay_clp` as if it were
+UF-denominated, including the salary_base-driven majority of it -- the
+same category of bug already fixed for `future` projections in Section 15
+(there: scaling the whole net figure by the IPC ratio instead of only
+`scalable_clp`). User asked for an efficient fix using the real
+salary_base data already available, applying "all the calculations that
+would be done to a salary" rather than a blanket currency conversion.
+
+- **Repository** (`payroll_repository_queries.py`): the *existing* single
+  batched query that already fetches `SALARY_BASE` sums for every
+  previous/lookback/current period in one round trip (`period_ids IN
+  (...)`) was extended with a second conditional aggregate --
+  `SUM(amount_clp) FILTER (WHERE code = HEALTH_ADDITIONAL_CONCEPT_CODE)`
+  -- so `fixed_uf_clp` comes along for free, same query, same round trip,
+  no N+1. Missing/absent rows default to `Decimal("0")` (no additional
+  Isapre plan that period == genuinely zero, not unknown -- same
+  philosophy `MANDATORY_DECLARED_CONTRIBUTION_CONCEPT_CODES` already
+  documents for this exact concept code). Kept as two single-statement
+  dict comprehensions over one `.all()` call (not a `for` loop with
+  statements inside it) specifically so coverage.py still marks both maps
+  built even when the aggregate query legitimately returns zero rows --
+  a `for ...: body` requires at least one iteration to cover `body`,
+  a comprehension does not.
+- **`PayrollPeriodRangeDTO`**: new `fixed_uf_clp: Decimal = Decimal("0")`
+  field (never `None` -- absence means zero, not unknown), populated only
+  for `previous_ranges` (the only place `_compute_net_pay_clp_today()`
+  reads it from); `current`/`lookback` keep the dataclass default since
+  nothing consumes it there.
+- **`_compute_net_pay_clp_today()`** (`routes/payroll.py`), rewritten:
+  splits `item`'s historical net_pay the same way `PredictedNetPayBaseline`
+  splits a future prediction -- `scalable_clp = net_pay_clp +
+  fixed_uf_clp`, `fixed_uf_clp` on its own -- and reprices each with its
+  own real driver instead of one blanket ratio:
+  - `scalable_clp` is scaled by the *real* salary_base growth between
+    `item` and `current`, using the exact same `(salary_base /
+    worked_days) * 30` normalization `_compute_increase()` already uses.
+    This is this specific employee's actual recorded raise history, not a
+    general inflation proxy.
+  - `fixed_uf_clp` is repriced by holding its UF quantity constant
+    (`fixed_uf_clp / item_uf_rate`) and applying today's UF/CLP rate --
+    still derived algebraically from `net_pay_clp / net_pay_uf` on both
+    sides, no extra `pf-rates` call, same trick as v1.
+  - `None` whenever any ingredient is missing on either side:
+    `net_pay_clp`, `net_pay_uf` (or zero), `salary_base`, `worked_days`, or
+    a zero normalized historical salary_base (nothing to form a ratio
+    against).
+- **Live-verified against real Neon data** (employer 9, which has a real
+  5.20% salary_base increase landing on 2026-04): every `previous` period
+  *before* that increase now shows `net_pay_clp_today` repriced up by
+  essentially that same 5.20% (e.g. 2025-09: 3,012,409 -> 3,169,054,
+  previously 3,131,625 under the v1 UF-blanket formula); every `previous`
+  period *after* that increase (same salary_base as `current`, ratio
+  exactly 1.0) now correctly returns `net_pay_clp_today == net_pay_clp`
+  unchanged, which v1 would have incorrectly bumped by whatever the UF
+  happened to move in between for no real reason.
+- **Tests**: `_make_period_range()` gained a `fixed_uf_clp` kwarg (default
+  `Decimal("0")`, forwarded to the DTO). All `_compute_net_pay_clp_today()`
+  unit tests rewritten with clean synthetic numbers exercising the full
+  split (hand-verified: scalable_clp scaled 10% by a real salary_base
+  ratio, a UF-denominated top-up repriced at a different UF rate,
+  recombined) plus every degradation path (missing `current`, missing
+  `net_pay_clp`/`net_pay_uf`/`salary_base`/`worked_days` on either side,
+  zero normalized historical salary_base).
+- **Result**: 533 tests passing, `routes/payroll.py` and
+  `payroll_repository_queries.py` both at 100% line coverage, ruff
+  check/format and mypy clean. `docs/api.md` updated in the same change to
+  describe the split methodology instead of the v1 blanket UF ratio.
+
+Not yet committed/pushed -- awaiting explicit user authorization, same as
+every prior section.
+

@@ -918,3 +918,91 @@ would be done to a salary" rather than a blanket currency conversion.
 Not yet committed/pushed -- awaiting explicit user authorization, same as
 every prior section.
 
+## 19. pf-rates HTTP client: retry transient network errors, better logging (2026-10-02)
+
+**Investigation that triggered this (2026-10-02):** user asked to confirm
+whether `null` `net_pay_uf`/`net_pay_usd`/`net_pay_eur` on `previous`
+periods meant a genuinely unpublished rate or an error. Live testing
+caught the exact same historical date flipping from `null` to a real
+value across requests -- impossible for a real "no rate published" case.
+`scripts/logs/pf-payroll.log` showed 13 `pf_rates_network_error` entries
+in tight bursts of 5-6, correlated in `scripts/logs/pf-rates.log` with
+`bcch_credentials_not_configured`/`mindicador_fetch_failed (read timeout)`
+at the same timestamps. Root cause, fully confirmed: `list_period_ranges()`
+fires up to 36 concurrent calls to pf-rates (12 previous periods x 3
+currencies via nested `asyncio.gather`); whenever a date isn't cached in
+pf-rates' own DB it falls through its `ChainedFxProvider` (BCCH -> SII ->
+Mindicador, each allowed up to `rate_provider_timeout_seconds=10s`); under
+that concurrent burst against a single-worker dev pf-rates instance, some
+of those 36 calls exceed `httpx`'s default ~5s client timeout on this
+client's side even though pf-rates itself would have eventually answered.
+Direct, sequential, one-at-a-time calls to the exact same "failing"
+date/currency pairs resolved in ~0.5-0.75s every time -- proving it is
+pure concurrency/contention, not missing data, and not a bug in the
+exchange-rate resolution logic itself.
+
+**Implemented** (user explicitly chose "retry with backoff, 3 attempts" +
+"better logging/observability"; did not choose the explicit-timeout,
+concurrency-limiting, or do-nothing options also offered):
+
+- **`_http_client.py`**: `_pf_rates_request()` rewritten around a
+  `while True` retry loop (not a `for` loop, so mypy doesn't need an
+  unreachable post-loop `return`/`raise`). A 404 is still returned as
+  `None` immediately -- final, correct answer, never retried, never
+  logged as an error. A real HTTP error status (`httpx.HTTPStatusError`,
+  e.g. a genuine 500 from pf-rates) is also never retried -- that is
+  pf-rates itself reporting a real, already-final failure. Only
+  `httpx.RequestError` (timeouts, connection resets, DNS errors -- the
+  exact failure mode the investigation found) is retried, up to
+  `_MAX_NETWORK_RETRY_ATTEMPTS = 3` attempts total, with
+  `_RETRY_BACKOFF_SECONDS = (0.5, 1.0)` between attempts 1->2 and 2->3.
+- **Logging improvements**, directly fixing gaps the investigation hit
+  in practice:
+  - `params` (currency_code/rate_date) is now included on every
+    `pf_rates_http_error`/`pf_rates_network_error` log line -- previously
+    the logs only showed the URL (identical for every call to the same
+    endpoint), making it impossible to tell *which* date/currency failed
+    without guessing from timestamps, exactly the extra correlation work
+    this investigation had to do manually.
+  - `error_type=type(exc).__name__` added alongside `error=str(exc)` --
+    the investigation found `error=` logged as a literally empty string
+    for some `httpx.ConnectError`/`ReadTimeout` instances (their `str()`
+    is blank); the exception class name is always present and now always
+    logged.
+  - `attempt`/`max_attempts`/`will_retry` added to every network-error
+    warning, and a new `pf_rates_network_retry_succeeded` info-level log
+    fires when a retry recovers -- previously there was no way to tell
+    "this failed once but recovered" from "this never had a problem" or
+    from "this failed and gave up".
+- **Tests**: new `_instant_backoff` autouse fixture (monkeypatches
+  `asyncio.sleep` to a no-op) added to all three affected test files
+  (`test_pf_rates_get.py`, `test_pf_rates_client.py`,
+  `test_income_tax_bracket_client.py`) so retry/backoff tests run
+  instantly instead of actually waiting 1.5s per exhaustion test. New
+  tests cover: retry succeeding on the 2nd attempt, retry succeeding on
+  the 3rd attempt, exhausting all 3 attempts and raising (asserting the
+  exact retry count via respx's `route.call_count`), and confirming 404s
+  and real HTTP error statuses are each still a single call, never
+  retried.
+- **Result**: 538 tests passing (up from 533), `_http_client.py` at 100%
+  line coverage, ruff check/format and mypy clean (97 source files).
+  Live-verified: a burst that previously produced `null`s now produces
+  zero nulls across repeated live requests against the real local
+  pf-rates instance.
+
+**Known trade-off, surfaced live and worth flagging, not yet acted on**:
+retrying masks the correctness problem (no more spurious `null`s) but not
+the latency it comes from -- a request hitting these contention-prone
+date/currency combos can now take up to roughly 3x the already-slow
+underlying response time (observed up to ~17s total for one
+`GET /payroll/period-range` call, versus a fast failure to `null` before
+this change). The user was offered (and did not choose, for this round)
+two complementary fixes that address latency rather than correctness: an
+explicit, more generous `httpx` client timeout, and capping how many
+concurrent calls `list_period_ranges()` fires at pf-rates at once. Either
+remains on the table if this latency becomes a real problem (most likely
+only a local single-worker-dev-server artifact -- a real deployed pf-rates
+with more capacity would contend far less under the same 36-call burst).
+
+Not yet committed/pushed -- awaiting explicit user authorization, same as
+every prior section.

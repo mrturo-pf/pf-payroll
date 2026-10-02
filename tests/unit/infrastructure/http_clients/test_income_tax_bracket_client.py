@@ -1,5 +1,6 @@
 """Tests for IncomeTaxBracketClient."""
 
+import asyncio
 from datetime import date
 from decimal import Decimal
 
@@ -21,6 +22,16 @@ _BRACKET_JSON = {
     "marginal_rate": "0.040000",
     "rebate_utm": "0.5400",
 }
+
+
+@pytest.fixture(autouse=True)
+def _instant_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Skip the real retry backoff delay so retry tests run instantly."""
+
+    async def _no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
 
 
 def _client(
@@ -99,12 +110,13 @@ async def test_get_income_tax_bracket_refetches_after_ttl_expiry() -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_get_income_tax_bracket_raises_on_network_error() -> None:
-    """Raises PayrollDependencyError on network failures."""
-    respx.get(f"{BASE_URL}/income-tax-brackets").mock(
+    """Raises PayrollDependencyError after exhausting all retry attempts."""
+    route = respx.get(f"{BASE_URL}/income-tax-brackets").mock(
         side_effect=httpx.ConnectError("timeout")
     )
-    with pytest.raises(PayrollDependencyError, match="Network error"):
+    with pytest.raises(PayrollDependencyError, match="Network error.*after 3 attempts"):
         await _client().get_income_tax_bracket(date(2026, 4, 30), Decimal("20.5"))
+    assert route.call_count == 3
 
 
 @pytest.mark.asyncio

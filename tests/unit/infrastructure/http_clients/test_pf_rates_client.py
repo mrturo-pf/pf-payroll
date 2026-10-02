@@ -1,5 +1,6 @@
 """Tests for PfRatesClient."""
 
+import asyncio
 from datetime import date
 from decimal import Decimal
 
@@ -15,6 +16,16 @@ from payroll.infrastructure.http.pf_rates_client import (
 
 
 BASE_URL = "http://pf-rates.test"
+
+
+@pytest.fixture(autouse=True)
+def _instant_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Skip the real retry backoff delay so retry tests run instantly."""
+
+    async def _no_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
 
 
 def _client(ttl: int = 300, clock_values: list[float] | None = None) -> PfRatesClient:
@@ -81,12 +92,36 @@ async def test_get_exchange_rate_value_raises_on_5xx() -> None:
 @pytest.mark.asyncio
 @respx.mock
 async def test_get_exchange_rate_value_raises_on_network_error() -> None:
-    """Raises PayrollDependencyError on network failures."""
-    respx.get(f"{BASE_URL}/exchange-rates/value").mock(
+    """Raises PayrollDependencyError after exhausting all retry attempts."""
+    route = respx.get(f"{BASE_URL}/exchange-rates/value").mock(
         side_effect=httpx.ConnectError("timeout")
     )
-    with pytest.raises(PayrollDependencyError, match="Network error"):
+    with pytest.raises(PayrollDependencyError, match="Network error.*after 3 attempts"):
         await _client().get_exchange_rate_value("USD", date(2026, 4, 15))
+    assert route.call_count == 3
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_get_exchange_rate_value_retries_transient_network_error() -> None:
+    """A transient network error is retried and does not surface to the caller.
+
+    This is the exact scenario the 2026-10-02 investigation found in
+    practice: pf-rates' own provider cascade (BCCH -> SII -> Mindicador)
+    occasionally takes long enough that this client's HTTP call to
+    pf-rates times out even though pf-rates itself would have eventually
+    answered -- retrying once is enough to paper over that instead of
+    degrading to the same `null` a genuine missing rate would produce.
+    """
+    route = respx.get(f"{BASE_URL}/exchange-rates/value").mock(
+        side_effect=[
+            httpx.ReadTimeout("timeout"),
+            httpx.Response(200, json={"value_clp": "950.50"}),
+        ]
+    )
+    result = await _client().get_exchange_rate_value("USD", date(2026, 4, 15))
+    assert result == Decimal("950.50")
+    assert route.call_count == 2
 
 
 # ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@ from payroll.application.dto import (
     ContributionCapDTO,
     ContributionComputationContextDTO,
     EmployerPaymentRuleDTO,
+    EmploymentContractDTO,
     ExportPayrollFiltersDTO,
     HealthInstitutionDTO,
     HealthPlanDTO,
@@ -29,8 +30,6 @@ from payroll.application.dto import (
     PayrollSummaryDTO,
     PensionInstitutionDTO,
     PensionPlanDTO,
-    ReviewPayrollPeriodCommandDTO,
-    ReviewPayrollPeriodResultDTO,
     UnemploymentComputationContextDTO,
 )
 from payroll.domain.contributions import ComplementaryInsurancePlan
@@ -96,6 +95,12 @@ class EmployerPaymentRuleReader(Protocol):
 class PayrollRepository(Protocol):
     """Persistence port for payroll operations."""
 
+    async def get_effective_employment_contract(
+        self, employer_id: int, payment_date: date
+    ) -> EmploymentContractDTO:
+        """Get the contract effective for an employer/payment date."""
+        ...
+
     async def import_rows(
         self, rows: list[ImportPayrollRowDTO]
     ) -> ImportPayrollResultDTO:
@@ -106,12 +111,6 @@ class PayrollRepository(Protocol):
         self, command: AssignPlansCommandDTO
     ) -> AssignPlansResultDTO:
         """Assign plans."""
-        ...
-
-    async def review_period(
-        self, command: ReviewPayrollPeriodCommandDTO
-    ) -> ReviewPayrollPeriodResultDTO:
-        """Review period."""
         ...
 
     async def get_contribution_context(

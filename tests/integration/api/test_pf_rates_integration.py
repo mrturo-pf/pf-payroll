@@ -20,7 +20,6 @@ from payroll.application.dto import (
 from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.domain.contributions import (
     ContributionCap,
-    EmploymentContractKind,
     HealthInstitution,
     HealthInstitutionKind,
     HealthPlan,
@@ -49,7 +48,6 @@ class StubPayrollRepository:
             period_year=2026,
             period_month=1,
             taxable_income_clp=Decimal("1000000"),
-            employment_contract_kind=EmploymentContractKind.INDEFINITE,
             pension_plan=PensionPlan(
                 id=1,
                 institution=PensionInstitution("AFP_UNO", "AFP Uno", Decimal("0.10")),

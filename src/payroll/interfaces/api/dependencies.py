@@ -27,8 +27,8 @@ from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
 # Use cases
 from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
-from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
+from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.export_payroll import ExportPayroll
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
@@ -37,7 +37,6 @@ from payroll.application.use_cases.process_imported_payroll_periods import (
     ProcessImportedPayrollPeriods,
 )
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
-from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
 from payroll.interfaces.repositories import (
     SqlAlchemyComplementaryInsuranceRepository,
     SqlAlchemyPayrollRepository,
@@ -247,13 +246,6 @@ def get_assign_plans_use_case(
     return AssignPlans(repository)
 
 
-def get_review_payroll_period_use_case(
-    repository: PayrollRepository = Depends(get_payroll_repository),
-) -> ReviewPayrollPeriod:
-    """Get review payroll period use case."""
-    return ReviewPayrollPeriod(repository)
-
-
 def get_compute_contributions_use_case(
     repository: PayrollRepository = Depends(get_payroll_repository),
 ) -> ComputeContributions:
@@ -275,7 +267,7 @@ def get_compute_income_tax_use_case(
 def get_deflate_amounts_use_case(
     repository: PayrollRepository = Depends(get_payroll_repository),
 ) -> DeflateAmounts:
-    """Get deflate amounts use case."""
+    """Get deflate amounts use case for non-HTTP/internal compatibility."""
     return DeflateAmounts(repository, get_market_data_repository())
 
 

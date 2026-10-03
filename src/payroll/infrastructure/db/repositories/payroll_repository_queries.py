@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.engine import Row
 
 from payroll.application.dto import (
+    EmploymentContractDTO,
     ExportPayrollFiltersDTO,
     PayrollItemDetailDTO,
     PayrollPeriodDetailDTO,
@@ -16,7 +17,7 @@ from payroll.application.dto import (
     PayrollPeriodRangeDTO,
     PayrollSummaryDTO,
 )
-from payroll.application.errors import PayrollDependencyError
+from payroll.application.errors import PayrollConflictError, PayrollDependencyError
 from payroll.infrastructure.db.models import (
     EmployerModel,
     HealthInstitutionModel,
@@ -25,6 +26,7 @@ from payroll.infrastructure.db.models import (
     PayrollSummaryModel,
 )
 from payroll.infrastructure.db.models.payroll import (
+    EmploymentContractModel,
     EmployerFixedDayRoll,
     EmployerPaymentDateRule,
     PayrollItemModel,
@@ -58,6 +60,50 @@ class _SummaryAmounts(NamedTuple):
 
 class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
     """Read-only payroll queries."""
+
+    async def _get_employer_contract_start(
+        self, employer_id: int, fallback: date
+    ) -> date:
+        """Return the earliest contract start for an employer."""
+        result = await self._session.execute(
+            select(func.min(EmploymentContractModel.started_at)).where(
+                EmploymentContractModel.employer_id == employer_id
+            )
+        )
+        return result.scalar_one_or_none() or fallback
+
+    async def get_effective_employment_contract(
+        self, employer_id: int, payment_date: date
+    ) -> EmploymentContractDTO:
+        """Return the single contract effective on a payroll payment date."""
+        result = await self._session.execute(
+            select(EmploymentContractModel)
+            .where(
+                EmploymentContractModel.employer_id == employer_id,
+                EmploymentContractModel.started_at <= payment_date,
+                (EmploymentContractModel.ended_at.is_(None))
+                | (EmploymentContractModel.ended_at >= payment_date),
+            )
+            .order_by(
+                EmploymentContractModel.started_at.desc(),
+                EmploymentContractModel.id.desc(),
+            )
+        )
+        contracts = result.scalars().all()
+        contract = contracts[0] if contracts else None
+        if contract is None:
+            raise PayrollConflictError(
+                "No employment contract is effective for employer "
+                f"{employer_id} on {payment_date.isoformat()}."
+            )
+        return EmploymentContractDTO(
+            id=contract.id,
+            employer_id=contract.employer_id,
+            started_at=contract.started_at,
+            ended_at=contract.ended_at,
+            is_indefinite=contract.is_indefinite,
+            position=contract.position,
+        )
 
     def _resolve_effective_month_offset(
         self,
@@ -295,7 +341,10 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             current_year = current_period.period_year
             current_month = current_period.period_month
             current_start = current_period.payment_date
-            current_employer_started_at = current_employer.started_at
+            current_employer_started_at = await self._get_employer_contract_start(
+                current_employer.id,
+                date(current_year, current_month, 1),
+            )
             current_first_increase_period_year = (
                 current_employer.first_increase_period_year
             )
@@ -914,7 +963,6 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
         if period_row is None:
             return None
         period, employer = period_row
-        employer_ended_at = await self._get_effective_employer_ended_at(employer)
 
         health_plan_ids_result = await self._session.execute(
             select(PayrollPeriodHealthPlanModel.health_plan_id)
@@ -982,14 +1030,10 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
             employer_name=employer.name,
             employer_tax_id=employer.tax_id,
             employer_country_code=employer.country_code,
-            employer_started_at=employer.started_at,
-            employer_ended_at=employer_ended_at,
             period_year=period.period_year,
             period_month=period.period_month,
             payment_date=period.payment_date,
             worked_days=period.worked_days,
-            status=period.status.value,
-            employment_contract_kind=period.employment_contract_kind,
             pension_plan_id=period.pension_plan_id,
             health_plan_id=primary_health_plan_id,
             items=items,

@@ -11,19 +11,16 @@ from payroll.application.dto import (
     ImportPayrollRowDTO,
     ImportedPayrollPeriodDTO,
 )
-from payroll.application.errors import PayrollValidationError
+from payroll.application.errors import PayrollConflictError, PayrollValidationError
 from payroll.application.ports.repositories import MarketDataRepository
 from payroll.infrastructure.db.models import (
     EmployerModel,
     PayrollConceptModel,
 )
 from payroll.infrastructure.db.models.payroll import (
-    EmployerFixedDayRoll,
-    EmployerPaymentDateRule,
     PayrollItemModel,
     PayrollPeriodHealthPlanModel,
     PayrollPeriodModel,
-    PayrollStatus,
 )
 from payroll.infrastructure.db.repositories.reference_data_repository import (
     SqlAlchemyReferenceDataRepository,
@@ -269,25 +266,10 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
             )
             employer = employer_result.scalar_one_or_none()
             if employer is None:
-                employer = EmployerModel(
-                    name=employer_name,
-                    started_at=first_row.payment_date,
-                    payment_date_rule=(
-                        EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH
-                    ),
-                    payment_month_offset=0,
-                    payment_day_of_month=None,
-                    payment_business_day_offset=0,
-                    payment_calendar_day_offset=0,
-                    payment_effective_on_processing_next_day=False,
-                    payment_fixed_day_roll=(EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY),
+                raise PayrollConflictError(
+                    "An employment contract must exist before importing payroll "
+                    f"for employer {employer_name!r}."
                 )
-                self._session.add(employer)
-                await self._session.flush()
-                await self._close_overlapping_open_ended_employers(employer)
-            elif first_row.payment_date < employer.started_at:
-                employer.started_at = first_row.payment_date
-                await self._close_overlapping_open_ended_employers(employer)
 
             self._validate_payment_month_matches_period(
                 employer=employer,
@@ -311,8 +293,6 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                     period_month=month,
                     payment_date=first_row.payment_date,
                     worked_days=worked_days,
-                    status=PayrollStatus(first_row.status),
-                    employment_contract_kind=first_row.employment_contract_kind,
                     declared_net_pay_clp=first_row.declared_net_pay_clp,
                     expected_net_pay_clp=None,
                     net_pay_difference_clp=None,
@@ -325,8 +305,6 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
             else:
                 period.payment_date = first_row.payment_date
                 period.worked_days = worked_days
-                period.status = PayrollStatus(first_row.status)
-                period.employment_contract_kind = first_row.employment_contract_kind
                 period.declared_net_pay_clp = first_row.declared_net_pay_clp
                 period.expected_net_pay_clp = None
                 period.net_pay_difference_clp = None
@@ -363,8 +341,6 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                     period_year=period.period_year,
                     period_month=period.period_month,
                     payment_date=period.payment_date,
-                    status=period.status.value,
-                    employment_contract_kind=period.employment_contract_kind,
                     item_count=item_count,
                     worked_days=period.worked_days,
                     declared_net_pay_clp=period.declared_net_pay_clp,

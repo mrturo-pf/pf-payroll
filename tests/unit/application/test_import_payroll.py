@@ -11,7 +11,6 @@ from payroll.application.dto import (
     ImportedPayrollPeriodDTO,
 )
 from payroll.application.use_cases.import_payroll import ImportPayroll
-from payroll.domain.contributions import EmploymentContractKind
 
 
 class StubPayrollRepository:
@@ -35,8 +34,6 @@ class StubPayrollRepository:
                     period_month=1,
                     payment_date=rows[0].payment_date,
                     worked_days=rows[0].worked_days,
-                    status=rows[0].status,
-                    employment_contract_kind=rows[0].employment_contract_kind,
                     item_count=len(rows),
                     declared_net_pay_clp=getattr(rows[0], "declared_net_pay_clp", None),
                     expected_net_pay_clp=getattr(rows[0], "expected_net_pay_clp", None),
@@ -81,8 +78,6 @@ def sample_rows() -> list[ImportPayrollRowDTO]:
             period_month=1,
             payment_date=date(2026, 1, 31),
             worked_days=30,
-            status="actual",
-            employment_contract_kind=EmploymentContractKind.INDEFINITE,
             concept_code="SALARY_BASE",
             amount_clp=Decimal("1000000"),
             declared_net_pay_clp=Decimal("950000"),
@@ -94,8 +89,6 @@ def sample_rows() -> list[ImportPayrollRowDTO]:
             period_year=2026,
             period_month=1,
             payment_date=date(2026, 1, 31),
-            status="actual",
-            employment_contract_kind=EmploymentContractKind.INDEFINITE,
             concept_code="PENSION_BASE",
             amount_clp=Decimal("100000"),
             declared_net_pay_clp=Decimal("950000"),
@@ -123,7 +116,6 @@ async def test_import_payroll_reads_csv_and_builds_rows() -> None:
     assert repository.rows[0].employer == "ACME"
     assert repository.rows[0].concept_code == "SALARY_BASE"
     assert repository.rows[0].worked_days == 30
-    assert repository.rows[0].employment_contract_kind.value == "indefinite"
     assert repository.rows[1].amount_clp == Decimal("100000")
 
 

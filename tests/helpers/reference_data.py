@@ -20,7 +20,7 @@ from payroll.application.dto import (
     PensionInstitutionDTO,
     PensionPlanDTO,
 )
-from payroll.domain.contributions import EmploymentContractKind, HealthInstitutionKind
+from payroll.domain.contributions import HealthInstitutionKind
 
 
 def sample_exchange_rate_dto() -> ExchangeRateDTO:
@@ -69,14 +69,10 @@ def sample_payroll_period_detail_dto(
         employer_name=employer_name,
         employer_tax_id=employer_tax_id,
         employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=employer_ended_at,
         period_year=2026,
         period_month=1,
         payment_date=date(2026, 1, 31),
         worked_days=30,
-        status=status,
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
         pension_plan_id=1,
         health_plan_id=2,
         items=items if items is not None else [],
@@ -108,14 +104,10 @@ def sample_acme_april_2026_period_detail_dto(
         employer_name="ACME",
         employer_tax_id="76000000-1",
         employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
         period_year=2026,
         period_month=4,
         payment_date=date(2026, 4, 30),
         worked_days=30,
-        status=status,
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
         pension_plan_id=pension_plan_id,
         health_plan_id=health_plan_id,
         items=items if items is not None else [],

@@ -36,7 +36,6 @@ def test_read_payroll_dataframe_supports_csv_and_xlsx() -> None:
                 "period_year": 2026,
                 "employer": "ACME",
                 "payment_date": "2026-01-31",
-                "employment_contract_kind": "indefinite",
                 "salary_base": 1000,
             }
         ]
@@ -64,7 +63,6 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
                     "period_year": "",
                     "employer": "ACME",
                     "payment_date": "2026-01-31",
-                    "employment_contract_kind": "indefinite",
                     "salary_base": 1000,
                 }
             ]
@@ -80,7 +78,6 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
                     "period_year": 2026,
                     "employer": "ACME",
                     "payment_date": "2026-01-31",
-                    "employment_contract_kind": "indefinite",
                     "worked_days": 28,
                     "salary_base": 1000,
                 }
@@ -97,7 +94,6 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
                         "period_month": 1,
                         "period_year": 2026,
                         "employer": "ACME",
-                        "employment_contract_kind": "indefinite",
                     }
                 ]
             )
@@ -110,21 +106,6 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
                     {
                         "period_month": 1,
                         "period_year": 2026,
-                        "payment_date": "2026-01-31",
-                        "employment_contract_kind": "indefinite",
-                    }
-                ]
-            )
-        )
-
-    with pytest.raises(ValueError, match="employment_contract_kind"):
-        to_long_format(
-            pd.DataFrame(
-                [
-                    {
-                        "period_month": 1,
-                        "period_year": 2026,
-                        "employer": "ACME",
                         "payment_date": "2026-01-31",
                     }
                 ]
@@ -140,7 +121,6 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
                         "period_year": 2026,
                         "employer": "ACME",
                         "payment_date": "2026-01-31",
-                        "employment_contract_kind": "indefinite",
                         "worked_days": 31.5,
                         "salary_base": 1000,
                     }
@@ -156,7 +136,6 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
                         "period_month": 1,
                         "employer": "ACME",
                         "payment_date": "2026-01-31",
-                        "employment_contract_kind": "indefinite",
                         "salary_base": 1000,
                     }
                 ]
@@ -172,7 +151,6 @@ def test_to_long_format_skips_invalid_period_and_validates_required_fields() -> 
                         "period_year": 2026,
                         "employer": "ACME",
                         "payment_date": "2026-01-31",
-                        "employment_contract_kind": "indefinite",
                         "salary_base": 1000,
                     }
                 ]
@@ -190,36 +168,13 @@ def test_to_long_format_normalizes_contract_kind_aliases() -> None:
                     "period_year": 2026,
                     "employer": "ACME",
                     "payment_date": "2026-01-31",
-                    "employment_contract_kind": "plazo_fijo",
                     "salary_base": 1000,
                 }
             ]
         )
     )
 
-    assert (
-        result.to_dict(orient="records")[0]["employment_contract_kind"].value
-        == "fixed_term"
-    )
-
-
-def test_to_long_format_rejects_invalid_contract_kind() -> None:
-    """Test to long format rejects invalid contract kind."""
-    with pytest.raises(ValueError, match="Unsupported employment_contract_kind"):
-        to_long_format(
-            pd.DataFrame(
-                [
-                    {
-                        "period_month": 1,
-                        "period_year": 2026,
-                        "employer": "ACME",
-                        "payment_date": "2026-01-31",
-                        "employment_contract_kind": "seasonal",
-                        "salary_base": 1000,
-                    }
-                ]
-            )
-        )
+    assert "employment_contract_kind" not in result.columns
 
 
 def test_parse_payment_date_supports_iso_and_dayfirst_formats() -> None:
@@ -284,7 +239,6 @@ def test_extract_net_pay_validations_returns_expected_and_difference_values() ->
                     "period_year": "",
                     "employer": "ACME",
                     "payment_date": "2026-01-31",
-                    "employment_contract_kind": "indefinite",
                     "salary_base": 1000,
                     "net_pay": 1000,
                 },
@@ -293,7 +247,6 @@ def test_extract_net_pay_validations_returns_expected_and_difference_values() ->
                     "period_year": 2026,
                     "employer": "",
                     "payment_date": "2026-01-31",
-                    "employment_contract_kind": "indefinite",
                     "salary_base": 1000,
                     "net_pay": 1000,
                 },
@@ -302,7 +255,6 @@ def test_extract_net_pay_validations_returns_expected_and_difference_values() ->
                     "period_year": 2026,
                     "employer": "ACME",
                     "payment_date": "2026-01-31",
-                    "employment_contract_kind": "indefinite",
                     "salary_base": 1000,
                 },
                 {
@@ -310,7 +262,6 @@ def test_extract_net_pay_validations_returns_expected_and_difference_values() ->
                     "period_year": 2026,
                     "employer": "ACME",
                     "payment_date": "2026-01-31",
-                    "employment_contract_kind": "indefinite",
                     "salary_base": 1000,
                     "pension_base": 100,
                     "net_pay": 950,
@@ -320,7 +271,6 @@ def test_extract_net_pay_validations_returns_expected_and_difference_values() ->
                     "period_year": 2026,
                     "employer": "ACME",
                     "payment_date": "2026-02-28",
-                    "employment_contract_kind": "indefinite",
                     "salary_base": 1000,
                     "pension_base": 100,
                     "net_pay": 900,

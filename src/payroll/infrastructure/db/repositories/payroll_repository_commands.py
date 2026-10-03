@@ -16,23 +16,24 @@ from payroll.application.dto import (
     ComputeUnemploymentInsuranceResultDTO,
     ContributionComputationContextDTO,
     IncomeTaxContextDTO,
-    ReviewPayrollPeriodCommandDTO,
-    ReviewPayrollPeriodResultDTO,
     UnemploymentComputationContextDTO,
 )
 from payroll.application.errors import PayrollConflictError, PayrollNotFoundError
 from payroll.domain.contributions import (
     ContributionCap,
+    EmploymentContractKind,
     HealthInstitution,
     HealthPlan,
     PensionInstitution,
     PensionPlan,
 )
-from payroll.infrastructure.db.models import (
-    PayrollConceptModel,
-)
-from payroll.infrastructure.db.models.payroll import PayrollItemModel, PayrollStatus
+from payroll.infrastructure.db.models import PayrollConceptModel
 from payroll.infrastructure.db.models.payroll import PayrollPeriodHealthPlanModel
+from payroll.infrastructure.db.models.payroll import (
+    EmploymentContractModel,
+    PayrollItemModel,
+    PayrollPeriodModel,
+)
 from payroll.infrastructure.db.models.reference_data import (
     ContributionCapType,
     PayrollConceptKind,
@@ -44,7 +45,6 @@ from payroll.shared.constants import (
     COMPUTED_CONTRIBUTION_CONCEPT_CODES,
     INCOME_TAX_DEDUCTIBLE_CONCEPT_CODES,
     INCOME_TAX_CONCEPT_CODE,
-    REVIEW_REQUIRED_CONCEPT_CODES,
 )
 
 
@@ -176,50 +176,30 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
             health_plan_id=command.health_plan_id,
         )
 
-    async def review_period(
-        self, command: ReviewPayrollPeriodCommandDTO
-    ) -> ReviewPayrollPeriodResultDTO:
-        """Review period."""
-        period = await self._get_period(command.period_id)
-        assigned_plan_ids_result = await self._session.execute(
-            select(PayrollPeriodHealthPlanModel.health_plan_id).where(
-                PayrollPeriodHealthPlanModel.period_id == period.id
+    async def _get_effective_contract_model(
+        self, period: PayrollPeriodModel
+    ) -> EmploymentContractModel:
+        """Return the contract effective for a payroll period or raise."""
+        result = await self._session.execute(
+            select(EmploymentContractModel)
+            .where(
+                EmploymentContractModel.employer_id == period.employer_id,
+                EmploymentContractModel.started_at <= period.payment_date,
+                (EmploymentContractModel.ended_at.is_(None))
+                | (EmploymentContractModel.ended_at >= period.payment_date),
+            )
+            .order_by(
+                EmploymentContractModel.started_at.desc(),
+                EmploymentContractModel.id.desc(),
             )
         )
-        assigned_plan_ids = [
-            int(plan_id) for plan_id in assigned_plan_ids_result.scalars().all()
-        ]
-        if period.pension_plan_id is None or not assigned_plan_ids:
+        contracts = result.scalars().all()
+        if not contracts:
             raise PayrollConflictError(
-                f"Payroll period {period.id} must have pension "
-                "and health plans assigned before review."
+                "No employment contract is effective for employer "
+                f"{period.employer_id} on {period.payment_date.isoformat()}."
             )
-
-        present_result = await self._session.execute(
-            select(PayrollConceptModel.code)
-            .join(
-                PayrollItemModel, PayrollItemModel.concept_id == PayrollConceptModel.id
-            )
-            .where(PayrollItemModel.period_id == period.id)
-            .where(PayrollConceptModel.code.in_(REVIEW_REQUIRED_CONCEPT_CODES))
-        )
-        present_codes = set(present_result.scalars().all())
-        missing_codes = sorted(REVIEW_REQUIRED_CONCEPT_CODES - present_codes)
-        if missing_codes:
-            raise PayrollConflictError(
-                "Payroll period "
-                f"{period.id} must have computed contributions and income tax "
-                "before review. Missing: "
-                f"{', '.join(missing_codes)}"
-            )
-
-        period.status = PayrollStatus.REVIEWED
-        await self._session.commit()
-        return ReviewPayrollPeriodResultDTO(
-            period_id=period.id,
-            payment_date=period.payment_date,
-            status=period.status.value,
-        )
+        return contracts[0]
 
     async def get_contribution_context(
         self,
@@ -298,13 +278,18 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
                 )
             )
 
+        contract = await self._get_effective_contract_model(period)
         return ContributionComputationContextDTO(
             period_id=period.id,
             payment_date=period.payment_date,
             period_year=period.period_year,
             period_month=period.period_month,
             taxable_income_clp=taxable_income_clp,
-            employment_contract_kind=period.employment_contract_kind,
+            employment_contract_kind=(
+                EmploymentContractKind.INDEFINITE
+                if contract.is_indefinite
+                else EmploymentContractKind.FIXED_TERM
+            ),
             pension_plan=PensionPlan(
                 id=pension_plan_model.id,
                 institution=PensionInstitution(
@@ -408,12 +393,17 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
                 f"{period.payment_date.isoformat()}."
             ),
         )
+        contract = await self._get_effective_contract_model(period)
         taxable_income_clp = await self._get_taxable_income_clp(period.id)
         return UnemploymentComputationContextDTO(
             period_id=period.id,
             payment_date=period.payment_date,
             taxable_income_clp=taxable_income_clp,
-            employment_contract_kind=period.employment_contract_kind,
+            employment_contract_kind=(
+                EmploymentContractKind.INDEFINITE
+                if contract.is_indefinite
+                else EmploymentContractKind.FIXED_TERM
+            ),
             unemployment_cap=ContributionCap(
                 cap_type=unemployment_cap_model.cap_type.value,
                 valid_from=unemployment_cap_model.valid_from,

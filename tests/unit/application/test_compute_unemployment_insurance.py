@@ -13,7 +13,7 @@ from payroll.application.dto import (
 from payroll.application.use_cases.compute_unemployment_insurance import (
     ComputeUnemploymentInsurance,
 )
-from payroll.domain.contributions import ContributionCap, EmploymentContractKind
+from payroll.domain.contributions import ContributionCap
 from helpers.market_data_stubs import UfLookupStubMixin
 
 
@@ -33,7 +33,6 @@ class StubPayrollRepository:
             period_id=10,
             payment_date=date(2026, 1, 31),
             taxable_income_clp=Decimal("1000000"),
-            employment_contract_kind=EmploymentContractKind.INDEFINITE,
             unemployment_cap=ContributionCap(
                 cap_type="unemployment",
                 valid_from=date(2026, 1, 1),
@@ -99,7 +98,6 @@ async def test_compute_unemployment_uses_month_end_uf_for_cap() -> None:
                 period_id=context.period_id,
                 payment_date=date(2026, 1, 30),
                 taxable_income_clp=Decimal("4000000"),
-                employment_contract_kind=context.employment_contract_kind,
                 unemployment_cap=context.unemployment_cap,
             )
 

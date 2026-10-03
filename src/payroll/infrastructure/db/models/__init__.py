@@ -2,6 +2,7 @@
 
 from payroll.infrastructure.db.models.payroll import (
     EmployerModel,
+    EmploymentContractModel,
     PayrollItemModel,
     PayrollPeriodHealthPlanModel,
     PayrollPeriodModel,
@@ -23,6 +24,7 @@ from payroll.infrastructure.db.models.reference_data import (
 __all__ = [
     "ContributionCapModel",
     "EmployerModel",
+    "EmploymentContractModel",
     "HealthInstitutionModel",
     "HealthPlanModel",
     "PayrollItemModel",

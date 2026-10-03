@@ -10,7 +10,6 @@ from payroll.application.dto import (
     PayrollPeriodDetailDTO,
 )
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
-from payroll.domain.contributions import EmploymentContractKind
 from helpers.reference_data import sample_payroll_summary_dto
 
 
@@ -27,14 +26,10 @@ class StubPayrollRepository:
             employer_name="ACME",
             employer_tax_id=None,
             employer_country_code="CL",
-            employer_started_at=date(2020, 1, 1),
-            employer_ended_at=None,
             period_year=2026,
             period_month=1,
             payment_date=date(2026, 1, 31),
             worked_days=30,
-            status="actual",
-            employment_contract_kind=EmploymentContractKind.INDEFINITE,
             pension_plan_id=1,
             health_plan_id=2,
             items=[],

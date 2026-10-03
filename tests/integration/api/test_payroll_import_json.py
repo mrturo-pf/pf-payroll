@@ -14,7 +14,6 @@ from fastapi.testclient import TestClient
 
 from payroll.application.dto import ImportPayrollResultDTO, ImportedPayrollPeriodDTO
 from payroll.application.errors import PayrollDependencyError, PayrollValidationError
-from payroll.domain.contributions import EmploymentContractKind
 from payroll.interfaces.api.dependencies import (
     get_transactional_import_payroll_use_case,
     get_transactional_process_imported_payroll_periods_use_case,
@@ -27,7 +26,6 @@ SAMPLE_HEADER = {
     "period_year": 2026,
     "period_month": 1,
     "payment_date": "2026-01-31",
-    "employment_contract_kind": "indefinite",
     "worked_days": 30,
     "declared_net_pay_clp": "950000",
 }
@@ -108,8 +106,6 @@ class FakeImportPayrollFromRows:
                 period_year=period_year,
                 period_month=period_month,
                 payment_date=date(period_year, period_month, 28),
-                status="actual",
-                employment_contract_kind=EmploymentContractKind.INDEFINITE,
                 item_count=sum(
                     1
                     for row in rows
@@ -431,8 +427,6 @@ def test_import_payroll_rows_endpoint_rejects_commit_on_genuine_conflict() -> No
                         period_year=2026,
                         period_month=1,
                         payment_date=date(2026, 1, 31),
-                        status="actual",
-                        employment_contract_kind=EmploymentContractKind.INDEFINITE,
                         item_count=len(rows),
                         declared_net_pay_clp=Decimal("950000"),
                         expected_net_pay_clp=Decimal("900000"),
@@ -508,38 +502,6 @@ def test_import_payroll_rows_endpoint_validate_all_unresolved_skips_pipeline() -
     ]
     assert fake_import.called_with is None
     assert scope.resolved_with == ["validate"]
-
-
-def test_import_payroll_rows_endpoint_derives_projected_status_without_net_pay() -> (
-    None
-):
-    """Status is inferred as "projected" when declared_net_pay_clp is absent.
-
-    status is never accepted as caller input on this endpoint at all (see
-    ImportPayrollPeriodRequest's docstring) -- it's inferred the exact same
-    way xlsx_importer.py already does for CSV/XLSX imports: "actual" once a
-    declared net pay is known, "projected" otherwise. The other tests in
-    this module all send declared_net_pay_clp, which only exercises the
-    "actual" branch.
-    """
-    scope = FakeTransactionalSessionScope()
-    fake_import = _override_happy_path(scope)
-    client = TestClient(app, headers={"X-API-Key": "test-key"})
-    header_without_net_pay = {
-        key: value
-        for key, value in SAMPLE_HEADER.items()
-        if key != "declared_net_pay_clp"
-    }
-    payload = _payload_periods([{**header_without_net_pay, "rows": [SAMPLE_ROW]}])
-
-    try:
-        response = client.post("/payroll/import/json", json=payload)
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    assert fake_import.called_with is not None
-    assert fake_import.called_with[0].status == "projected"
 
 
 def test_import_payroll_rows_endpoint_rejects_unknown_mode() -> None:

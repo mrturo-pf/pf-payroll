@@ -31,7 +31,6 @@ from payroll.application.dto import (
     PayrollPeriodDetailDTO,
     PayrollSummaryDTO,
 )
-from payroll.domain.contributions import EmploymentContractKind
 from payroll.infrastructure.exporters.spreadsheet_exporter import (
     CsvPayrollExporter,
     XlsxPayrollExporter,
@@ -147,9 +146,6 @@ def test_reimporting_an_export_preserves_period_header_fields(
     assert {row.period_month for row in rows} == {1}
     assert {row.payment_date for row in rows} == {date(2026, 1, 31)}
     assert {row.worked_days for row in rows} == {30}
-    assert {row.employment_contract_kind for row in rows} == {
-        EmploymentContractKind.INDEFINITE
-    }
 
 
 @pytest.mark.parametrize(

@@ -40,8 +40,6 @@ optional BCCh credentials) and the startup background sync — see
 | `POST` | `/payroll/{period_id}/assign-plans` | Assigns pension and health plan snapshot ids to a payroll period. |
 | `POST` | `/payroll/{period_id}/compute-contributions` | Computes pension, health, and unemployment insurance discounts. |
 | `POST` | `/payroll/{period_id}/compute-tax` | Computes Chilean monthly income tax withholding. |
-| `POST` | `/payroll/{period_id}/review` | Marks a payroll period as `reviewed` once required computed items exist. |
-| `POST` | `/payroll/{period_id}/deflate` | Converts nominal payroll totals into real CLP using an economic index such as `IPC_CL`. |
 
 ### PDF templates
 

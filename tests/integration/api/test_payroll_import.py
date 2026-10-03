@@ -11,7 +11,6 @@ from fastapi.testclient import TestClient
 from starlette.datastructures import UploadFile
 
 from payroll.application.errors import (
-    EconomicIndexNotFoundError,
     PayrollConflictError,
     PayrollDependencyError,
     PayrollPeriodNotFoundError,
@@ -20,12 +19,9 @@ from payroll.application.errors import (
 from payroll.application.dto import (
     AssignPlansResultDTO,
     ComputeContributionsResultDTO,
-    DeflateAmountsResultDTO,
-    DeflatedAmountDTO,
     ComputeIncomeTaxResultDTO,
     ImportPayrollResultDTO,
     ImportedPayrollPeriodDTO,
-    ReviewPayrollPeriodResultDTO,
 )
 
 from payroll.domain.contributions import (
@@ -39,9 +35,7 @@ from payroll.domain.taxes import IncomeTaxComputation
 from payroll.interfaces.api.dependencies import (
     get_assign_plans_use_case,
     get_compute_contributions_use_case,
-    get_deflate_amounts_use_case,
     get_compute_income_tax_use_case,
-    get_review_payroll_period_use_case,
     get_transactional_import_payroll_use_case,
     get_transactional_process_imported_payroll_periods_use_case,
     get_transactional_session,
@@ -51,9 +45,7 @@ from payroll.interfaces.api.routes.payroll import (
     assign_plans,
     compute_contributions,
     compute_income_tax,
-    deflate_amounts,
     import_payroll,
-    review_payroll_period,
 )
 
 
@@ -118,8 +110,6 @@ class FakeImportPayroll:
                     period_year=2026,
                     period_month=1,
                     payment_date=date(2026, 1, 31),
-                    status="projected",
-                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
                     item_count=1,
                     declared_net_pay_clp=Decimal("950000"),
                     expected_net_pay_clp=None,
@@ -163,8 +153,6 @@ class FakeImportPayrollWithConflict:
                     period_year=2026,
                     period_month=1,
                     payment_date=date(2026, 1, 31),
-                    status="actual",
-                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
                     item_count=1,
                     declared_net_pay_clp=Decimal("950000"),
                     expected_net_pay_clp=Decimal("900000"),
@@ -262,49 +250,6 @@ class FakeComputeIncomeTax:
         )
 
 
-class FakeReviewPayrollPeriod:
-    """Test double for Review Payroll Period."""
-
-    async def execute(self, command: object) -> ReviewPayrollPeriodResultDTO:
-        """Handle execute."""
-        assert getattr(command, "period_id") == 5
-        return ReviewPayrollPeriodResultDTO(
-            period_id=5,
-            payment_date=date(2026, 1, 31),
-            status="reviewed",
-        )
-
-
-class FakeDeflateAmounts:
-    """Test double for Deflate Amounts."""
-
-    async def execute(self, command: object) -> DeflateAmountsResultDTO:
-        """Handle execute."""
-        assert getattr(command, "period_id") == 5
-        return DeflateAmountsResultDTO(
-            period_id=5,
-            index_code="IPC_CL",
-            source_year=2026,
-            source_month=1,
-            target_year=2026,
-            target_month=3,
-            source_index_value=Decimal("100.000000"),
-            target_index_value=Decimal("112.340000"),
-            taxable_income=DeflatedAmountDTO(
-                nominal_clp=Decimal("1000000"), real_clp=Decimal("1123400")
-            ),
-            gross_income=DeflatedAmountDTO(
-                nominal_clp=Decimal("1000000"), real_clp=Decimal("1123400")
-            ),
-            total_discounts=DeflatedAmountDTO(
-                nominal_clp=Decimal("170000"), real_clp=Decimal("190978")
-            ),
-            net_pay=DeflatedAmountDTO(
-                nominal_clp=Decimal("830000"), real_clp=Decimal("932422")
-            ),
-        )
-
-
 def _post_compute_contributions(client: TestClient) -> object:
     return client.post(
         "/payroll/5/compute-contributions",
@@ -365,8 +310,6 @@ def test_payroll_import_endpoint() -> None:
                 "period_month": 1,
                 "payment_date": "2026-01-31",
                 "worked_days": 30,
-                "status": "projected",
-                "employment_contract_kind": "indefinite",
                 "item_count": 1,
                 "declared_net_pay_clp": 950000,
                 "expected_net_pay_clp": None,
@@ -678,26 +621,6 @@ def test_assign_plans_endpoint() -> None:
     }
 
 
-def test_review_payroll_period_endpoint() -> None:
-    """Test review payroll period endpoint."""
-    app.dependency_overrides[get_review_payroll_period_use_case] = lambda: (
-        FakeReviewPayrollPeriod()
-    )
-    client = TestClient(app, headers={"X-API-Key": "test-key"})
-
-    try:
-        response = client.post("/payroll/5/review")
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "period_id": 5,
-        "payment_date": "2026-01-31",
-        "status": "reviewed",
-    }
-
-
 def test_assign_plans_endpoint_surfaces_domain_errors() -> None:
     """Test assign plans endpoint surfaces domain errors."""
 
@@ -717,32 +640,6 @@ def test_assign_plans_endpoint_surfaces_domain_errors() -> None:
 
     assert response.status_code == 409
     assert response.json() == {"detail": "invalid plan for period"}
-
-
-def test_review_payroll_period_endpoint_surfaces_domain_errors() -> None:
-    """Test review payroll period endpoint surfaces domain errors."""
-
-    class ErrorReviewPayrollPeriod:
-        """Represent the error review payroll period."""
-
-        async def execute(self, command: object) -> ReviewPayrollPeriodResultDTO:
-            """Handle execute."""
-            raise PayrollConflictError("period must have computed items before review")
-
-    app.dependency_overrides[get_review_payroll_period_use_case] = lambda: (
-        ErrorReviewPayrollPeriod()
-    )
-    client = TestClient(app, headers={"X-API-Key": "test-key"})
-
-    try:
-        response = client.post("/payroll/5/review")
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 409
-    assert response.json() == {
-        "detail": "period must have computed items before review"
-    }
 
 
 def test_compute_contributions_endpoint_surfaces_domain_errors() -> None:
@@ -822,57 +719,6 @@ def test_compute_income_tax_endpoint_surfaces_domain_errors() -> None:
     assert response.json() == {"detail": "tax data not found"}
 
 
-def test_deflate_amounts_endpoint() -> None:
-    """Test deflate amounts endpoint."""
-    app.dependency_overrides[get_deflate_amounts_use_case] = lambda: (
-        FakeDeflateAmounts()
-    )
-    client = TestClient(app, headers={"X-API-Key": "test-key"})
-    try:
-        response = _post_deflate_amounts(client)
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "period_id": 5,
-        "index_code": "IPC_CL",
-        "source_year": 2026,
-        "source_month": 1,
-        "target_year": 2026,
-        "target_month": 3,
-        "source_index_value": "100.000000",
-        "target_index_value": "112.340000",
-        "taxable_income": {"nominal_clp": "1000000", "real_clp": "1123400"},
-        "gross_income": {"nominal_clp": "1000000", "real_clp": "1123400"},
-        "total_discounts": {"nominal_clp": "170000", "real_clp": "190978"},
-        "net_pay": {"nominal_clp": "830000", "real_clp": "932422"},
-    }
-
-
-def test_deflate_amounts_endpoint_surfaces_domain_errors() -> None:
-    """Test deflate amounts endpoint surfaces domain errors."""
-
-    class ErrorDeflateAmounts:
-        """Represent the error deflate amounts."""
-
-        async def execute(self, command: object) -> DeflateAmountsResultDTO:
-            """Handle execute."""
-            raise EconomicIndexNotFoundError("missing IPC data")
-
-    app.dependency_overrides[get_deflate_amounts_use_case] = lambda: (
-        ErrorDeflateAmounts()
-    )
-    client = TestClient(app, headers={"X-API-Key": "test-key"})
-    try:
-        response = _post_deflate_amounts(client)
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 404
-    assert response.json() == {"detail": "missing IPC data"}
-
-
 @pytest.mark.asyncio
 async def test_compute_income_tax_endpoint_maps_value_errors_in_handler() -> None:
     """Test compute income tax endpoint maps value errors in handler."""
@@ -893,29 +739,6 @@ async def test_compute_income_tax_endpoint_maps_value_errors_in_handler() -> Non
 
 
 @pytest.mark.asyncio
-async def test_deflate_amounts_endpoint_maps_value_errors_in_handler() -> None:
-    """Test deflate amounts endpoint maps value errors in handler."""
-
-    class ErrorDeflateAmounts:
-        """Represent the error deflate amounts."""
-
-        async def execute(self, command: object) -> DeflateAmountsResultDTO:
-            """Handle execute."""
-            raise PayrollValidationError("bad deflation payload")
-
-    with pytest.raises(HTTPException, match="bad deflation payload"):
-        await deflate_amounts(
-            payload=type(
-                "Payload",
-                (),
-                {"target_year": 2026, "target_month": 3, "index_code": "IPC_CL"},
-            )(),
-            period_id=1,
-            use_case=ErrorDeflateAmounts(),
-        )
-
-
-@pytest.mark.asyncio
 async def test_assign_plans_endpoint_maps_value_errors_in_handler() -> None:
     """Test assign plans endpoint maps value errors in handler."""
 
@@ -931,24 +754,6 @@ async def test_assign_plans_endpoint_maps_value_errors_in_handler() -> None:
             payload=type("Payload", (), {"pension_plan_id": 1, "health_plan_id": 2})(),
             period_id=1,
             use_case=ErrorAssignPlans(),
-        )
-
-
-@pytest.mark.asyncio
-async def test_review_payroll_period_endpoint_maps_value_errors_in_handler() -> None:
-    """Test review payroll period endpoint maps value errors in handler."""
-
-    class ErrorReviewPayrollPeriod:
-        """Represent the error review payroll period."""
-
-        async def execute(self, command: object) -> ReviewPayrollPeriodResultDTO:
-            """Handle execute."""
-            raise PayrollValidationError("bad review payload")
-
-    with pytest.raises(HTTPException, match="bad review payload"):
-        await review_payroll_period(
-            period_id=1,
-            use_case=ErrorReviewPayrollPeriod(),
         )
 
 

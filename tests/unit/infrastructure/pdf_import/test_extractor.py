@@ -5,7 +5,6 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from payroll.application.dto import PdfTemplateDTO, PdfTemplateFieldDTO
-from payroll.domain.contributions import EmploymentContractKind
 from payroll.infrastructure.pdf_import.extractor import TemplatePdfPayrollExtractor
 
 SYNTHETIC_TEXT = (
@@ -230,35 +229,6 @@ class TestTemplatePdfPayrollExtractor:
         assert preview.period_year is None
         assert preview.period_month is None
         assert preview.payment_date is None
-
-    def test_positive_unemployment_insurance_discount_infers_indefinite(self) -> None:
-        """A nonzero employee-side UNEMPLOYMENT_INSURANCE discount => indefinite.
-
-        Chilean law: this discount only applies to the employee at all on an
-        indefinite contract (see contribution_calculator.py) -- a positive
-        amount is therefore self-contained evidence.
-        """
-        extractor = TemplatePdfPayrollExtractor()
-        preview = _extract_with_mocked_text(
-            extractor, _unemployment_insurance_text("5,000"), _unemployment_templates()
-        )
-        assert preview.employment_contract_kind == EmploymentContractKind.INDEFINITE
-
-    def test_zero_unemployment_insurance_discount_infers_fixed_term(self) -> None:
-        """A present-but-zero UNEMPLOYMENT_INSURANCE discount => fixed_term."""
-        extractor = TemplatePdfPayrollExtractor()
-        preview = _extract_with_mocked_text(
-            extractor, _unemployment_insurance_text("0,000"), _unemployment_templates()
-        )
-        assert preview.employment_contract_kind == EmploymentContractKind.FIXED_TERM
-
-    def test_no_unemployment_insurance_row_stays_unresolved(self) -> None:
-        """No matching row at all leaves employment_contract_kind unresolved."""
-        extractor = TemplatePdfPayrollExtractor()
-        preview = _extract_with_mocked_text(
-            extractor, SYNTHETIC_TEXT, _acme_templates()
-        )
-        assert preview.employment_contract_kind is None
 
     def test_no_templates_loaded_returns_unresolved_rows(self) -> None:
         """Test no templates loaded returns unresolved rows."""

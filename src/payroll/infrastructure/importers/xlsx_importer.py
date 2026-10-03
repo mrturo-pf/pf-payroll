@@ -12,7 +12,6 @@ import pandas as pd
 from payroll.application.errors import PayrollValidationError
 from payroll.application.dto import ImportPayrollRowDTO
 from payroll.application.ports.importers import PayrollImporter
-from payroll.domain.contributions import EmploymentContractKind
 
 CONCEPT_MAP = {
     "salary_base": ("SALARY_BASE", "income", True),
@@ -56,7 +55,6 @@ PREFIX_COLUMNS = (
     "employer",
     "payment_date",
     "worked_days",
-    "employment_contract_kind",
 )
 NET_PAY_COLUMN = "net_pay"
 
@@ -112,16 +110,6 @@ def money_columns() -> list[str]:
         NET_PAY_COLUMN,
         *COMPUTED_ONLY_CONCEPT_COLUMNS.values(),
     ]
-
-
-CONTRACT_KIND_ALIASES = {
-    "indefinite": EmploymentContractKind.INDEFINITE,
-    "indefinido": EmploymentContractKind.INDEFINITE,
-    "fixed_term": EmploymentContractKind.FIXED_TERM,
-    "fixed-term": EmploymentContractKind.FIXED_TERM,
-    "plazo_fijo": EmploymentContractKind.FIXED_TERM,
-    "plazo fijo": EmploymentContractKind.FIXED_TERM,
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,22 +229,6 @@ def read_payroll_dataframe(filename: str, payload: BufferedIOBase) -> pd.DataFra
     raise PayrollValidationError("Unsupported payroll file format. Use .csv or .xlsx.")
 
 
-def parse_contract_kind(raw_value: object) -> EmploymentContractKind:
-    """Parse contract kind."""
-    normalized = str(raw_value or "").strip().lower()
-    if not normalized:
-        raise PayrollValidationError(
-            "Every imported payroll row must include employment_contract_kind."
-        )
-    try:
-        return CONTRACT_KIND_ALIASES[normalized]
-    except KeyError as exc:
-        raise PayrollValidationError(
-            "Unsupported employment_contract_kind. "
-            "Use one of: indefinite, fixed_term, indefinido, plazo_fijo."
-        ) from exc
-
-
 def extract_net_pay_validations(
     wide_df: pd.DataFrame,
 ) -> dict[tuple[str, int, int], NetPayValidation]:
@@ -333,10 +305,6 @@ def to_long_format(wide_df: pd.DataFrame) -> pd.DataFrame:
             "month": month,
             "payment_date": payment_dt.date(),
             "worked_days": parse_worked_days(row.get("worked_days")),
-            "status": "actual" if pd.notna(row.get("net_pay")) else "projected",
-            "employment_contract_kind": parse_contract_kind(
-                row.get("employment_contract_kind")
-            ),
         }
 
         for col, (code, kind, is_tax) in CONCEPT_MAP.items():
@@ -376,8 +344,6 @@ class XlsxPayrollImporter(PayrollImporter):
                     period_year=int(row["year"]),
                     period_month=int(row["month"]),
                     payment_date=row["payment_date"],
-                    status=row["status"],
-                    employment_contract_kind=row["employment_contract_kind"],
                     concept_code=str(row["concept_code"]),
                     amount_clp=row["amount_clp"],
                     worked_days=int(row["worked_days"]),

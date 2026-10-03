@@ -20,7 +20,6 @@ from payroll.application.dto import (
     ComputeIncomeTaxCommandDTO,
     ImportedPayrollPeriodDTO,
     PdfImportPreviewDTO,
-    ReviewPayrollPeriodCommandDTO,
 )
 from payroll.application.errors import PayrollError, PayrollValidationError
 from payroll.application.services.import_reconciliation import (
@@ -37,7 +36,6 @@ from payroll.application.use_cases.process_imported_payroll_periods import (
     ProcessImportedPayrollPeriods,
 )
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
-from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
 from payroll.config import settings
 from payroll.infrastructure.http.pf_rates_client import PfRatesClient
 from payroll.infrastructure.http.income_tax_bracket_client import IncomeTaxBracketClient
@@ -269,15 +267,6 @@ async def _compute_income_tax_async(
         )
 
 
-async def _review_period_async(period_id: int) -> object:
-    """Handle review period async."""
-    async with _open_session() as session:
-        use_case = ReviewPayrollPeriod(SqlAlchemyPayrollRepository(session))
-        return await use_case.execute(
-            ReviewPayrollPeriodCommandDTO(period_id=period_id)
-        )
-
-
 async def _template_test_async(file_path: Path) -> PdfImportPreviewDTO:
     """Preview a PDF against the current active templates -- no persistence.
 
@@ -375,12 +364,6 @@ def compute_tax(
             )
         )
     )
-
-
-@app.command("review")
-def review(period_id: int) -> None:
-    """Review."""
-    _emit_json(_run_command(_review_period_async(period_id)))
 
 
 @app.command("template-test")

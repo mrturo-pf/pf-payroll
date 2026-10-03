@@ -19,7 +19,6 @@ from payroll.domain.taxes import IncomeTaxComputation
 from payroll.shared.constants import RECONCILIATION_TOLERANCE_CLP
 
 PayrollConceptKind = Literal["income", "discount"]
-PayrollStatusKind = Literal["projected", "actual", "reviewed"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,8 +40,6 @@ class PayrollPeriodDetailFields:
     employer_name: str
     employer_tax_id: str | None
     employer_country_code: str
-    employer_started_at: date
-    employer_ended_at: date | None
     period_year: int
     period_month: int
     payment_date: date
@@ -166,8 +163,6 @@ class ImportPayrollRowDTO:
     period_year: int
     period_month: int
     payment_date: date
-    status: PayrollStatusKind
-    employment_contract_kind: EmploymentContractKind
     concept_code: str
     amount_clp: Decimal
     worked_days: int = 30
@@ -191,6 +186,18 @@ class PdfImportPreviewRowDTO:
     kind: PayrollConceptKind
     concept_code: str | None
     confidence: float
+
+
+@dataclass(frozen=True, slots=True)
+class EmploymentContractDTO:
+    """Represent the contract effective for an employer and payment date."""
+
+    id: int
+    employer_id: int
+    started_at: date
+    ended_at: date | None
+    is_indefinite: bool
+    position: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,7 +234,6 @@ class PdfImportPreviewDTO:
     payment_date: date | None
     worked_days: int | None
     declared_net_pay_clp: Decimal | None
-    employment_contract_kind: EmploymentContractKind | None
     template_id: str | None
     rows: list[PdfImportPreviewRowDTO] = field(default_factory=list)
 
@@ -330,8 +336,6 @@ class ImportedPayrollPeriodDTO:
     period_year: int
     period_month: int
     payment_date: date
-    status: PayrollStatusKind
-    employment_contract_kind: EmploymentContractKind
     item_count: int
     worked_days: int = 30
     declared_net_pay_clp: Decimal | None = None
@@ -391,22 +395,6 @@ class AssignPlansResultDTO:
 
 
 @dataclass(frozen=True, slots=True)
-class ReviewPayrollPeriodCommandDTO:
-    """Represent Review Payroll Period Command DTO."""
-
-    period_id: int
-
-
-@dataclass(frozen=True, slots=True)
-class ReviewPayrollPeriodResultDTO:
-    """Represent Review Payroll Period Result DTO."""
-
-    period_id: int
-    payment_date: date
-    status: PayrollStatusKind
-
-
-@dataclass(frozen=True, slots=True)
 class ContributionComputationContextDTO:
     """Represent Contribution Computation Context DTO.
 
@@ -426,12 +414,12 @@ class ContributionComputationContextDTO:
     period_year: int
     period_month: int
     taxable_income_clp: Decimal
-    employment_contract_kind: EmploymentContractKind
     pension_plan: PensionPlan
     health_plan: HealthPlan
     health_plans: list[HealthPlan]
     cap: ContributionCap
     unemployment_cap: ContributionCap
+    employment_contract_kind: EmploymentContractKind = EmploymentContractKind.INDEFINITE
 
 
 @dataclass(frozen=True, slots=True)
@@ -441,8 +429,8 @@ class UnemploymentComputationContextDTO:
     period_id: int
     payment_date: date
     taxable_income_clp: Decimal
-    employment_contract_kind: EmploymentContractKind
     unemployment_cap: ContributionCap
+    employment_contract_kind: EmploymentContractKind = EmploymentContractKind.INDEFINITE
 
 
 @dataclass(frozen=True, slots=True)
@@ -503,8 +491,6 @@ class PayrollSummaryDTO:
 class PayrollPeriodDetailDTO(PayrollPeriodDetailFields):
     """Represent Payroll Period Detail DTO."""
 
-    status: PayrollStatusKind
-    employment_contract_kind: EmploymentContractKind
     pension_plan_id: int | None
     health_plan_id: int | None
     items: list[PayrollItemDetailDTO]

@@ -78,7 +78,6 @@ def _sample_detail(
         ),
     )
     return sample_acme_april_2026_period_detail_dto(
-        status="actual",
         pension_plan_id=pension_plan_id,
         health_plan_id=health_plan_id,
         items=items,
@@ -128,8 +127,6 @@ def _default_imported_period(
         period_year=2026,
         period_month=4,
         payment_date=date(2026, 4, 30),
-        status="actual",
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
         item_count=5,
         declared_net_pay_clp=declared_net_pay_clp,
     )
@@ -458,7 +455,7 @@ async def test_process_imported_payroll_periods_compute_and_refresh() -> None:
 
     result = await _execute_default_and_assert_contributions_saved(use_case, repository)
 
-    assert result.periods[0].item_count == 7
+    assert result.periods[0].item_count == 5
     assert result.periods[0].expected_net_pay_clp == Decimal("1100000")
 
 
@@ -545,8 +542,6 @@ async def test_process_imported_payroll_periods_skips_missing_imported_codes() -
                     period_year=2026,
                     period_month=4,
                     payment_date=date(2026, 4, 30),
-                    status="actual",
-                    employment_contract_kind=EmploymentContractKind.INDEFINITE,
                     item_count=2,
                 )
             ],

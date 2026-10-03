@@ -18,7 +18,6 @@ from payroll.application.dto import (
     PayrollPeriodDetailDTO,
     PayrollSummaryDTO,
 )
-from payroll.domain.contributions import EmploymentContractKind
 
 
 def build_acme_period_detail(
@@ -37,14 +36,10 @@ def build_acme_period_detail(
         employer_name="ACME",
         employer_tax_id=employer_tax_id,
         employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
         period_year=2026,
         period_month=1,
         payment_date=date(2026, 1, 31),
         worked_days=30,
-        status="actual",
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
         pension_plan_id=1,
         health_plan_id=2,
         health_plan_ids=health_plan_ids,

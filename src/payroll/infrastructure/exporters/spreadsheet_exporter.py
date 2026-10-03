@@ -54,7 +54,6 @@ def _period_to_wide_row(
         "employer": detail.employer_name,
         "payment_date": detail.payment_date.isoformat(),
         "worked_days": detail.worked_days,
-        "employment_contract_kind": detail.employment_contract_kind.value,
     }
     for item in detail.items:
         column = concept_to_column.get(item.concept_code) or (

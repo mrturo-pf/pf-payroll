@@ -12,7 +12,6 @@ from payroll.application.dto import (
     PdfTemplateDTO,
 )
 from payroll.application.ports.pdf_extractors import PdfPayrollExtractor
-from payroll.domain.contributions import EmploymentContractKind
 from payroll.infrastructure.logging.logger import logger
 from payroll.infrastructure.pdf_import.templates import (
     Template,
@@ -28,7 +27,6 @@ from payroll.infrastructure.pdf_import.text_extraction import (
     parse_detail_line,
     parse_header,
 )
-from payroll.shared.constants import UNEMPLOYMENT_INSURANCE_CONCEPT_CODE
 from payroll.shared.dates import resolve_payment_date
 
 _UNMATCHED_CONFIDENCE = 0.0
@@ -89,45 +87,9 @@ class TemplatePdfPayrollExtractor(PdfPayrollExtractor):
             payment_date=_resolve_payment_date(header.period_year, header.period_month),
             worked_days=header.worked_days,
             declared_net_pay_clp=header.declared_net_pay_clp,
-            employment_contract_kind=_infer_employment_contract_kind(rows),
             template_id=template.template_id if template else None,
             rows=rows,
         )
-
-
-def _infer_employment_contract_kind(
-    rows: list[PdfImportPreviewRowDTO],
-) -> EmploymentContractKind | None:
-    """Best-effort indefinite/fixed_term inference from the payslip itself.
-
-    Chilean law: unemployment insurance ("seguro de cesantia") only deducts
-    from the employee on an indefinite contract (0.6% employee rate) --
-    fixed-term contracts have a 0% employee rate (see
-    contribution_calculator.py's compute_unemployment_contribution, the same
-    domain rule this reuses rather than re-deriving). A resolved
-    UNEMPLOYMENT_INSURANCE discount row with a positive amount is therefore
-    self-contained evidence the payslip belongs to an indefinite contract; a
-    zero amount (present but not actually deducted) means fixed_term.
-    Stays unresolved (None) when no such row was found at all -- an
-    unmatched template, or one that doesn't map this concept -- rather than
-    guessing from nothing. Either way, this only pre-fills
-    PdfImportPreviewResponse for a human to confirm or correct before
-    POST /payroll/import/json, which still requires employment_contract_kind
-    explicitly -- this is never used to persist anything by itself.
-    """
-    matches = [
-        row
-        for row in rows
-        if row.concept_code == UNEMPLOYMENT_INSURANCE_CONCEPT_CODE
-        and row.kind == "discount"
-    ]
-    if not matches:
-        return None
-    return (
-        EmploymentContractKind.INDEFINITE
-        if any(row.amount_clp > 0 for row in matches)
-        else EmploymentContractKind.FIXED_TERM
-    )
 
 
 def _resolve_payment_date(
@@ -203,7 +165,6 @@ def _empty_preview() -> PdfImportPreviewDTO:
         payment_date=None,
         worked_days=None,
         declared_net_pay_clp=None,
-        employment_contract_kind=None,
         template_id=None,
         rows=[],
     )

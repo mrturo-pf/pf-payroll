@@ -13,7 +13,6 @@ from payroll.application.services.import_reconciliation import (
     is_import_fully_validated,
     period_has_reconciliation_conflict,
 )
-from payroll.domain.contributions import EmploymentContractKind
 
 
 def _make_period(**overrides: object) -> ImportedPayrollPeriodDTO:
@@ -24,8 +23,6 @@ def _make_period(**overrides: object) -> ImportedPayrollPeriodDTO:
         "period_year": 2026,
         "period_month": 8,
         "payment_date": date(2026, 8, 31),
-        "status": "actual",
-        "employment_contract_kind": EmploymentContractKind.INDEFINITE,
         "item_count": 1,
     }
     defaults.update(overrides)

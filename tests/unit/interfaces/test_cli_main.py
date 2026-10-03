@@ -47,9 +47,7 @@ def sample_summary() -> PayrollSummaryDTO:
 
 def sample_detail() -> PayrollPeriodDetailDTO:
     """Sample detail."""
-    return sample_acme_april_2026_period_detail_dto(
-        status="reviewed", pension_plan_id=1, health_plan_id=2
-    )
+    return sample_acme_april_2026_period_detail_dto()
 
 
 class _FakeSessionContext:
@@ -310,17 +308,6 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
             """Handle execute."""
             return command
 
-    class FakeReviewPayrollPeriod:
-        """Test double for Review Payroll Period."""
-
-        def __init__(self, repository: object) -> None:
-            """Initialize the instance."""
-            assert repository == "payroll-repo"
-
-        async def execute(self, command: object) -> object:
-            """Handle execute."""
-            return command
-
     monkeypatch.setattr(cli_main, "SessionLocal", lambda: _FakeSessionContext())
     monkeypatch.setattr(
         cli_main, "open_transactional_session", _fake_open_transactional_session
@@ -343,7 +330,6 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     monkeypatch.setattr(cli_main, "AssignPlans", FakeAssignPlans)
     monkeypatch.setattr(cli_main, "ComputeContributions", _FakeDualRepoUseCase)
     monkeypatch.setattr(cli_main, "ComputeIncomeTax", _FakeDualRepoUseCase)
-    monkeypatch.setattr(cli_main, "ReviewPayrollPeriod", FakeReviewPayrollPeriod)
 
     assert asyncio.run(cli_main._import_payroll_async(sample_file)) == (
         ImportPayrollResultDTO(imported_periods=1, imported_items=1, periods=[])
@@ -360,7 +346,6 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     assert asyncio.run(
         cli_main._compute_income_tax_async(7, Decimal("68000"))
     ).utm_value_clp == Decimal("68000")
-    assert asyncio.run(cli_main._review_period_async(7)).period_id == 7
 
 
 def test_import_payroll_async_processes_periods_without_market_sync(
@@ -382,8 +367,6 @@ def test_import_payroll_async_processes_periods_without_market_sync(
                 period_year=2026,
                 period_month=4,
                 payment_date=date(2026, 4, 29),
-                status="actual",
-                employment_contract_kind=EmploymentContractKind.INDEFINITE,
                 item_count=1,
             )
         ],
@@ -447,8 +430,6 @@ def test_import_payroll_async_rolls_back_on_genuine_conflict(
                 period_year=2026,
                 period_month=4,
                 payment_date=date(2026, 4, 29),
-                status="actual",
-                employment_contract_kind=EmploymentContractKind.INDEFINITE,
                 item_count=1,
                 declared_net_pay_clp=Decimal("950000"),
                 expected_net_pay_clp=Decimal("900000"),
@@ -566,10 +547,6 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         """Handle fake compute income tax async."""
         return {"period_id": period_id, "utm_value_clp": utm_value_clp}
 
-    async def fake_review_period_async(period_id: int) -> object:
-        """Handle fake review period async."""
-        return {"period_id": period_id, "status": "reviewed"}
-
     monkeypatch.setattr(cli_main, "_import_payroll_async", fake_import_payroll_async)
     monkeypatch.setattr(
         cli_main, "_list_period_summaries_async", fake_list_period_summaries_async
@@ -587,7 +564,6 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(
         cli_main, "_compute_income_tax_async", fake_compute_income_tax_async
     )
-    monkeypatch.setattr(cli_main, "_review_period_async", fake_review_period_async)
 
     runner = CliRunner()
 
@@ -605,7 +581,6 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
     result = runner.invoke(cli_main.app, ["period-detail", "7"])
     assert result.exit_code == 0
-    assert json.loads(result.stdout)["status"] == "reviewed"
 
     result = runner.invoke(cli_main.app, ["plan-snapshots"])
     assert result.exit_code == 0
@@ -630,10 +605,6 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     assert result.exit_code == 0
     assert json.loads(result.stdout)["utm_value_clp"] == "68000"
 
-    result = runner.invoke(cli_main.app, ["review", "7"])
-    assert result.exit_code == 0
-    assert json.loads(result.stdout)["status"] == "reviewed"
-
 
 def _sample_pdf_preview(
     rows: list[PdfImportPreviewRowDTO] | None = None,
@@ -650,7 +621,6 @@ def _sample_pdf_preview(
         payment_date=date(2026, 8, 31),
         worked_days=30,
         declared_net_pay_clp=Decimal("1000000"),
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
         template_id="acme-v1",
         rows=rows or [],
     )
@@ -744,7 +714,6 @@ def test_template_test_command_reports_no_template_matched(
         payment_date=None,
         worked_days=None,
         declared_net_pay_clp=None,
-        employment_contract_kind=None,
         template_id=None,
         rows=[],
     )

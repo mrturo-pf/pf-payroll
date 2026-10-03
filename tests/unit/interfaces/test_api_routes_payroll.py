@@ -9,7 +9,6 @@ from payroll.application.dto import (
     PayrollPeriodRangeContextDTO,
     PayrollPeriodRangeDTO,
 )
-from payroll.domain.contributions import EmploymentContractKind
 from payroll.interfaces.api.routes.payroll import (
     ImportedContributionValidationRead,
     build_reconciliation_conflict_detail,
@@ -81,8 +80,6 @@ def _make_imported_period(**overrides: object) -> ImportedPayrollPeriodDTO:
         "period_year": 2026,
         "period_month": 8,
         "payment_date": date(2026, 8, 28),
-        "status": "actual",
-        "employment_contract_kind": EmploymentContractKind.INDEFINITE,
         "item_count": 1,
     }
     defaults.update(overrides)

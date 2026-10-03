@@ -82,11 +82,11 @@ def _build_detail(
 def test_wide_columns_matches_concept_map_count() -> None:
     """Guard against CONCEPT_MAP drift: prefix + concepts + net_pay, in order."""
     columns = wide_columns()
-    assert len(columns) == 6 + len(CONCEPT_MAP) + 1
+    assert len(columns) == 5 + len(CONCEPT_MAP) + 1
     assert columns[0] == "period_month"
-    assert columns[5] == "employment_contract_kind"
+    assert columns[4] == "worked_days"
     assert columns[-1] == "net_pay"
-    assert columns[6 : 6 + len(CONCEPT_MAP)] == list(CONCEPT_MAP.keys())
+    assert columns[5 : 5 + len(CONCEPT_MAP)] == list(CONCEPT_MAP.keys())
 
 
 def test_export_columns_appends_computed_only_columns_after_wide_columns() -> None:
@@ -131,7 +131,6 @@ def test_export_dataframe_maps_items_through_inverted_concept_map() -> None:
     assert row["unemployment_insurance"] == Decimal("6000")
     assert row["net_pay"] == Decimal("1105000")
     assert row["employer"] == "ACME"
-    assert row["employment_contract_kind"] == "indefinite"
 
 
 def test_export_dataframe_omits_computed_columns_when_period_has_none() -> None:

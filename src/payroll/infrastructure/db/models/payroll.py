@@ -4,23 +4,14 @@ from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 
-from sqlalchemy import Date, Enum as SAEnum, ForeignKey, Numeric, String
+from sqlalchemy import Boolean, Date, Enum as SAEnum, ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from payroll.domain.contributions import EmploymentContractKind
 from payroll.infrastructure.db.base import Base
 from payroll.infrastructure.db.models.reference_data import (
     PayrollConceptModel,
     enum_values,
 )
-
-
-class PayrollStatus(StrEnum):
-    """Represent Payroll Status."""
-
-    PROJECTED = "projected"
-    ACTUAL = "actual"
-    REVIEWED = "reviewed"
 
 
 class EmployerPaymentDateRule(StrEnum):
@@ -47,8 +38,6 @@ class EmployerModel(Base):
     name: Mapped[str] = mapped_column(String(120), unique=True)
     tax_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     country_code: Mapped[str] = mapped_column(String(2), default="CL")
-    started_at: Mapped[date] = mapped_column(Date)
-    ended_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     first_increase_period_year: Mapped[int | None] = mapped_column(nullable=True)
     first_increase_period_month: Mapped[int | None] = mapped_column(nullable=True)
     increase_frequency: Mapped[int | None] = mapped_column(nullable=True)
@@ -79,6 +68,27 @@ class EmployerModel(Base):
     payroll_periods: Mapped[list["PayrollPeriodModel"]] = relationship(
         back_populates="employer"
     )
+    employment_contracts: Mapped[list["EmploymentContractModel"]] = relationship(
+        back_populates="employer",
+        cascade="all, delete-orphan",
+    )
+
+
+class EmploymentContractModel(Base):
+    """Represent an employer employment contract interval."""
+
+    __tablename__ = "PAY_EMP_CONT"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employer_id: Mapped[int] = mapped_column(ForeignKey("PAY_EMPLOYER.id"))
+    started_at: Mapped[date] = mapped_column(Date)
+    ended_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_indefinite: Mapped[bool] = mapped_column(Boolean)
+    position: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    employer: Mapped[EmployerModel] = relationship(
+        back_populates="employment_contracts"
+    )
 
 
 class PayrollPeriodModel(Base):
@@ -92,18 +102,6 @@ class PayrollPeriodModel(Base):
     period_month: Mapped[int]
     payment_date: Mapped[date] = mapped_column(Date)
     worked_days: Mapped[int] = mapped_column(default=30)
-    status: Mapped[PayrollStatus] = mapped_column(
-        SAEnum(PayrollStatus, name="payroll_status", values_callable=enum_values),
-        default=PayrollStatus.PROJECTED,
-    )
-    employment_contract_kind: Mapped[EmploymentContractKind] = mapped_column(
-        SAEnum(
-            EmploymentContractKind,
-            name="employment_contract_kind",
-            values_callable=enum_values,
-        ),
-        default=EmploymentContractKind.INDEFINITE,
-    )
     declared_net_pay_clp: Mapped[Decimal | None] = mapped_column(
         Numeric(18, 2), nullable=True
     )

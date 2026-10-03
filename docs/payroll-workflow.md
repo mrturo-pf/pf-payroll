@@ -73,11 +73,9 @@ the preview includes that this endpoint doesn't need (`template_id`, and each ro
 `raw_label`/`kind`/`confidence`) are silently ignored, not rejected. `periods` must have
 at least one element, and no two elements may share the same `(employer, period_year,
 period_month)` -- merge their `rows` by hand first if that's genuinely the same period.
-Double-check
-`employment_contract_kind` before sending: the preview infers it best-effort from the
-payslip's own unemployment-insurance discount (see
-TemplatePdfPayrollExtractor's `_infer_employment_contract_kind`), so it can come back
-`null` if that concept wasn't resolved -- fill it in by hand in that case.
+Double-check that the employer already has an effective employment contract in
+`PAY_EMP_CONT` before importing. The import does not create employment history
+implicitly; it fails when no contract covers the payroll payment date.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/payroll/import/json \
@@ -91,7 +89,6 @@ curl -X POST http://127.0.0.1:8000/payroll/import/json \
         "period_year": 2026,
         "period_month": 1,
         "payment_date": "2026-01-31",
-        "employment_contract_kind": "indefinite",
         "rows": [
           {
             "concept_code": "SALARY_BASE",
@@ -103,8 +100,8 @@ curl -X POST http://127.0.0.1:8000/payroll/import/json \
   }'
 ```
 
-Notice the header fields (`employer`, `period_year`, `period_month`, `payment_date`,
-`employment_contract_kind`, plus the optional `worked_days`/`declared_net_pay_clp`) are
+Notice that the header fields (`employer`, `period_year`, `period_month`,
+`payment_date`, plus the optional `worked_days`/`declared_net_pay_clp`) are
 declared **once per period block**, not per row -- every row within one block comes from
 the same single payslip, mirroring `PdfImportPreviewResponse`'s own shape (one set of
 header fields, `rows` carrying only `concept_code`/`amount_clp` each). There is
@@ -175,7 +172,7 @@ This step:
 - applies the seeded `pension_health` contribution cap
 - computes pension mandatory and additional amounts
 - computes health mandatory and additional amounts
-- computes unemployment insurance from `employment_contract_kind`
+- resolves the effective employment contract and computes unemployment insurance from its explicit contract kind
 - persists `PENSION_BASE`, `PENSION_ADDITIONAL`, `HEALTH_BASE`, `HEALTH_ADDITIONAL_UF`, and `UNEMPLOYMENT_INSURANCE`
 
 ## 4. Compute income tax
@@ -202,29 +199,8 @@ This step:
 - resolves the matching tax bracket
 - persists `INCOME_TAX`
 
-## 5. Review the period
+## 5. Query or deflate results
 
-API:
-
-```bash
-curl -X POST http://127.0.0.1:8000/payroll/1/review
-```
-
-CLI:
-
-```bash
-python -m payroll.interfaces.cli.main review 1
-```
-
-Review requires:
-
-- assigned pension and health plans
-- computed contribution items
-- `INCOME_TAX`
-
-After that, the period status becomes `reviewed`.
-
-## 6. Query or deflate results
 
 Period summary and detail:
 
@@ -235,35 +211,6 @@ python -m payroll.interfaces.cli.main summary
 python -m payroll.interfaces.cli.main period-detail 1
 ```
 
-Deflation:
-
-```bash
-# pf-payroll fetches economic indices from pf-rates; seed the IPC_CL value there first
-# (pf-rates runs on port 8001, not on pf-payroll's port 8000):
-curl -X POST -H "X-API-Key: your-pf-rates-key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "source": "manual",
-    "entries": [
-      {
-        "code": "IPC_CL",
-        "year": 2026,
-        "month": 3,
-        "value": "113.100000"
-      }
-    ]
-  }' \
-  http://127.0.0.1:8001/economic-indices/refresh
-
-curl -X POST http://127.0.0.1:8000/payroll/1/deflate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "target_year": 2026,
-    "target_month": 3,
-    "index_code": "IPC_CL"
-  }'
-```
-
 ## Import format
 
 The importer accepts payroll flat files in **`.csv`** and **`.xlsx`** formats with the same column layout.
@@ -271,16 +218,16 @@ The importer accepts payroll flat files in **`.csv`** and **`.xlsx`** formats wi
 Minimal CSV:
 
 ```csv
-period_month,period_year,employer,payment_date,employment_contract_kind,salary_base
-1,2026,ACME,2026-01-31,indefinite,1000000
+period_month,period_year,employer,payment_date,salary_base
+1,2026,ACME,2026-01-31,1000000
 ```
 
 Full CSV:
 
 ```csv
-period_month,period_year,employer,payment_date,worked_days,employment_contract_kind,pension_plan_id,health_plan_id,salary_base,monthly_legal_gratuity,teleworking_refund,health_insurance_employer_contribution,vacation_incentive,holiday_bonus,availability_bonus,legal_gratuity_adjustment,prior_salary_difference,pension_base,pension_additional,health_base,health_plan_additional,health_insurance,vacation_bonus_advance,holiday_bonus_advance,salary_advance,prior_month_leave_absence_discount,net_pay
-1,2026,ACME,2026-01-31,30,indefinite,1,1,1000000,250000,50000,10030,0,0,45000,0,0,100000,25000,70000,87500,12000,5000,0,15000,3000,1130030
-2,2026,ACME,2026-02-28,28,fixed_term,1,1,1000000,250000,50000,10030,0,0,45000,0,15000,100000,25000,70000,87500,12000,0,10000,5000,3000,1150030
+period_month,period_year,employer,payment_date,worked_days,pension_plan_id,health_plan_id,salary_base,monthly_legal_gratuity,teleworking_refund,health_insurance_employer_contribution,vacation_incentive,holiday_bonus,availability_bonus,legal_gratuity_adjustment,prior_salary_difference,pension_base,pension_additional,health_base,health_plan_additional,health_insurance,vacation_bonus_advance,holiday_bonus_advance,salary_advance,prior_month_leave_absence_discount,net_pay
+1,2026,ACME,2026-01-31,30,1,1,1000000,250000,50000,10030,0,0,45000,0,0,100000,25000,70000,87500,12000,5000,0,15000,3000,1130030
+2,2026,ACME,2026-02-28,28,1,1,1000000,250000,50000,10030,0,0,45000,0,15000,100000,25000,70000,87500,12000,0,10000,5000,3000,1150030
 ```
 
 Supported payroll amount columns:
@@ -327,9 +274,7 @@ Import notes:
 - `pension_plan_id` and `health_plan_id` are optional, but must be provided together
 - `health_plan_id` accepts one id or multiple ids separated by commas (for example `2,3`); the informational `contracted_uf`/`contracted_clp` fields sum each plan's `contracted_uf`, prorated by how many days of the period's calendar month that plan's `valid_from`/`valid_to` actually overlaps (a plan valid the whole month contributes its full value; a plan that only starts or ends mid-month contributes a day-weighted fraction). The mandatory-minimum-vs-contracted `additional_amount_clp` discount is computed separately, by splitting the month into sub-periods of constant plan composition and applying the mandatory-minimum comparison once per sub-period rather than once for the whole month -- this matters whenever a mid-month plan change crosses the mandatory-minimum threshold partway through (see `domain/health_plan_proration.py`'s `prorated_additional_amount_clp()` and [`docs/investigations/health-additional-uf-mismatch.md`](investigations/health-additional-uf-mismatch.md), Session 11, for a real example)
 - when `pension_plan_id`/`health_plan_id` are omitted, both are deduced from every active reference-data plan overlapping the period's month, not just the plan valid on the 1st -- a plan that only takes effect partway through the month is still assigned and prorated the same way
-- `employer` is required
-- `employment_contract_kind` is required
-- accepted contract kind aliases include `indefinite`, `fixed_term`, `indefinido`, and `plazo_fijo`
+- `employer` is required and must identify an employer with an effective `PAY_EMP_CONT` contract for `payment_date`
 - `net_pay` is optional; if present, the imported period is marked as `actual`, otherwise it is marked as `projected`
 - `net_pay` is **not** imported as a payroll concept row
 - when `net_pay` is present, the import response stores the declared value and marks reconciliation as pending until computed contributions and income tax are generated

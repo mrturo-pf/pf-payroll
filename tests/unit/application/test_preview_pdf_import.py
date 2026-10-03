@@ -46,7 +46,6 @@ class FakePdfPayrollExtractor:
             payment_date=date(2026, 1, 30),
             worked_days=30,
             declared_net_pay_clp=None,
-            employment_contract_kind=None,
             template_id="acme-v1",
             rows=[],
         )
@@ -174,7 +173,6 @@ class TestPreviewPdfImport:
                     payment_date=None,
                     worked_days=None,
                     declared_net_pay_clp=None,
-                    employment_contract_kind=None,
                     template_id=None,
                     rows=[],
                 )

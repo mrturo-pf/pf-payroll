@@ -36,30 +36,22 @@ from payroll.application.dto import (
     ImportedPayrollPeriodDTO,
     ImportPayrollResultDTO,
     ImportPayrollRowDTO,
-    PayrollStatusKind,
     PdfImportPreviewDTO,
-    ReviewPayrollPeriodCommandDTO,
     ComputeContributionsCommandDTO,
-    DeflateAmountsCommandDTO,
-    DeflatedAmountDTO,
     ComputeIncomeTaxCommandDTO,
     PayrollPeriodRangeContextDTO,
     PayrollPeriodRangeDTO,
 )
-from payroll.domain.contributions import EmploymentContractKind
 from payroll.domain.quantizers import quantize_clp, quantize_percent
 from payroll.interfaces.api.errors import to_http_exception
 from payroll.interfaces.session import TransactionalSessionScope
 from payroll.application.use_cases.payroll_queries import PayrollQueries
-from payroll.shared.payroll_status import resolve_declared_status
 from payroll.interfaces.api.dependencies import (
     get_assign_plans_use_case,
     get_compute_contributions_use_case,
-    get_deflate_amounts_use_case,
     get_compute_income_tax_use_case,
     get_payroll_queries,
     get_preview_pdf_import_use_case,
-    get_review_payroll_period_use_case,
     get_transactional_import_payroll_use_case,
     get_transactional_process_imported_payroll_periods_use_case,
     get_transactional_session,
@@ -70,12 +62,10 @@ if TYPE_CHECKING:
     from payroll.application.use_cases.compute_contributions import ComputeContributions
     from payroll.application.use_cases.preview_pdf_import import PreviewPdfImport
     from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
-    from payroll.application.use_cases.deflate_amounts import DeflateAmounts
     from payroll.application.use_cases.import_payroll import ImportPayroll
     from payroll.application.use_cases.process_imported_payroll_periods import (
         ProcessImportedPayrollPeriods,
     )
-    from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
 
 router = APIRouter(prefix="/payroll", tags=["payroll"])
 
@@ -218,8 +208,6 @@ class ImportedPeriodRead(BaseModel):
     period_year: int
     period_month: int
     payment_date: date
-    status: PayrollStatusKind
-    employment_contract_kind: EmploymentContractKind
     item_count: int
     worked_days: int = 30
     declared_net_pay_clp: MoneyCLP | None = None
@@ -263,8 +251,6 @@ def to_imported_period_read(
         period_year=period.period_year,
         period_month=period.period_month,
         payment_date=period.payment_date,
-        status=period.status,
-        employment_contract_kind=period.employment_contract_kind,
         item_count=period.item_count,
         worked_days=period.worked_days,
         declared_net_pay_clp=period.declared_net_pay_clp,
@@ -371,7 +357,7 @@ class ImportPayrollRowRequest(BaseModel):
     """Represent a single already-structured payroll concept to persist.
 
     Deliberately just concept_code + amount_clp: employer, period_year,
-    period_month, payment_date, employment_contract_kind, worked_days, and
+    period_month, payment_date, worked_days, and
     declared_net_pay_clp all live once per period at
     ImportPayrollPeriodRequest's top level instead of being repeated per
     row -- every row submitted through this endpoint comes from the same
@@ -402,17 +388,13 @@ class ImportPayrollPeriodRequest(BaseModel):
     `periods` list (extra fields such as `template_id`/`raw_label`/`kind`/
     `confidence` are silently ignored, not rejected).
 
-    No `status` field on purpose -- it never appears in the source CSV/XLSX
-    either (see xlsx_importer.py). It is inferred the exact same way here:
-    "actual" once declared_net_pay_clp is known, "projected" otherwise (see
-    payroll.shared.payroll_status.resolve_declared_status).
+    Declared net pay is handled as period input, not a persisted status label.
     """
 
     employer: str
     period_year: int
     period_month: int
     payment_date: date
-    employment_contract_kind: EmploymentContractKind
     worked_days: int = 30
     declared_net_pay_clp: Decimal | None = None
     rows: list[ImportPayrollRowRequest]
@@ -481,13 +463,9 @@ class PdfImportPreviewResponse(BaseModel):
     a single request. Never persists anything -- see PreviewPdfImport /
     TemplatePdfPayrollExtractor. Each element is deliberately shaped so it
     can be used verbatim as one entry of a POST /payroll/import/json
-    request's `periods` list (wrap it -- plus every other element wanted in
-    the same batch -- inside `{"mode": ..., "periods": [...]}`; template_id
-    is ignored there if it's still present). employment_contract_kind is a
-    best-effort guess (see TemplatePdfPayrollExtractor's
-    _infer_employment_contract_kind), not an authoritative value -- confirm
-    or correct it before submitting. See ImportPayrollPeriodRequest's
-    docstring.
+    request's `periods` list. The contract is resolved from the employer's
+    effective employment-contract record; this preview never accepts or
+    exposes contract kind.
     """
 
     employer: str | None
@@ -496,8 +474,8 @@ class PdfImportPreviewResponse(BaseModel):
     payment_date: date | None
     worked_days: int | None
     declared_net_pay_clp: str | None
-    employment_contract_kind: str | None
     template_id: str | None
+
     rows: list[PdfImportPreviewRowRead]
 
 
@@ -523,14 +501,6 @@ class AssignPlansResponse(BaseModel):
     payment_date: date
     pension_plan_id: int
     health_plan_id: int
-
-
-class ReviewPayrollPeriodResponse(BaseModel):
-    """Represent Review Payroll Period Response."""
-
-    period_id: int
-    payment_date: date
-    status: str
 
 
 class PensionContributionRead(BaseModel):
@@ -605,38 +575,6 @@ class ComputeIncomeTaxResponse(BaseModel):
     rebate_utm: str
     tax_utm: str
     tax_clp: str
-
-
-class DeflateAmountsRequest(BaseModel):
-    """Represent Deflate Amounts Request."""
-
-    target_year: int
-    target_month: int
-    index_code: str = "IPC_CL"
-
-
-class DeflatedAmountRead(BaseModel):
-    """Represent Deflated Amount Read."""
-
-    nominal_clp: str
-    real_clp: str
-
-
-class DeflateAmountsResponse(BaseModel):
-    """Represent Deflate Amounts Response."""
-
-    period_id: int
-    index_code: str
-    source_year: int
-    source_month: int
-    target_year: int
-    target_month: int
-    source_index_value: str
-    target_index_value: str
-    taxable_income: DeflatedAmountRead
-    gross_income: DeflatedAmountRead
-    total_discounts: DeflatedAmountRead
-    net_pay: DeflatedAmountRead
 
 
 @dataclass(frozen=True, slots=True)
@@ -980,13 +918,6 @@ def to_payroll_period_read(context: PayrollPeriodRangeContextDTO) -> PayrollPeri
     )
 
 
-def to_deflated_amount_read(amount: DeflatedAmountDTO) -> DeflatedAmountRead:
-    """Convert to deflated amount read."""
-    return DeflatedAmountRead(
-        nominal_clp=str(amount.nominal_clp), real_clp=str(amount.real_clp)
-    )
-
-
 def count_validated_periods(periods_read: list[ImportedPeriodRead]) -> tuple[int, int]:
     """Split a periods_read list into (validated_count, unvalidated_count).
 
@@ -1187,8 +1118,6 @@ async def import_payroll_rows(
                 period_year=period.period_year,
                 period_month=period.period_month,
                 payment_date=period.payment_date,
-                status=resolve_declared_status(period.declared_net_pay_clp),
-                employment_contract_kind=period.employment_contract_kind,
                 concept_code=row.concept_code,
                 amount_clp=row.amount_clp,
                 worked_days=period.worked_days,
@@ -1291,11 +1220,6 @@ def to_pdf_import_preview_response(
         declared_net_pay_clp=(
             str(preview.declared_net_pay_clp)
             if preview.declared_net_pay_clp is not None
-            else None
-        ),
-        employment_contract_kind=(
-            preview.employment_contract_kind.value
-            if preview.employment_contract_kind is not None
             else None
         ),
         template_id=preview.template_id,
@@ -1428,26 +1352,6 @@ async def assign_plans(
     )
 
 
-@router.post("/{period_id}/review", response_model=ReviewPayrollPeriodResponse)
-async def review_payroll_period(
-    period_id: int = Path(..., gt=0),
-    use_case: ReviewPayrollPeriod = Depends(get_review_payroll_period_use_case),
-) -> ReviewPayrollPeriodResponse:
-    """Review payroll period."""
-    try:
-        result = await use_case.execute(
-            ReviewPayrollPeriodCommandDTO(period_id=period_id)
-        )
-    except PayrollError as exc:
-        raise to_http_exception(exc, default_status=400) from exc
-
-    return ReviewPayrollPeriodResponse(
-        period_id=result.period_id,
-        payment_date=result.payment_date,
-        status=result.status,
-    )
-
-
 @router.post("/{period_id}/compute-tax", response_model=ComputeIncomeTaxResponse)
 async def compute_income_tax(
     payload: ComputeIncomeTaxRequest,
@@ -1482,41 +1386,6 @@ async def compute_income_tax(
         rebate_utm=str(result.tax.rebate_utm),
         tax_utm=str(result.tax.tax_utm),
         tax_clp=str(result.tax.tax_clp),
-    )
-
-
-@router.post("/{period_id}/deflate", response_model=DeflateAmountsResponse)
-async def deflate_amounts(
-    payload: DeflateAmountsRequest,
-    period_id: int = Path(..., gt=0),
-    use_case: DeflateAmounts = Depends(get_deflate_amounts_use_case),
-) -> DeflateAmountsResponse:
-    """Deflate amounts."""
-    try:
-        result = await use_case.execute(
-            DeflateAmountsCommandDTO(
-                period_id=period_id,
-                target_year=payload.target_year,
-                target_month=payload.target_month,
-                index_code=payload.index_code,
-            )
-        )
-    except PayrollError as exc:
-        raise to_http_exception(exc, default_status=400) from exc
-
-    return DeflateAmountsResponse(
-        period_id=result.period_id,
-        index_code=result.index_code,
-        source_year=result.source_year,
-        source_month=result.source_month,
-        target_year=result.target_year,
-        target_month=result.target_month,
-        source_index_value=str(result.source_index_value),
-        target_index_value=str(result.target_index_value),
-        taxable_income=to_deflated_amount_read(result.taxable_income),
-        gross_income=to_deflated_amount_read(result.gross_income),
-        total_discounts=to_deflated_amount_read(result.total_discounts),
-        net_pay=to_deflated_amount_read(result.net_pay),
     )
 
 

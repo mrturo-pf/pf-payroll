@@ -9,6 +9,7 @@ from decimal import Decimal
 from fastapi.testclient import TestClient
 
 from helpers.export_fakes import FakePayrollRepository
+from helpers.period_detail_builders import build_acme_period_detail
 from payroll.application.dto import (
     ExportPayrollFiltersDTO,
     PayrollItemDetailDTO,
@@ -16,7 +17,6 @@ from payroll.application.dto import (
     PayrollSummaryDTO,
 )
 from payroll.application.errors import PayrollError
-from payroll.domain.contributions import EmploymentContractKind
 from payroll.infrastructure.importers.xlsx_importer import wide_columns
 from payroll.interfaces.api.dependencies import get_payroll_repository
 from payroll.interfaces.api.main import app
@@ -36,28 +36,15 @@ def _build_detail(period_id: int, employer: str = "ACME") -> PayrollPeriodDetail
         net_pay_clp=Decimal("1000000"),
         declared_net_pay_clp=Decimal("1000000"),
     )
-    return PayrollPeriodDetailDTO(
-        id=period_id,
-        employer_id=1,
-        employer_name=employer,
-        employer_tax_id=None,
-        employer_country_code="CL",
-        employer_started_at=date(2020, 1, 1),
-        employer_ended_at=None,
-        period_year=2026,
-        period_month=1,
-        payment_date=date(2026, 1, 31),
-        worked_days=30,
-        status="actual",
-        employment_contract_kind=EmploymentContractKind.INDEFINITE,
-        pension_plan_id=None,
-        health_plan_id=None,
+    return build_acme_period_detail(
         items=[
             PayrollItemDetailDTO(
                 "SALARY_BASE", "Base", "income", True, Decimal("1000000"), None
             )
         ],
         summary=summary,
+        period_id=period_id,
+        employer_tax_id=None,
     )
 
 

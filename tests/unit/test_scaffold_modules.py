@@ -26,7 +26,6 @@ from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.application.use_cases.process_imported_payroll_periods import (
     ProcessImportedPayrollPeriods,
 )
-from payroll.application.use_cases.review_payroll_period import ReviewPayrollPeriod
 from payroll.application.use_cases.reference_data import ReferenceDataQueries
 from payroll.config import Settings
 from payroll.domain.contribution_calculator import ContributionCalculator
@@ -206,7 +205,6 @@ def test_use_case_placeholders_are_instantiable() -> None:
     )
     assert isinstance(PayrollQueries(StubRepository()), PayrollQueries)
     assert isinstance(AssignPlans(StubRepository()), AssignPlans)
-    assert isinstance(ReviewPayrollPeriod(StubRepository()), ReviewPayrollPeriod)
     assert isinstance(ReferenceDataQueries(object()), ReferenceDataQueries)
     assert isinstance(
         ComputeContributions(StubRepository(), StubRepository()), ComputeContributions
@@ -244,7 +242,6 @@ def test_xlsx_importer_transforms_and_reads_files() -> None:
                 "period_year": 2026,
                 "employer": "ACME",
                 "payment_date": "2026-01-31",
-                "employment_contract_kind": "indefinite",
                 "salary_base": 1000,
             }
         ]
@@ -260,10 +257,6 @@ def test_xlsx_importer_transforms_and_reads_files() -> None:
     )
 
     assert result.to_dict(orient="records")[0]["concept_code"] == "SALARY_BASE"
-    assert (
-        result.to_dict(orient="records")[0]["employment_contract_kind"].value
-        == "indefinite"
-    )
     assert dataframe.iloc[0]["employer"] == "ACME"
 
 

@@ -214,6 +214,14 @@ class FakeMarketDataRepository:
             return None
         return self._rates_by_date.get(rate_date)
 
+    async def get_exchange_rate_values(
+        self, pairs: list[tuple[str, date]]
+    ) -> dict[tuple[str, date], Decimal | None]:
+        """Handle batched exchange-rate values."""
+        if self._raises is not None:
+            raise self._raises
+        return {pair: await self.get_exchange_rate_value(*pair) for pair in pairs}
+
     async def get_economic_index_value(
         self, code: str, period_year: int, period_month: int
     ) -> Decimal | None:

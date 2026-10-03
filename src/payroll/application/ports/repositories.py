@@ -224,19 +224,24 @@ class MarketDataRepository(Protocol):
         """Get exchange rate value."""
         ...
 
+    async def get_exchange_rate_values(
+        self, pairs: list[tuple[str, date]]
+    ) -> dict[tuple[str, date], Decimal | None]:
+        """Get multiple exchange-rate values in one dependency call."""
+        ...
+
     async def get_economic_index_value(
         self, code: str, period_year: int, period_month: int
     ) -> Decimal | None:
         """Get economic index value."""
         ...
 
-    async def get_latest_economic_index(self, code: str) -> tuple[date, Decimal] | None:
-        """Get the most recently published (period, value) for an index code.
+    async def get_economic_index_values(
+        self, pairs: list[tuple[str, int, int]]
+    ) -> dict[tuple[str, int, int], Decimal | None]:
+        """Get multiple economic-index values in one dependency call."""
+        ...
 
-        Used to step a replicated future net_pay prediction at an increase
-        month without knowing that month's own (not-yet-published) IPC --
-        the most recent figure actually available stands in as the best
-        proxy for current price levels. Returns None if no value has ever
-        been published for `code`.
-        """
+    async def get_latest_economic_index(self, code: str) -> tuple[date, Decimal] | None:
+        """Get the most recently published (period, value) for an index code."""
         ...

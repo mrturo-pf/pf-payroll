@@ -40,11 +40,17 @@ class DeflateAmounts:
                 f"Payroll summary for period {command.period_id} was not found."
             )
 
-        source_index = await self._market_data_repository.get_economic_index_value(
-            command.index_code,
-            detail.period_year,
-            detail.period_month,
-        )
+        pairs = [
+            (
+                command.index_code,
+                detail.period_year,
+                detail.period_month,
+            ),
+            (command.index_code, command.target_year, command.target_month),
+        ]
+        values = await self._market_data_repository.get_economic_index_values(pairs)
+        source_index = values.get(pairs[0])
+        target_index = values.get(pairs[1])
         if source_index is None:
             raise EconomicIndexNotFoundError(
                 "Economic index "
@@ -52,12 +58,6 @@ class DeflateAmounts:
                 f"{detail.period_year:04d}-{detail.period_month:02d} "
                 "was not found."
             )
-
-        target_index = await self._market_data_repository.get_economic_index_value(
-            command.index_code,
-            command.target_year,
-            command.target_month,
-        )
         if target_index is None:
             raise EconomicIndexNotFoundError(
                 "Economic index "

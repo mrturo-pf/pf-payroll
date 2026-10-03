@@ -59,10 +59,12 @@ class PfRatesClientBase:
 
 async def _pf_rates_request(
     url: str,
-    params: dict[str, str | int | float],
+    params: dict[str, str | int | float] | None,
     headers: dict[str, str],
     *,
     label: str,
+    method: str = "GET",
+    json_body: dict[str, object] | None = None,
 ) -> httpx.Response | None:
     """Issue a GET to pf-rates and return the raw response, or None on 404.
 
@@ -88,7 +90,13 @@ async def _pf_rates_request(
     while True:
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, params=params, headers=headers)
+                response = await client.request(
+                    method,
+                    url,
+                    params=params,
+                    json=json_body,
+                    headers=headers,
+                )
             if response.status_code == 404:
                 return None
             response.raise_for_status()
@@ -139,7 +147,7 @@ async def _pf_rates_request(
 
 async def pf_rates_get(
     url: str,
-    params: dict[str, str | int | float],
+    params: dict[str, str | int | float] | None,
     headers: dict[str, str],
     *,
     label: str,
@@ -153,9 +161,28 @@ async def pf_rates_get(
     return response.json() if response is not None else None
 
 
+async def pf_rates_post(
+    url: str,
+    payload: dict[str, object],
+    headers: dict[str, str],
+    *,
+    label: str,
+) -> dict[str, object] | None:
+    """Issue a POST to pf-rates and return its parsed JSON object body."""
+    response = await _pf_rates_request(
+        url,
+        None,
+        headers,
+        label=label,
+        method="POST",
+        json_body=payload,
+    )
+    return response.json() if response is not None else None
+
+
 async def pf_rates_get_list(
     url: str,
-    params: dict[str, str | int | float],
+    params: dict[str, str | int | float] | None,
     headers: dict[str, str],
     *,
     label: str,

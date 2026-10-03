@@ -41,7 +41,10 @@ from payroll.infrastructure.db.repositories.payroll_repository_shared import (
     project_future_months,
     resolve_currency_equivalents,
 )
-from payroll.shared.constants import HEALTH_ADDITIONAL_CONCEPT_CODE
+from payroll.shared.constants import (
+    FOREIGN_CURRENCY_CODES,
+    HEALTH_ADDITIONAL_CONCEPT_CODE,
+)
 from payroll.shared.dates import add_months, resolve_payment_date
 
 
@@ -440,31 +443,48 @@ class SqlAlchemyPayrollQueryRepository(SqlAlchemyPayrollRepositoryBase):
                 await self._fetch_employer_names_map(list(other_employer_ids))
             )
 
-        # Resolve USD/EUR/UF equivalents for every non-future period's
-        # start_date, concurrently -- see resolve_currency_equivalents()'s
-        # docstring for why this is a 3-way-independent, never-raising
-        # best-effort enrichment rather than something list_period_ranges()
-        # itself needs to catch PayrollDependencyError around. The lookback
-        # ghost and any inferred (data-less) previous periods are
-        # deliberately excluded: the former is never emitted in the
-        # response at all, and the latter has no net_pay_clp to convert in
-        # the first place (resolve_currency_equivalents() would short-
-        # circuit to None for them anyway, but skipping the call outright
-        # avoids wasted pf-rates round trips).
+        # Collect all currency pairs first so the dependency is called once
+        # for the complete period window instead of once per period/currency.
         previous_periods_ordered = list(reversed(previous_periods))
-        *previous_currencies, current_currency = await asyncio.gather(
-            *(
-                resolve_currency_equivalents(
-                    period.declared_net_pay_clp,
-                    rate_date=period.payment_date,
-                    market_data_repository=self._market_data_repository,
-                )
-                for period in previous_periods_ordered
-            ),
-            resolve_currency_equivalents(
-                current_net_pay_clp,
-                rate_date=current_start,
+        currency_pairs = [
+            (code, period.payment_date)
+            for period in previous_periods_ordered
+            if period.declared_net_pay_clp is not None
+            for code in FOREIGN_CURRENCY_CODES
+        ]
+        if current_net_pay_clp is not None:
+            currency_pairs.extend(
+                (code, current_start) for code in FOREIGN_CURRENCY_CODES
+            )
+        exchange_rate_values: dict[tuple[str, date], Decimal | None] = {}
+        batch_lookup = (
+            getattr(self._market_data_repository, "get_exchange_rate_values", None)
+            if self._market_data_repository is not None
+            else None
+        )
+        if currency_pairs and batch_lookup is not None:
+            try:
+                exchange_rate_values = await batch_lookup(currency_pairs)
+            except PayrollDependencyError:
+                exchange_rate_values = {}
+
+        previous_currencies = [
+            await resolve_currency_equivalents(
+                period.declared_net_pay_clp,
+                rate_date=period.payment_date,
                 market_data_repository=self._market_data_repository,
+                exchange_rate_values=(
+                    exchange_rate_values if batch_lookup is not None else None
+                ),
+            )
+            for period in previous_periods_ordered
+        ]
+        current_currency = await resolve_currency_equivalents(
+            current_net_pay_clp,
+            rate_date=current_start,
+            market_data_repository=self._market_data_repository,
+            exchange_rate_values=(
+                exchange_rate_values if batch_lookup is not None else None
             ),
         )
 

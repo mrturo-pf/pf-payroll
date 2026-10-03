@@ -55,6 +55,22 @@ class StubMarketDataRepository:
         self.target = target
         self.calls: list[tuple[str, int, int]] = []
 
+    async def get_economic_index_values(
+        self, pairs: list[tuple[str, int, int]]
+    ) -> dict[tuple[str, int, int], Decimal | None]:
+        """Get multiple economic index values."""
+        self.calls.extend(pairs)
+        return {
+            pair: (
+                self.source
+                if pair[1:] == (2026, 1)
+                else self.target
+                if pair[1:] == (2026, 3)
+                else None
+            )
+            for pair in pairs
+        }
+
     async def get_economic_index_value(
         self, code: str, period_year: int, period_month: int
     ) -> Decimal | None:

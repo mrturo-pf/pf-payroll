@@ -35,6 +35,7 @@ from payroll.infrastructure.db.models.payroll import (
 )
 from payroll.infrastructure.db.models.reference_data import ContributionCapType
 from payroll.shared.constants import (
+    FOREIGN_CURRENCY_CODES,
     RECONCILIATION_TOLERANCE_CLP,
     REVIEW_REQUIRED_CONCEPT_CODES,
 )
@@ -569,9 +570,6 @@ async def project_future_months(
     return series
 
 
-_FOREIGN_CURRENCY_CODES = ("USD", "EUR", "UF")
-
-
 @dataclass(frozen=True, slots=True)
 class CurrencyEquivalents:
     """A CLP amount expressed in USD, EUR, and UF for a given date.
@@ -611,35 +609,26 @@ async def resolve_currency_equivalents(
     *,
     rate_date: date,
     market_data_repository: MarketDataRepository | None,
+    exchange_rate_values: dict[tuple[str, date], Decimal | None] | None = None,
 ) -> CurrencyEquivalents:
-    """Convert net_pay_clp into USD/EUR/UF equivalents for rate_date.
-
-    Each of the three currencies degrades independently to None: no
-    market_data_repository wired in at all, nothing to convert (net_pay_clp
-    itself is None -- e.g. an inferred period with no declared pay), that
-    specific currency's rate for rate_date is simply not published by
-    pf-rates, or pf-rates raised (PayrollDependencyError or otherwise).
-
-    Unlike predict_next_period_net_pay()/project_future_months(), this
-    helper never raises -- it is a 3-way best-effort enrichment where each
-    currency is independent of the other two, not a single pipeline that
-    benefits from letting list_period_ranges() be the one try/except
-    boundary. The three lookups run concurrently (`asyncio.gather`) since
-    list_period_ranges() calls this once per previous/current period in
-    the window (up to 13 times), and sequential currency-by-currency,
-    period-by-period calls would otherwise serialize dozens of independent
-    HTTP round trips to pf-rates.
-    """
+    """Convert net_pay_clp into USD/EUR/UF equivalents for rate_date."""
     if net_pay_clp is None or market_data_repository is None:
         return _NO_CURRENCY_EQUIVALENTS
 
-    usd_rate, eur_rate, uf_rate = await asyncio.gather(
-        *(
-            market_data_repository.get_exchange_rate_value(code, rate_date)
-            for code in _FOREIGN_CURRENCY_CODES
-        ),
-        return_exceptions=True,
-    )
+    if exchange_rate_values is None:
+        results = await asyncio.gather(
+            *(
+                market_data_repository.get_exchange_rate_value(code, rate_date)
+                for code in FOREIGN_CURRENCY_CODES
+            ),
+            return_exceptions=True,
+        )
+        usd_rate, eur_rate, uf_rate = results
+    else:
+        usd_rate, eur_rate, uf_rate = (
+            exchange_rate_values.get((code, rate_date))
+            for code in FOREIGN_CURRENCY_CODES
+        )
     return CurrencyEquivalents(
         usd=_convert_to_currency(net_pay_clp, usd_rate),
         eur=_convert_to_currency(net_pay_clp, eur_rate),

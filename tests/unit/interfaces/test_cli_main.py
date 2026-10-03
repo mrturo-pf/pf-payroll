@@ -297,17 +297,6 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
             """List health plans."""
             return [sample_health_plan()]
 
-    class FakeAssignPlans:
-        """Test double for Assign Plans."""
-
-        def __init__(self, repository: object) -> None:
-            """Initialize the instance."""
-            assert repository == "payroll-repo"
-
-        async def execute(self, command: object) -> object:
-            """Handle execute."""
-            return command
-
     monkeypatch.setattr(cli_main, "SessionLocal", lambda: _FakeSessionContext())
     monkeypatch.setattr(
         cli_main, "open_transactional_session", _fake_open_transactional_session
@@ -327,8 +316,6 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     )
     monkeypatch.setattr(cli_main, "PayrollQueries", FakePayrollQueries)
     monkeypatch.setattr(cli_main, "ReferenceDataQueries", FakeReferenceDataQueries)
-    monkeypatch.setattr(cli_main, "AssignPlans", FakeAssignPlans)
-    monkeypatch.setattr(cli_main, "ComputeContributions", _FakeDualRepoUseCase)
     monkeypatch.setattr(cli_main, "ComputeIncomeTax", _FakeDualRepoUseCase)
 
     assert asyncio.run(cli_main._import_payroll_async(sample_file)) == (
@@ -339,10 +326,6 @@ def test_cli_async_helpers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     assert (
         asyncio.run(cli_main._list_plan_snapshots_async())["pension_plans"][0].id == 1
     )
-    assert asyncio.run(cli_main._assign_plans_async(7, 11, 22)).pension_plan_id == 11
-    assert asyncio.run(
-        cli_main._compute_contributions_async(7, 11, 22, Decimal("39000"))
-    ).uf_value_clp == Decimal("39000")
     assert asyncio.run(
         cli_main._compute_income_tax_async(7, Decimal("68000"))
     ).utm_value_clp == Decimal("68000")
@@ -517,36 +500,6 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
             "health_plans": [sample_health_plan()],
         }
 
-    async def fake_assign_plans_async(
-        period_id: int, pension_plan_id: int, health_plan_id: int
-    ) -> object:
-        """Handle fake assign plans async."""
-        return {
-            "period_id": period_id,
-            "pension_plan_id": pension_plan_id,
-            "health_plan_id": health_plan_id,
-        }
-
-    async def fake_compute_contributions_async(
-        period_id: int,
-        pension_plan_id: int,
-        health_plan_id: int,
-        uf_value_clp: Decimal | None,
-    ) -> object:
-        """Handle fake compute contributions async."""
-        return {
-            "period_id": period_id,
-            "pension_plan_id": pension_plan_id,
-            "health_plan_id": health_plan_id,
-            "uf_value_clp": uf_value_clp,
-        }
-
-    async def fake_compute_income_tax_async(
-        period_id: int, utm_value_clp: Decimal | None
-    ) -> object:
-        """Handle fake compute income tax async."""
-        return {"period_id": period_id, "utm_value_clp": utm_value_clp}
-
     monkeypatch.setattr(cli_main, "_import_payroll_async", fake_import_payroll_async)
     monkeypatch.setattr(
         cli_main, "_list_period_summaries_async", fake_list_period_summaries_async
@@ -556,13 +509,6 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     )
     monkeypatch.setattr(
         cli_main, "_list_plan_snapshots_async", fake_list_plan_snapshots_async
-    )
-    monkeypatch.setattr(cli_main, "_assign_plans_async", fake_assign_plans_async)
-    monkeypatch.setattr(
-        cli_main, "_compute_contributions_async", fake_compute_contributions_async
-    )
-    monkeypatch.setattr(
-        cli_main, "_compute_income_tax_async", fake_compute_income_tax_async
     )
 
     runner = CliRunner()
@@ -587,23 +533,6 @@ def test_cli_business_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     payload = json.loads(result.stdout)
     assert payload["pension_plans"][0]["id"] == 1
     assert payload["health_plans"][0]["id"] == 2
-
-    result = runner.invoke(cli_main.app, ["assign-plans", "7", "11", "22"])
-    assert result.exit_code == 0
-    assert json.loads(result.stdout)["pension_plan_id"] == 11
-
-    result = runner.invoke(
-        cli_main.app,
-        ["compute-contributions", "7", "11", "22", "--uf-value-clp", "39000"],
-    )
-    assert result.exit_code == 0
-    assert json.loads(result.stdout)["uf_value_clp"] == "39000"
-
-    result = runner.invoke(
-        cli_main.app, ["compute-tax", "7", "--utm-value-clp", "68000"]
-    )
-    assert result.exit_code == 0
-    assert json.loads(result.stdout)["utm_value_clp"] == "68000"
 
 
 def _sample_pdf_preview(

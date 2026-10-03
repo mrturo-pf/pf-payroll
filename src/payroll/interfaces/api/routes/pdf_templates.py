@@ -2,8 +2,7 @@
 
 The first genuinely CRUD-shaped resource this API manages -- standard REST
 verbs (`POST`/`GET`/`PUT`/`DELETE`) are used deliberately, unlike the rest of
-this API's `POST`-only, action-shaped mutations (`/{period_id}/review`,
-`/{period_id}/compute-tax`, ...). See
+this API's other action-shaped mutations. See
 `docs/proposals/pdf-template-management-design-recommendation.md` for the
 full rationale. Kept in its own router module for the same cohesion reason
 `payroll_export.py` is its own file, not appended to the already-large

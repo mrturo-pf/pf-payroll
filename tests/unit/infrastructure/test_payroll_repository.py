@@ -15,7 +15,6 @@ from helpers.db_fakes import (
 from payroll.application.dto import ExportPayrollFiltersDTO
 from payroll.application.errors import PayrollConflictError, PayrollDependencyError
 from payroll.application.use_cases.import_payroll import ImportPayroll
-from payroll.application.use_cases.assign_plans import AssignPlans
 from payroll.domain.contributions import (
     HealthContribution,
     HealthInstitutionKind,
@@ -1372,63 +1371,6 @@ async def test_repository_rejects_contribution_context_mixed_health_institutions
 
 
 @pytest.mark.asyncio
-async def test_sqlalchemy_payroll_repository_assigns_plans_to_period() -> None:
-    """Test sqlalchemy payroll repository assigns plans to period."""
-    period = build_period(employer_id=1)
-    session = FakeSession(
-        [
-            FakeResult(scalar_one=period),
-            FakeResult(first_row=build_pension_pair()),
-            FakeResult(first_row=build_health_pair()),
-        ]
-    )
-    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
-
-    result = await repository.assign_plans(
-        SimpleNamespace(period_id=5, pension_plan_id=11, health_plan_id=22)
-    )
-
-    assert result.period_id == 5
-    assert result.payment_date == date(2026, 1, 31)
-    assert period.pension_plan_id == 11
-    assert any(
-        isinstance(item, PayrollPeriodHealthPlanModel)
-        and item.period_id == period.id
-        and item.health_plan_id == 22
-        for item in session.added
-    )
-    assert session.commit_count == 1
-
-
-@pytest.mark.asyncio
-async def test_repository_rejects_assigning_inactive_health_institution() -> None:
-    """Test assign plans rejects inactive health institutions."""
-    period = build_period(employer_id=1)
-    session = FakeSession(
-        [
-            FakeResult(scalar_one=period),
-            FakeResult(first_row=build_pension_pair()),
-            FakeResult(
-                first_row=build_health_pair(
-                    code="LEGACY",
-                    name="Legacy",
-                    active=False,
-                )
-            ),
-        ]
-    )
-    repository = SqlAlchemyPayrollRepository(session)  # type: ignore[arg-type]
-
-    with pytest.raises(
-        ValueError,
-        match="Health plan 22 belongs to inactive health institution LEGACY.",
-    ):
-        await repository.assign_plans(
-            SimpleNamespace(period_id=5, pension_plan_id=11, health_plan_id=22)
-        )
-
-
-@pytest.mark.asyncio
 async def test_sa_payroll_repository_rejects_missing_period_for_contribution_ctx() -> (
     None
 ):
@@ -1540,45 +1482,6 @@ async def test_sqlalchemy_payroll_repository_rejects_missing_contribution_inputs
     with pytest.raises(ValueError, match=message):
         await repository.get_contribution_context(
             SimpleNamespace(period_id=1, pension_plan_id=1, health_plan_id=2)
-        )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("results", "message"),
-    [
-        ([FakeResult(scalar_one=None)], "Payroll period 9 was not found."),
-        (
-            [
-                FakeResult(scalar_one=build_period(period_id=9, employer_id=1)),
-                FakeResult(first_row=None),
-            ],
-            "Pension plan 1 was not found.",
-        ),
-        (
-            [
-                FakeResult(scalar_one=build_period(period_id=9, employer_id=1)),
-                FakeResult(
-                    first_row=build_pension_pair(
-                        plan_id=1, additional_rate=Decimal("0")
-                    )
-                ),
-                FakeResult(first_row=None),
-            ],
-            "Health plan 2 was not found.",
-        ),
-    ],
-)
-async def test_sqlalchemy_payroll_repository_rejects_invalid_assign_plans_inputs(
-    results: list[FakeResult],
-    message: str,
-) -> None:
-    """Test sqlalchemy payroll repository rejects invalid assign plans inputs."""
-    repository = SqlAlchemyPayrollRepository(FakeSession(results))  # type: ignore[arg-type]
-
-    with pytest.raises(ValueError, match=message):
-        await repository.assign_plans(
-            SimpleNamespace(period_id=9, pension_plan_id=1, health_plan_id=2)
         )
 
 
@@ -2788,15 +2691,11 @@ async def test_api_dependencies_build_payroll_repository_and_use_case(
     repository = dependencies.get_payroll_repository(fake_session)  # type: ignore[arg-type]
     use_case = dependencies.get_import_payroll_use_case(repository)
     queries = dependencies.get_payroll_queries(repository)
-    assign_use_case = dependencies.get_assign_plans_use_case(repository)
-    compute_use_case = dependencies.get_compute_contributions_use_case(repository)
     compute_tax_use_case = dependencies.get_compute_income_tax_use_case(repository)  # type: ignore[arg-type]
 
     assert isinstance(repository, SqlAlchemyPayrollRepository)
     assert isinstance(use_case, ImportPayroll)
-    assert isinstance(assign_use_case, AssignPlans)
     assert queries.__class__.__name__ == "PayrollQueries"
-    assert compute_use_case.__class__.__name__ == "ComputeContributions"
     assert compute_tax_use_case.__class__.__name__ == "ComputeIncomeTax"
 
 

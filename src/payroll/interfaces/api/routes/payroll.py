@@ -30,15 +30,12 @@ from payroll.application.services.import_reconciliation import (
     period_has_reconciliation_conflict,
 )
 from payroll.application.dto import (
-    AssignPlansCommandDTO,
     ImportedComplementaryInsuranceValidationDTO,
     ImportedContributionValidationDTO,
     ImportedPayrollPeriodDTO,
     ImportPayrollResultDTO,
     ImportPayrollRowDTO,
     PdfImportPreviewDTO,
-    ComputeContributionsCommandDTO,
-    ComputeIncomeTaxCommandDTO,
     PayrollPeriodRangeContextDTO,
     PayrollPeriodRangeDTO,
 )
@@ -47,9 +44,6 @@ from payroll.interfaces.api.errors import to_http_exception
 from payroll.interfaces.session import TransactionalSessionScope
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.interfaces.api.dependencies import (
-    get_assign_plans_use_case,
-    get_compute_contributions_use_case,
-    get_compute_income_tax_use_case,
     get_payroll_queries,
     get_preview_pdf_import_use_case,
     get_transactional_import_payroll_use_case,
@@ -58,10 +52,7 @@ from payroll.interfaces.api.dependencies import (
 )
 
 if TYPE_CHECKING:
-    from payroll.application.use_cases.assign_plans import AssignPlans
-    from payroll.application.use_cases.compute_contributions import ComputeContributions
     from payroll.application.use_cases.preview_pdf_import import PreviewPdfImport
-    from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
     from payroll.application.use_cases.import_payroll import ImportPayroll
     from payroll.application.use_cases.process_imported_payroll_periods import (
         ProcessImportedPayrollPeriods,
@@ -479,30 +470,6 @@ class PdfImportPreviewResponse(BaseModel):
     rows: list[PdfImportPreviewRowRead]
 
 
-class ComputeContributionsRequest(BaseModel):
-    """Represent Compute Contributions Request."""
-
-    pension_plan_id: int
-    health_plan_id: int
-    uf_value_clp: Decimal | None = None
-
-
-class AssignPlansRequest(BaseModel):
-    """Represent Assign Plans Request."""
-
-    pension_plan_id: int
-    health_plan_id: int
-
-
-class AssignPlansResponse(BaseModel):
-    """Represent Assign Plans Response."""
-
-    period_id: int
-    payment_date: date
-    pension_plan_id: int
-    health_plan_id: int
-
-
 class PensionContributionRead(BaseModel):
     """Represent Pension Contribution Read."""
 
@@ -539,42 +506,6 @@ class UnemploymentContributionRead(BaseModel):
     employee_amount_clp: str
     employer_rate: str
     employer_amount_clp: str
-
-
-class ComputeContributionsResponse(BaseModel):
-    """Represent Compute Contributions Response."""
-
-    period_id: int
-    pension_plan_id: int
-    health_plan_id: int
-    taxable_income_clp: str
-    total_discount_clp: str
-    pension: PensionContributionRead
-    health: HealthContributionRead
-    unemployment: UnemploymentContributionRead
-
-
-class ComputeIncomeTaxRequest(BaseModel):
-    """Represent Compute Income Tax Request."""
-
-    utm_value_clp: Decimal | None = None
-
-
-class ComputeIncomeTaxResponse(BaseModel):
-    """Represent Compute Income Tax Response."""
-
-    period_id: int
-    taxable_income_clp: str
-    deductible_amount_clp: str
-    taxable_base_clp: str
-    utm_value_clp: str
-    taxable_base_utm: str
-    bracket_lower_bound_utm: str
-    bracket_upper_bound_utm: str | None
-    marginal_rate: str
-    rebate_utm: str
-    tax_utm: str
-    tax_clp: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -1324,125 +1255,3 @@ async def get_payroll_period(
     except PayrollError as exc:
         raise to_http_exception(exc, default_status=404) from exc
     return to_payroll_period_read(context)
-
-
-@router.post("/{period_id}/assign-plans", response_model=AssignPlansResponse)
-async def assign_plans(
-    payload: AssignPlansRequest,
-    period_id: int = Path(..., gt=0),
-    use_case: AssignPlans = Depends(get_assign_plans_use_case),
-) -> AssignPlansResponse:
-    """Assign plans."""
-    try:
-        result = await use_case.execute(
-            AssignPlansCommandDTO(
-                period_id=period_id,
-                pension_plan_id=payload.pension_plan_id,
-                health_plan_id=payload.health_plan_id,
-            )
-        )
-    except PayrollError as exc:
-        raise to_http_exception(exc, default_status=400) from exc
-
-    return AssignPlansResponse(
-        period_id=result.period_id,
-        payment_date=result.payment_date,
-        pension_plan_id=result.pension_plan_id,
-        health_plan_id=result.health_plan_id,
-    )
-
-
-@router.post("/{period_id}/compute-tax", response_model=ComputeIncomeTaxResponse)
-async def compute_income_tax(
-    payload: ComputeIncomeTaxRequest,
-    period_id: int = Path(..., gt=0),
-    use_case: ComputeIncomeTax = Depends(get_compute_income_tax_use_case),
-) -> ComputeIncomeTaxResponse:
-    """Compute income tax."""
-    try:
-        result = await use_case.execute(
-            ComputeIncomeTaxCommandDTO(
-                period_id=period_id,
-                utm_value_clp=payload.utm_value_clp,
-            )
-        )
-    except PayrollError as exc:
-        raise to_http_exception(exc, default_status=400) from exc
-
-    return ComputeIncomeTaxResponse(
-        period_id=result.period_id,
-        taxable_income_clp=str(result.tax.taxable_income_clp),
-        deductible_amount_clp=str(result.tax.deductible_amount_clp),
-        taxable_base_clp=str(result.tax.taxable_base_clp),
-        utm_value_clp=str(result.tax.utm_value_clp),
-        taxable_base_utm=str(result.tax.taxable_base_utm),
-        bracket_lower_bound_utm=str(result.tax.bracket_lower_bound_utm),
-        bracket_upper_bound_utm=(
-            str(result.tax.bracket_upper_bound_utm)
-            if result.tax.bracket_upper_bound_utm is not None
-            else None
-        ),
-        marginal_rate=str(result.tax.marginal_rate),
-        rebate_utm=str(result.tax.rebate_utm),
-        tax_utm=str(result.tax.tax_utm),
-        tax_clp=str(result.tax.tax_clp),
-    )
-
-
-@router.post(
-    "/{period_id}/compute-contributions", response_model=ComputeContributionsResponse
-)
-async def compute_contributions(
-    payload: ComputeContributionsRequest,
-    period_id: int = Path(..., gt=0),
-    use_case: ComputeContributions = Depends(get_compute_contributions_use_case),
-) -> ComputeContributionsResponse:
-    """Compute contributions."""
-    try:
-        result = await use_case.execute(
-            ComputeContributionsCommandDTO(
-                period_id=period_id,
-                pension_plan_id=payload.pension_plan_id,
-                health_plan_id=payload.health_plan_id,
-                uf_value_clp=payload.uf_value_clp,
-            )
-        )
-    except PayrollError as exc:
-        raise to_http_exception(exc, default_status=400) from exc
-
-    return ComputeContributionsResponse(
-        period_id=result.period_id,
-        pension_plan_id=result.pension_plan_id,
-        health_plan_id=result.health_plan_id,
-        taxable_income_clp=str(result.taxable_income_clp),
-        total_discount_clp=str(result.total_discount_clp),
-        pension=PensionContributionRead(
-            institution_code=result.pension.institution_code,
-            taxable_clp=str(result.pension.taxable_clp),
-            cap_clp=str(result.pension.cap_clp),
-            capped_base_clp=str(result.pension.capped_base_clp),
-            base_amount_clp=str(result.pension.base_amount_clp),
-            additional_amount_clp=str(result.pension.additional_amount_clp),
-        ),
-        health=HealthContributionRead(
-            institution_code=result.health.institution_code,
-            institution_kind=result.health.institution_kind.value,
-            taxable_clp=str(result.health.taxable_clp),
-            cap_clp=str(result.health.cap_clp),
-            capped_base_clp=str(result.health.capped_base_clp),
-            base_amount_clp=str(result.health.base_amount_clp),
-            contracted_uf=str(result.health.contracted_uf),
-            contracted_clp=str(result.health.contracted_clp),
-            additional_amount_clp=str(result.health.additional_amount_clp),
-        ),
-        unemployment=UnemploymentContributionRead(
-            contract_kind=result.unemployment.contract_kind.value,
-            taxable_clp=str(result.unemployment.taxable_clp),
-            cap_clp=str(result.unemployment.cap_clp),
-            capped_base_clp=str(result.unemployment.capped_base_clp),
-            employee_rate=str(result.unemployment.employee_rate),
-            employee_amount_clp=str(result.unemployment.employee_amount_clp),
-            employer_rate=str(result.unemployment.employer_rate),
-            employer_amount_clp=str(result.unemployment.employer_amount_clp),
-        ),
-    )

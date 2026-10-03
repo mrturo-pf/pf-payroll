@@ -14,8 +14,6 @@ import typer
 from typer.testing import CliRunner
 
 from payroll.application.dto import MoneyDTO
-from payroll.application.use_cases.assign_plans import AssignPlans
-from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.compute_unemployment_insurance import (
     ComputeUnemploymentInsurance,
 )
@@ -204,11 +202,7 @@ def test_use_case_placeholders_are_instantiable() -> None:
         ImportPayroll(StubRepository(), XlsxPayrollImporter()), ImportPayroll
     )
     assert isinstance(PayrollQueries(StubRepository()), PayrollQueries)
-    assert isinstance(AssignPlans(StubRepository()), AssignPlans)
     assert isinstance(ReferenceDataQueries(object()), ReferenceDataQueries)
-    assert isinstance(
-        ComputeContributions(StubRepository(), StubRepository()), ComputeContributions
-    )
     assert isinstance(
         DeflateAmounts(StubRepository(), StubRepository()), DeflateAmounts
     )

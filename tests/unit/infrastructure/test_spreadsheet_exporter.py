@@ -134,7 +134,7 @@ def test_export_dataframe_maps_items_through_inverted_concept_map() -> None:
 
 
 def test_export_dataframe_omits_computed_columns_when_period_has_none() -> None:
-    """A period never run through compute-tax/compute-contributions exports blank."""
+    """A period without computed deductions exports blank derived columns."""
     dataframe = build_export_dataframe([_build_detail(include_computed=False)])
     row = dataframe.iloc[0]
     assert row.isna()["income_tax"]

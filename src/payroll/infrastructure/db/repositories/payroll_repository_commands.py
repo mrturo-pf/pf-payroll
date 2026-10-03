@@ -6,8 +6,6 @@ from collections.abc import Set as AbstractSet
 from sqlalchemy import delete, func, select
 
 from payroll.application.dto import (
-    AssignPlansCommandDTO,
-    AssignPlansResultDTO,
     ComputeContributionsCommandDTO,
     ComputeContributionsResultDTO,
     ComputeIncomeTaxCommandDTO,
@@ -147,33 +145,6 @@ class SqlAlchemyPayrollCommandRepository(SqlAlchemyPayrollRepositoryBase):
                 concept_id=concept.id,
                 amount_clp=amount_clp,
             )
-        )
-
-    async def assign_plans(
-        self, command: AssignPlansCommandDTO
-    ) -> AssignPlansResultDTO:
-        """Assign plans."""
-        period = await self._get_period(command.period_id)
-        await self._get_pension_plan(command.pension_plan_id, period.payment_date)
-        await self._get_health_plan(
-            command.health_plan_id,
-            period.payment_date,
-            require_active=True,
-        )
-
-        period.pension_plan_id = command.pension_plan_id
-        await self._replace_period_health_plan_snapshots(
-            period_id=period.id,
-            health_plan_ids=[command.health_plan_id],
-        )
-
-        await self._session.commit()
-
-        return AssignPlansResultDTO(
-            period_id=period.id,
-            payment_date=period.payment_date,
-            pension_plan_id=period.pension_plan_id,
-            health_plan_id=command.health_plan_id,
         )
 
     async def _get_effective_contract_model(

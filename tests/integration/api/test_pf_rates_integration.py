@@ -1,9 +1,4 @@
-"""Integration test: ComputeContributions → PfRatesClient → respx-mocked pf-rates.
-
-Verifies that the real HTTP adapter wires correctly into the use case:
-the UF value is fetched from pf-rates exactly once, parsed as Decimal,
-and flows into the contribution math.
-"""
+"""Integration test: ContributionComputationService → PfRatesClient → respx."""
 
 from datetime import date
 from decimal import Decimal
@@ -17,7 +12,9 @@ from payroll.application.dto import (
     ComputeContributionsResultDTO,
     ContributionComputationContextDTO,
 )
-from payroll.application.use_cases.compute_contributions import ComputeContributions
+from payroll.application.services.contribution_computation import (
+    ContributionComputationService,
+)
 from payroll.domain.contributions import (
     ContributionCap,
     HealthInstitution,
@@ -119,10 +116,10 @@ async def test_compute_contributions_fetches_uf_from_pf_rates() -> None:
 
     repository = StubPayrollRepository()
     client = PfRatesClient(_PF_RATES_BASE, "test-key", cache_ttl_seconds=60)
-    use_case = ComputeContributions(repository, client)
+    service = ContributionComputationService(repository, client)
 
-    result = await use_case.execute(
-        # No uf_value_clp: use case must call PfRatesClient
+    result = await service.compute(
+        # No uf_value_clp: service must call PfRatesClient
         ComputeContributionsCommandDTO(period_id=1, pension_plan_id=1, health_plan_id=2)
     )
 
@@ -143,4 +140,3 @@ async def test_compute_contributions_fetches_uf_from_pf_rates() -> None:
     assert result.unemployment.employer_amount_clp == Decimal(
         "24000"
     )  # 2.4% of 1,000,000
-    assert repository.saved is result

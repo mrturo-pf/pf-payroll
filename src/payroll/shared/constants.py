@@ -38,8 +38,8 @@ HEALTH_ADDITIONAL_CONCEPT_CODE = "HEALTH_ADDITIONAL_UF"
 MANDATORY_DECLARED_CONTRIBUTION_CONCEPT_CODES = frozenset(
     {"PENSION_BASE", "PENSION_ADDITIONAL", "HEALTH_BASE"}
 )
-# Concept codes save_computed_contributions() persists (or replaces) whenever
-# a human explicitly runs compute-contributions -- includes
+# Concept codes save_computed_contributions() persists (or replaces) when
+# contribution calculations run automatically during import.
 # HEALTH_ADDITIONAL_UF on purpose, since that call must still be able to
 # persist a genuine $0 additional-plan amount when a plan happens to cost
 # exactly the legal base.

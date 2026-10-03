@@ -5,8 +5,6 @@ from decimal import Decimal
 from typing import Protocol
 
 from payroll.application.dto import (
-    AssignPlansCommandDTO,
-    AssignPlansResultDTO,
     ComputeContributionsCommandDTO,
     ComputeContributionsResultDTO,
     ComputeIncomeTaxCommandDTO,
@@ -105,12 +103,6 @@ class PayrollRepository(Protocol):
         self, rows: list[ImportPayrollRowDTO]
     ) -> ImportPayrollResultDTO:
         """Import rows."""
-        ...
-
-    async def assign_plans(
-        self, command: AssignPlansCommandDTO
-    ) -> AssignPlansResultDTO:
-        """Assign plans."""
         ...
 
     async def get_contribution_context(

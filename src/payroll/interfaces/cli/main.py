@@ -15,8 +15,6 @@ from typing import Annotated, Any, cast
 import typer
 
 from payroll.application.dto import (
-    AssignPlansCommandDTO,
-    ComputeContributionsCommandDTO,
     ComputeIncomeTaxCommandDTO,
     ImportedPayrollPeriodDTO,
     PdfImportPreviewDTO,
@@ -26,8 +24,6 @@ from payroll.application.services.import_reconciliation import (
     conflicting_reconciliation_periods,
     is_import_fully_validated,
 )
-from payroll.application.use_cases.assign_plans import AssignPlans
-from payroll.application.use_cases.compute_contributions import ComputeContributions
 from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
@@ -213,41 +209,6 @@ async def _list_plan_snapshots_async() -> dict[str, object]:
         }
 
 
-async def _assign_plans_async(
-    period_id: int, pension_plan_id: int, health_plan_id: int
-) -> object:
-    """Handle assign plans async."""
-    async with _open_session() as session:
-        use_case = AssignPlans(SqlAlchemyPayrollRepository(session))
-        return await use_case.execute(
-            AssignPlansCommandDTO(
-                period_id=period_id,
-                pension_plan_id=pension_plan_id,
-                health_plan_id=health_plan_id,
-            )
-        )
-
-
-async def _compute_contributions_async(
-    period_id: int,
-    pension_plan_id: int,
-    health_plan_id: int,
-    uf_value_clp: Decimal | None,
-) -> object:
-    """Handle compute contributions async."""
-    async with _open_session() as session:
-        payroll_repository = SqlAlchemyPayrollRepository(session)
-        use_case = ComputeContributions(payroll_repository, _build_pf_rates_client())
-        return await use_case.execute(
-            ComputeContributionsCommandDTO(
-                period_id=period_id,
-                pension_plan_id=pension_plan_id,
-                health_plan_id=health_plan_id,
-                uf_value_clp=uf_value_clp,
-            )
-        )
-
-
 async def _compute_income_tax_async(
     period_id: int, utm_value_clp: Decimal | None
 ) -> object:
@@ -321,49 +282,6 @@ def period_detail(period_id: int) -> None:
 def plan_snapshots() -> None:
     """Handle plan snapshots."""
     _emit_json(_run_command(_list_plan_snapshots_async()))
-
-
-@app.command("assign-plans")
-def assign_plans(period_id: int, pension_plan_id: int, health_plan_id: int) -> None:
-    """Assign plans."""
-    _emit_json(
-        _run_command(_assign_plans_async(period_id, pension_plan_id, health_plan_id))
-    )
-
-
-@app.command("compute-contributions")
-def compute_contributions(
-    period_id: int,
-    pension_plan_id: int,
-    health_plan_id: int,
-    uf_value_clp: Annotated[str | None, typer.Option("--uf-value-clp")] = None,
-) -> None:
-    """Compute contributions."""
-    _emit_json(
-        _run_command(
-            _compute_contributions_async(
-                period_id,
-                pension_plan_id,
-                health_plan_id,
-                _parse_optional_decimal("uf_value_clp", uf_value_clp),
-            )
-        )
-    )
-
-
-@app.command("compute-tax")
-def compute_tax(
-    period_id: int,
-    utm_value_clp: Annotated[str | None, typer.Option("--utm-value-clp")] = None,
-) -> None:
-    """Compute tax."""
-    _emit_json(
-        _run_command(
-            _compute_income_tax_async(
-                period_id, _parse_optional_decimal("utm_value_clp", utm_value_clp)
-            )
-        )
-    )
 
 
 @app.command("template-test")

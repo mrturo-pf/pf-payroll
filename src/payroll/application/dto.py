@@ -376,25 +376,6 @@ class ComputeUnemploymentInsuranceCommandDTO:
 
 
 @dataclass(frozen=True, slots=True)
-class AssignPlansCommandDTO:
-    """Represent Assign Plans Command DTO."""
-
-    period_id: int
-    pension_plan_id: int
-    health_plan_id: int
-
-
-@dataclass(frozen=True, slots=True)
-class AssignPlansResultDTO:
-    """Represent Assign Plans Result DTO."""
-
-    period_id: int
-    payment_date: date
-    pension_plan_id: int
-    health_plan_id: int
-
-
-@dataclass(frozen=True, slots=True)
 class ContributionComputationContextDTO:
     """Represent Contribution Computation Context DTO.
 

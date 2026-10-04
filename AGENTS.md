@@ -85,7 +85,12 @@ make local-up              # start API (requires pf-db running)
 make check                 # lint → dead-code → typecheck → dup-check → test → test-cov
 ```
 
-## GitHub CLI prerequisite
+## CLI policy
+
+Do not implement, add, restore, or expand any CLI command in `pf-payroll`. Use the
+supported HTTP API and existing automation instead. Any exception requires explicit
+user approval first.
+
 
 Before any interaction with GitHub using `gh`, including read-only commands, execute
 `unset-proxies` first:

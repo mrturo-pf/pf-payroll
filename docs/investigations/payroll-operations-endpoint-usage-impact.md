@@ -27,7 +27,29 @@ modules/pf-payroll/src/payroll/interfaces/api/routes/payroll.py
 
 La colección Postman y `docs/api.md` deben coincidir con esta tabla.
 
-## Qué cambió respecto del análisis anterior
+## Validación final de superficie expuesta
+
+El 2026-10-03 se compararon automáticamente las rutas OpenAPI generadas por la aplicación
+contra `docs/api.md` y contra los requests de `pf-payroll` en la colección Postman.
+
+Resultado:
+
+- OpenAPI: **19 operaciones** incluyendo `/health`.
+- `docs/api.md`: coincidencia exacta para todas las operaciones documentadas; las rutas
+  internas de FastAPI (`/docs`, `/redoc`, `/openapi.json`) no forman parte del inventario
+  funcional.
+- Postman: **19 requests de `pf-payroll`**, cubriendo los mismos endpoints funcionales;
+  algunas requests usan ids concretos de ejemplo para `{period_id}` y `{template_id}`.
+- Diferencias de operaciones retiradas: **ninguna**.
+
+Las tres operaciones retiradas no aparecen en OpenAPI, `docs/api.md` ni Postman:
+
+```text
+POST /payroll/{period_id}/assign-plans
+POST /payroll/{period_id}/compute-contributions
+POST /payroll/{period_id}/compute-tax
+```
+
 
 El análisis original recomendaba eliminar `assign-plans`, `compute-contributions`,
 `compute-tax` y `deflate`, y mantener `review`. La implementación realizada no siguió

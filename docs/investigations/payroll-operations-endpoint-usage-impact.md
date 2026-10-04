@@ -1,48 +1,47 @@
-# Uso e impacto de los endpoints de operaciones de `pf-payroll`
+# Usage and impact of `pf-payroll` operation endpoints
 
-**Última actualización:** 2026-10-03
-**Estado:** actualizado después de retirar estas tres superficies HTTP y CLI.
-**Alcance:** ecosistema `pf-*` completo (`pf-base`, `pf-payroll`, `pf-rates`, `pf-sheets`, `pf-db`)
+**Last updated:** 2026-10-03
+**Status:** updated after removing these three HTTP and CLI surfaces.
+**Scope:** complete `pf-*` ecosystem (`pf-base`, `pf-payroll`, `pf-rates`, `pf-sheets`, `pf-db`)
 
-## Estado actual
+## Current status
 
-Este documento reemplaza el snapshot del 2026-10-02. La recomendación anterior quedó
-obsoleta después de su implementación parcial.
+This document replaces the 2026-10-02 snapshot. The previous recommendation became
+obsolete after its partial implementation.
 
-La superficie HTTP actual de operaciones es:
+The current HTTP operation surface is:
 
-| Endpoint | HTTP actual | CLI/use case actual | Estado |
+| Endpoint | Current HTTP surface | Current CLI/use-case surface | Status |
 | --- | --- | --- | --- |
-| `POST /payroll/{period_id}/assign-plans` | No | No | Eliminado |
-| `POST /payroll/{period_id}/compute-contributions` | No | No; servicio interno conservado | Eliminado como wrapper |
-| `POST /payroll/{period_id}/compute-tax` | No | No; use case interno conservado | Eliminado como adaptador |
-| `POST /payroll/{period_id}/review` | No | No | Eliminado |
-| `POST /payroll/{period_id}/deflate` | No | No dedicado; lógica interna relacionada permanece | Eliminado como HTTP |
+| `POST /payroll/{period_id}/assign-plans` | No | No | Removed |
+| `POST /payroll/{period_id}/compute-contributions` | No | No; internal service preserved | Wrapper removed |
+| `POST /payroll/{period_id}/compute-tax` | No | No; internal use case preserved | Adapter removed |
+| `POST /payroll/{period_id}/review` | No | No | Removed |
+| `POST /payroll/{period_id}/deflate` | No | No dedicated surface; related internal logic remains | Removed as HTTP surface |
 
-La fuente de verdad para las rutas es:
+The source of truth for routes is:
 
 ```text
 modules/pf-payroll/src/payroll/interfaces/api/routes/payroll.py
 ```
 
-La colección Postman y `docs/api.md` deben coincidir con esta tabla.
+The Postman collection and `docs/api.md` must match this table.
 
-## Validación final de superficie expuesta
+## Final exposed-surface validation
 
-El 2026-10-03 se compararon automáticamente las rutas OpenAPI generadas por la aplicación
-contra `docs/api.md` y contra los requests de `pf-payroll` en la colección Postman.
+On 2026-10-03, the generated application OpenAPI routes were automatically compared with
+`docs/api.md` and with the `pf-payroll` requests in the Postman collection.
 
-Resultado:
+Result:
 
-- OpenAPI: **19 operaciones** incluyendo `/health`.
-- `docs/api.md`: coincidencia exacta para todas las operaciones documentadas; las rutas
-  internas de FastAPI (`/docs`, `/redoc`, `/openapi.json`) no forman parte del inventario
-  funcional.
-- Postman: **19 requests de `pf-payroll`**, cubriendo los mismos endpoints funcionales;
-  algunas requests usan ids concretos de ejemplo para `{period_id}` y `{template_id}`.
-- Diferencias de operaciones retiradas: **ninguna**.
+- OpenAPI: **19 operations**, including `/health`.
+- `docs/api.md`: exact match for all documented operations; FastAPI internal routes
+  (`/docs`, `/redoc`, `/openapi.json`) are not part of the functional inventory.
+- Postman: **19 `pf-payroll` requests**, covering the same functional endpoints; some
+  requests use concrete example IDs for `{period_id}` and `{template_id}`.
+- Differences involving removed operations: **none**.
 
-Las tres operaciones retiradas no aparecen en OpenAPI, `docs/api.md` ni Postman:
+The three removed operations do not appear in OpenAPI, `docs/api.md`, or Postman:
 
 ```text
 POST /payroll/{period_id}/assign-plans
@@ -50,34 +49,33 @@ POST /payroll/{period_id}/compute-contributions
 POST /payroll/{period_id}/compute-tax
 ```
 
+The original analysis recommended removing `assign-plans`, `compute-contributions`,
+`compute-tax`, and `deflate` while keeping `review`. The implementation did not follow
+that recommendation literally:
 
-El análisis original recomendaba eliminar `assign-plans`, `compute-contributions`,
-`compute-tax` y `deflate`, y mantener `review`. La implementación realizada no siguió
-esa recomendación literalmente:
+- `assign-plans` was removed completely, including its use case, DTOs, repository method,
+  CLI command, route, tests, and Postman request.
+- `compute-contributions` lost its HTTP/CLI wrapper. `ContributionComputationService` and
+  its calculation DTOs were preserved because import post-processing uses them.
+- `compute-tax` lost its HTTP/CLI adapters. `ComputeIncomeTax` was preserved because
+  `ProcessImportedPayrollPeriods` executes it automatically.
 
-- `assign-plans` fue eliminado por completo, incluyendo su use case, DTOs,
-  método de repositorio, comando CLI, ruta, tests y request Postman.
-- `compute-contributions` perdió su wrapper HTTP/CLI. `ContributionComputationService`
-  y los DTOs de cálculo se conservaron porque el post-procesamiento de importación los usa.
-- `compute-tax` perdió sus adaptadores HTTP/CLI. `ComputeIncomeTax` se conservó porque
-  `ProcessImportedPayrollPeriods` lo ejecuta automáticamente.
+Therefore, the previous document must be treated as historical evidence, not as a
+description of the current system.
 
-Por lo tanto, el documento anterior debe interpretarse como evidencia histórica y no
-como una descripción del sistema actual.
+## Historical production evidence
 
-## Evidencia histórica de producción
+The log window reviewed on 2026-10-02 showed:
 
-En la ventana de logs consultada el 2026-10-02 se observó:
-
-| Endpoint | Requests observados | Resultado |
+| Endpoint | Observed requests | Result |
 | --- | ---: | --- |
-| `assign-plans` | 0 | Sin requests observados |
-| `compute-contributions` | 0 | Sin requests observados |
-| `compute-tax` | 0 | Sin requests observados |
+| `assign-plans` | 0 | No observed requests |
+| `compute-contributions` | 0 | No observed requests |
+| `compute-tax` | 0 | No observed requests |
 | `review` | 2 | 1 × `200`, 1 × `404` |
 | `deflate` | 1 | 1 × `404` |
 
-El request exitoso de `review` fue:
+The successful `review` request was:
 
 ```text
 POST /payroll/548/review → 200
@@ -85,105 +83,102 @@ User-Agent: PostmanRuntime/2.7.0
 Timestamp: 2026-09-28T19:39:55Z
 ```
 
-Ese tráfico explica por qué la recomendación original proponía mantener `review`, pero
-la decisión posterior fue eliminar ese workflow. La evidencia histórica no debe
-confundirse con la superficie HTTP actual.
+That traffic explains why the original recommendation proposed keeping `review`, but the
+subsequent decision was to remove that workflow. Historical evidence must not be confused
+with the current HTTP surface.
 
-## Consumidores dentro del ecosistema
+## Consumers inside the ecosystem
 
-No se encontraron llamadas desde `pf-rates`, `pf-sheets` ni `pf-db` hacia estas rutas.
+No calls from `pf-rates`, `pf-sheets`, or `pf-db` to these routes were found.
 
-- `pf-rates` no consume `pf-payroll`.
-- `pf-sheets` usa export CSV desde `pf-rates` y la pestaña local `VALUES`.
-- `pf-db` contiene DDL, migraciones y seeds; no consume HTTP.
-- Los comandos CLI y los flujos internos de `pf-payroll` no son consumidores HTTP.
+- `pf-rates` does not consume `pf-payroll`.
+- `pf-sheets` uses the CSV export from `pf-rates` and its local `VALUES` sheet.
+- `pf-db` contains DDL, migrations, and seeds; it does not consume HTTP.
+- CLI commands and internal `pf-payroll` flows are not HTTP consumers.
 
-La ausencia de consumidores internos sigue siendo cierta, pero no demuestra por sí sola
-que una ruta administrativa no tenga uso manual externo al repositorio.
+The absence of internal consumers remains true, but it does not by itself prove that an
+administrative route had no manual use outside the repositories.
 
-## Evaluación actual por endpoint
+## Current endpoint evaluation
 
 ### `assign-plans`
 
-Fue eliminado de HTTP, CLI, Postman y de la capa de aplicación. La importación no usa
-este use case eliminado: asigna planes complementarios mediante
-`ComplementaryInsuranceService`, que es una operación distinta y permanece activa.
+It was removed from HTTP, CLI, Postman, and the application layer. Import processing does
+not use this removed use case; it assigns complementary plans through
+`ComplementaryInsuranceService`, which is a separate operation and remains active.
 
-**Estado actual:** eliminado completamente.
+**Current status:** completely removed.
 
 ### `compute-contributions`
 
-El wrapper HTTP/CLI fue eliminado. La lógica reutilizable no fue eliminada:
-`ContributionComputationService` sigue siendo instanciado por
-`ProcessImportedPayrollPeriods` durante el procesamiento automático de importaciones.
+The HTTP/CLI wrapper was removed. The reusable logic was not removed:
+`ContributionComputationService` is still instantiated by
+`ProcessImportedPayrollPeriods` during automatic import processing.
 
-**Estado actual:** adaptadores HTTP/CLI eliminados; servicio interno conservado.
+**Current status:** HTTP/CLI adapters removed; internal service preserved.
 
 ### `compute-tax`
 
-Los adaptadores HTTP y CLI fueron eliminados. `ComputeIncomeTax` permanece como use case
-interno y es instanciado y ejecutado por `ProcessImportedPayrollPeriods` cuando el período
-importado cumple las precondiciones.
+The HTTP and CLI adapters were removed. `ComputeIncomeTax` remains an internal use case
+and is instantiated and executed by `ProcessImportedPayrollPeriods` when the imported
+period meets its prerequisites.
 
-**Estado actual:** adaptadores HTTP/CLI eliminados; use case interno conservado.
+**Current status:** HTTP/CLI adapters removed; internal use case preserved.
 
 ### `review`
 
-Ya no existe como ruta HTTP ni como comando CLI. También se eliminó el workflow de
-revisión y los contratos asociados a `PAY_PERIOD.status`.
+It no longer exists as an HTTP route or CLI command. The review workflow and contracts
+associated with `PAY_PERIOD.status` were also removed.
 
-La evidencia histórica de un request `200` queda registrada únicamente como contexto
-de migración. No debe agregarse nuevamente a Postman ni a `docs/api.md` sin una nueva
-decisión de diseño.
+The historical `200` request is recorded only as migration context. It must not be added
+back to Postman or `docs/api.md` without a new design decision.
 
-**Estado actual:** eliminado intencionalmente.
+**Current status:** intentionally removed.
 
 ### `deflate`
 
-Ya no existe como endpoint HTTP ni request Postman. El use case interno
-`DeflateAmounts` permanece porque todavía forma parte de lógica de aplicación usada por
-otros flujos, aunque no tiene una interfaz HTTP dedicada.
+It no longer exists as an HTTP endpoint or Postman request. The internal
+`DeflateAmounts` use case remains because other application flows still use related logic,
+although it has no dedicated HTTP interface.
 
-No hubo evidencia histórica de uso HTTP exitoso; el único request observado terminó en
-`404`.
+There is no evidence of a successful historical HTTP use; the only observed request ended
+with `404`.
 
-**Estado actual:** eliminado de HTTP; no eliminar todavía el use case interno sin una
-revisión separada de sus call sites.
+**Current status:** removed from HTTP; do not remove the internal use case without a
+separate call-site review.
 
-## Recomendación vigente
+## Current recommendation
 
-La decisión actual no debe formularse como “eliminar cuatro endpoints y mantener
-review”. Esa recomendación ya fue parcialmente ejecutada de otra manera.
+The current decision should not be described as “remove four endpoints and keep `review`.”
+That recommendation was already partially implemented in a different form.
 
-La recomendación anterior queda reemplazada por la implementación realizada:
+The previous recommendation is superseded by the implementation that was completed:
 
-1. eliminar completamente `assign-plans`;
-2. eliminar el wrapper `ComputeContributions`, pero conservar
+1. remove `assign-plans` completely;
+2. remove the `ComputeContributions` wrapper while preserving
    `ContributionComputationService`;
-3. eliminar únicamente los adaptadores HTTP/CLI de `compute-tax`, conservando
-   `ComputeIncomeTax`;
-4. conservar el post-procesamiento automático de importación;
-5. no reintroducir requests Postman para estas operaciones.
+3. remove only the HTTP/CLI adapters for `compute-tax` while preserving `ComputeIncomeTax`;
+4. preserve automatic import post-processing;
+5. do not reintroduce Postman requests for these operations.
 
-## Checklist de consistencia actual
+## Current consistency checklist
 
-- `review` no debe aparecer como endpoint en `docs/api.md` ni Postman.
-- `deflate` no debe aparecer como endpoint en `docs/api.md` ni Postman.
-- `assign-plans`, `compute-contributions` y `compute-tax` no deben aparecer como
-  endpoints ni comandos CLI en `docs/api.md` ni Postman.
-- `ContributionComputationService` debe seguir cubierto por tests y usado por la
-  importación automática.
-- `ComputeIncomeTax` debe seguir cubierto por tests y usado por la importación automática.
-- La evidencia histórica de logs queda solo como contexto, no como inventario actual.
+- `review` must not appear as an endpoint in `docs/api.md` or Postman.
+- `deflate` must not appear as an endpoint in `docs/api.md` or Postman.
+- `assign-plans`, `compute-contributions`, and `compute-tax` must not appear as endpoints
+  or CLI commands in `docs/api.md` or Postman.
+- `ContributionComputationService` must remain covered by tests and used by automatic
+  import processing.
+- `ComputeIncomeTax` must remain covered by tests and used by automatic import processing.
+- Historical log evidence remains context only, not the current inventory.
 
-## Conclusión
+## Conclusion
 
-El documento describe ahora el estado verificado después de retirar las tres superficies
-HTTP/CLI. Las rutas de operaciones analizadas no aparecen en el OpenAPI actual ni en
-Postman; solo permanecen servicios/use cases internos donde el flujo de importación los
-necesita.
+This document now describes the verified state after removing the three HTTP/CLI surfaces.
+The analyzed operation routes do not appear in current OpenAPI or Postman; only internal
+services/use cases required by the import flow remain.
 
-La conclusión actual es: las tres operaciones ya no tienen superficie HTTP ni CLI.
-`assign-plans` fue eliminado entero. El servicio interno de contribuciones y el use case
-interno de impuesto permanecen porque los necesita el flujo automático de importación.
-`review` y `deflate` HTTP también continúan retirados.
+The current conclusion is: the three operations no longer have HTTP or CLI surfaces.
+`assign-plans` was removed entirely. The internal contribution service and internal tax
+use case remain because the automatic import flow requires them. The HTTP `review` and
+`deflate` surfaces also remain removed.

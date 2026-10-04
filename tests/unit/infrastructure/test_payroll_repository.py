@@ -3202,7 +3202,7 @@ async def test_project_future_months_skips_extrapolation_fetch_when_cycle_covere
     """M >= N: use the real ratio as-is, never even attempt the trailing fetch.
 
     Proves the "cheap path" claim from docs/proposals/future-increase-ipc-
-    extrapolation-design-recommendation.md Section 2.2: when the months
+    extrapolation-recommendation.md Section 2.2: when the months
     already elapsed since the last real increase (M) already cover (or
     exceed) the employer's configured cycle (N), there is nothing left to
     extrapolate, so `_extrapolate_cycle_ratio()` must return early without
@@ -3261,7 +3261,7 @@ async def test_project_future_months_deflation_floor_gates_on_consolidated_ratio
     trailing-12-month anchor reveals a strong enough deflationary trend that
     compounding it across the missing months pulls the consolidated ratio
     below 1 -- proving the floor (docs/proposals/future-increase-ipc-
-    extrapolation-design-recommendation.md, Section 5) is gated on
+    extrapolation-recommendation.md, Section 5) is gated on
     `total_ratio`, not the pre-extrapolation `real_ratio`.
     """
     market_data_repository = FakeMarketDataRepository(

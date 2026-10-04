@@ -1,7 +1,7 @@
 ## 0. Scope
 
 This recommendation answers
-`docs/proposals/future-increase-ipc-extrapolation-design-brief.md` in full: it
+`docs/proposals/future-increase-ipc-extrapolation-brief.md` in full: it
 resolves the brief's three flagged blind spots, answers all 7 "What I need"
 items, and ends with a concrete implementation plan. No code has been changed
 yet -- this is the design only, same two-step process as every other proposal
@@ -223,7 +223,7 @@ becomes `if total_ratio < 1: return ... _NO_INCREASE_PCT` -- same semantics
 ("don't reduce pay"), now evaluated against the number that actually matters.
 A tie (`total_ratio == 1`) continues to **not** be treated as deflation,
 unchanged from today's `<` (strict) comparison -- same reasoning as
-Section 10 of `net-pay-prediction-reimplementation-design-plan.md` (a flat
+Section 10 of `net-pay-prediction-reimplementation-plan.md` (a flat
 step still advances the anchor).
 
 ## 6. Function signature / call-site changes (What I need, item 5)
@@ -389,7 +389,7 @@ unless noted:
    `_apply_ipc_step()` call-site updates, then the `project_future_months()`
    worked-example update, then the end-to-end `list_period_ranges()` test.
 4. **Docs**: add a new numbered section to
-   `net-pay-prediction-reimplementation-design-plan.md` documenting what was
+   `net-pay-prediction-reimplementation-plan.md` documenting what was
    actually built (same convention this file has followed for every prior
    change to this area, Sections 10-14). `docs/api.md`'s existing wording for
    `increase` ("the same IPC-based ratio used to step net_pay_clp... 0.00 on

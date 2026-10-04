@@ -7,8 +7,8 @@ no longer from git-tracked JSON files. Management (create/modify/logical
 delete) happens through `POST`/`PUT`/`DELETE /payroll/templates*` (see
 `interfaces/api/routes/pdf_templates.py`), not by hand-editing a file in
 this repo. See
-`docs/proposals/pdf-template-management-design-recommendation.md` for why
-this moved, and `-design-plan.md` for the migration itself.
+`docs/proposals/pdf-template-management-recommendation.md` for why
+this moved, and `-plan.md` for the migration itself.
 """
 
 from __future__ import annotations

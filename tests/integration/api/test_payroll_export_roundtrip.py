@@ -17,7 +17,7 @@ risk this feature introduces -- CONCEPT_MAP (or the wide-format column set)
 drifting between the import and export sides -- lives entirely in this
 boundary, not in PayrollRepository's pre-existing (and separately tested)
 upsert semantics for import_rows(). See
-docs/proposals/spreadsheet-export-design-plan.md for the full reasoning.
+docs/proposals/spreadsheet-export-plan.md for the full reasoning.
 """
 
 from datetime import date

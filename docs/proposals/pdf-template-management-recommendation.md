@@ -1,6 +1,6 @@
 # Response: PDF Template Management Design
 
-Response to `pdf-template-management-design-brief.md`. Grounded in the actual code
+Response to `pdf-template-management-brief.md`. Grounded in the actual code
 (`templates.py`, `extractor.py`, `preview_pdf_import.py`, `dependencies.py`,
 `pf-db/db/01_schema.sql`, `test_templates.py`) rather than assumptions.
 

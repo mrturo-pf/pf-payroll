@@ -7,7 +7,7 @@
 > "How this was investigated" below). Implementation starts only after the user
 > reviews this and confirms. Once started, this file gets updated in place with real
 > findings/corrections, dated, per this folder's existing convention
-> (`spreadsheet-export-design-plan.md`, `pdf-template-management-design-plan.md`).
+> (`spreadsheet-export-plan.md`, `pdf-template-management-plan.md`).
 
 ## How this was investigated (not guessed)
 

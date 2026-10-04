@@ -1,7 +1,7 @@
 # Payroll Update and Delete API — Recommendation
 
 > This recommendation answers
-> [`payroll-update-delete-design-brief.md`](payroll-update-delete-design-brief.md)
+> [`payroll-update-delete-brief.md`](payroll-update-delete-brief.md)
 after reading the current `pf-payroll` routes, DTOs, use cases, repository ports,
 SQLAlchemy adapters, transaction scope, models, tests, and API documentation.
 
@@ -80,7 +80,7 @@ about period identity.
 ### 3.1 Update or insert: `POST /payroll/import/json`
 
 Request shape: use the complete period object described in the brief's
-[validation example](payroll-update-delete-design-brief.md#validate-an-update-without-persisting-it),
+[validation example](payroll-update-delete-brief.md#validate-an-update-without-persisting-it),
 with an optional `period_id` field. The abbreviated form is:
 
 ```json

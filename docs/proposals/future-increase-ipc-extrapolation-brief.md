@@ -2,8 +2,8 @@
 
 `GET /payroll/period-range` already projects a salary-base `increase` percentage for
 each of the 12 future months in its window (see
-`docs/proposals/net-pay-prediction-reimplementation-design-plan.md`, Sections 10-12,
-and `docs/proposals/net-pay-prediction-reimplementation-design-recommendation.md`).
+`docs/proposals/net-pay-prediction-reimplementation-plan.md`, Sections 10-12,
+and `docs/proposals/net-pay-prediction-reimplementation-recommendation.md`).
 The relevant code is `payroll/infrastructure/db/repositories/payroll_repository_shared.py`:
 
 ```python
@@ -144,13 +144,13 @@ instead of estimating them, which understates the true expected adjustment.
 - **This feeds both `net_pay_clp` *and* `increase_pct`.** `_apply_ipc_step()`
   returns one ratio used for both the displayed percentage and to scale
   `current_value` into the next stepped `net_pay_clp`
-  (`net-pay-prediction-reimplementation-design-plan.md` Section 12 explicitly chose
+  (`net-pay-prediction-reimplementation-plan.md` Section 12 explicitly chose
   to derive `increase_pct` from the *raw* ratio rather than re-deriving `net_pay_clp`
   from an already-quantized percentage, specifically to avoid compounding rounding
   error). Whatever new consolidated rate this brief produces must replace that same
   single ratio for *both* consumers consistently — do not special-case one over the
   other.
-- **Must not regress the deflation floor** (`net-pay-prediction-reimplementation-design-plan.md`
+- **Must not regress the deflation floor** (`net-pay-prediction-reimplementation-plan.md`
   Section 10): a negative step is still held flat instead of reducing pay. State
   explicitly whether that floor now applies to the *consolidated* projected rate (my
   expectation) or still only to the simple M-month-only ratio.
@@ -163,7 +163,7 @@ instead of estimating them, which understates the true expected adjustment.
   (`--cov-fail-under=100`) — the `M >= N` guard, the new missing-N-months-back-data
   path, and the arithmetic-vs-geometric choice each need their own dedicated test,
   the same way the existing deflation-floor guard and zero-salary-predecessor guard
-  each got one (see `net-pay-prediction-reimplementation-design-plan.md` Sections 10
+  each got one (see `net-pay-prediction-reimplementation-plan.md` Sections 10
   and 12 for precedent).
 
 ## What I need
@@ -202,7 +202,7 @@ instead of estimating them, which understates the true expected adjustment.
 - **Deliverable:** a new Markdown file (not an inline reply, not a code PR), placed
   in the same folder as this document (`docs/proposals/`), named so it is clearly
   the recommendation that answers this brief (e.g.
-  `future-increase-ipc-extrapolation-design-recommendation.md`).
+  `future-increase-ipc-extrapolation-recommendation.md`).
 - Ground every claim in the actual code (`payroll_repository_shared.py`,
   `shared/dates.py`, `payroll_repository_queries.py`,
   `application/ports/repositories.py`, `pf-db/db/01_schema.sql`) the way prior

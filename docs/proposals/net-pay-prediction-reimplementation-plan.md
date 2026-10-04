@@ -1,13 +1,13 @@
 # Net-pay prediction — extending to all 12 future months (implementation plan)
 
 > Mirrors the convention set by `pdf-import-action-plan.md`,
-> `spreadsheet-export-design-plan.md`, and `pdf-template-management-design-plan.md`:
+> `spreadsheet-export-plan.md`, and `pdf-template-management-plan.md`:
 > the brief/recommendation for a feature stay frozen as originally written; a
 > separate `*-plan.md` gets updated with real progress, findings, and decisions,
 > dated, as the feature is actually built.
 >
 > **Frozen input for this plan:**
-> `net-pay-prediction-reimplementation-design-recommendation.md` — that document
+> `net-pay-prediction-reimplementation-recommendation.md` — that document
 > already carries its own `## 9. Implementation results` section covering **Stage
 > 1** (restoring the first-future-period UF-based prediction after the `pf-rates`
 > migration had silently stubbed it out). This plan covers **Stage 2**, a distinct,

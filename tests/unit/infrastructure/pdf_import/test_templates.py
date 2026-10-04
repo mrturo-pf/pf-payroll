@@ -175,7 +175,7 @@ def _corporative_chile_v1_dto() -> PdfTemplateDTO:
     This is a Python-literal mirror of the former
     infrastructure/pdf_import/templates/walmart-chile/v1.json (deleted --
     templates now live in pf-db's PAY_PDF_TEMPLATE*, see
-    docs/proposals/pdf-template-management-design-plan.md), and of the
+    docs/proposals/pdf-template-management-plan.md), and of the
     identical data seeded by pf-db's db/04_seed_real.sql. Kept here, not
     read from a live database, so this remains a DB-free *unit* test of the
     matching logic -- the real SQL query against the seeded row gets its own

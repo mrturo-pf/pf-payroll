@@ -336,7 +336,7 @@ that's the architectural guarantee that the preview can never *write* to the dat
 `EmployerPaymentRuleReader` -- "no persistence" only ever meant "no writes"). Full
 design and implementation detail in
 [`docs/proposals/pdf-import-action-plan.md`](proposals/pdf-import-action-plan.md) and
-[`docs/proposals/pdf-template-management-design-plan.md`](proposals/pdf-template-management-design-plan.md).
+[`docs/proposals/pdf-template-management-plan.md`](proposals/pdf-template-management-plan.md).
 
 ```python
 # src/payroll/infrastructure/pdf_import/extractor.py

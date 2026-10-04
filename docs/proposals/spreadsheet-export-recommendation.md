@@ -1,6 +1,6 @@
 # Response: Spreadsheet Export + Blank Template Design
 
-Response to `spreadsheet-export-design-brief.md`. Grounded in the actual code
+Response to `spreadsheet-export-brief.md`. Grounded in the actual code
 (`CONCEPT_MAP`, `PayrollRepository`, the `PAY_CONCEPT` reference seed, and the existing
 test fixtures) rather than assumptions.
 

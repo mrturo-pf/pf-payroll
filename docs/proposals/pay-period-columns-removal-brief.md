@@ -295,7 +295,7 @@ The recommendation should provide:
 ## Response format
 
 - **Deliverable:** a new Markdown recommendation file in this same folder:
-  `docs/proposals/pay-period-columns-removal-design-recommendation.md`.
+  `docs/proposals/pay-period-columns-removal-recommendation.md`.
 - Ground the recommendation in the actual schema and code, especially:
   - `modules/pf-db/db/01_schema.sql`;
   - `modules/pf-db/alembic/versions/0002_payroll_schema.py`;

@@ -63,7 +63,7 @@ NET_PAY_COLUMN = "net_pay"
 # ComputeUnemploymentInsurance), never declared via the wide import format.
 # The real export (never the blank template) appends one extra column per
 # entry, in dict order, after NET_PAY_COLUMN. See
-# docs/proposals/spreadsheet-export-design-recommendation.md, Item 1, for why
+# docs/proposals/spreadsheet-export-recommendation.md, Item 1, for why
 # these two specifically and why the importer must keep ignoring them on
 # re-import rather than rejecting or persisting them.
 COMPUTED_ONLY_CONCEPT_COLUMNS = {

@@ -1,7 +1,7 @@
 # PDF template management — implementation plan (living document)
 
 > Mirrors the convention set by `pdf-import-action-plan.md` and
-> `spreadsheet-export-design-plan.md`: the design brief and design recommendation stay
+> `spreadsheet-export-plan.md`: the design brief and design recommendation stay
 > frozen as originally written; this file gets updated with real progress, findings,
 > and decisions, dated, as the feature is actually built.
 
@@ -135,7 +135,7 @@ considered done.
 ## Findings not anticipated by the design recommendation
 
 Documenting these here rather than silently working around them, per the project
-convention established by `spreadsheet-export-design-plan.md`'s own "corrections"
+convention established by `spreadsheet-export-plan.md`'s own "corrections"
 section.
 
 ### Finding 1 — the CLI's `template-test` command silently lost its "no DB access" property
@@ -247,7 +247,7 @@ clean, `mypy src` clean (0 errors across 97 source files). No tests skipped, no 
 required for anything in this session's scope — Stage 0's DB-level pieces are
 unit/structurally verified through this session's mocked-session repository tests, not
 a live Postgres; a live round-trip against the real seeded `walmart-chile-v1` row
-(matching `spreadsheet-export-design-plan.md`'s own "Live verification" precedent) is a
+(matching `spreadsheet-export-plan.md`'s own "Live verification" precedent) is a
 documented follow-up, not done this session.
 
 ## Docs / Postman updates (same session, per the mandatory-tracking rule)
@@ -278,7 +278,7 @@ documented follow-up, not done this session.
 - `src/payroll/interfaces/api/routes/pdf_templates.py`
 - `tests/unit/infrastructure/db/repositories/test_template_repository.py`
 - `tests/integration/api/test_pdf_templates.py`
-- `docs/proposals/pdf-template-management-design-plan.md` (this file)
+- `docs/proposals/pdf-template-management-plan.md` (this file)
 
 **Modified (`pf-payroll`):**
 - `src/payroll/application/dto.py` (added `PdfTemplateFieldDTO`, `PdfTemplateDTO`)

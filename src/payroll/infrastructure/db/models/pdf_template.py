@@ -2,7 +2,7 @@
 
 See `pf-db/alembic/versions/0009_pdf_template_tables.py` for the schema this
 mirrors, and
-`docs/proposals/pdf-template-management-design-recommendation.md` for why
+`docs/proposals/pdf-template-management-recommendation.md` for why
 these tables replaced the former git-tracked JSON template files.
 """
 

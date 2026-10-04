@@ -1,7 +1,7 @@
 # Remove `PAY_PERIOD.status` and `employment_contract_kind` — recommendation
 
 > This recommendation answers
-> `pay-period-columns-removal-design-brief.md` after reading the real `pf-db` schema,
+> `pay-period-columns-removal-brief.md` after reading the real `pf-db` schema,
 > `pf-payroll` ORM/models, calculation services, import/export paths, PDF preview, API,
 > CLI, tests, and the current Postman surface.
 >

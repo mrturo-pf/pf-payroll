@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-04
 **Repository:** `pf-payroll`
-**Related analysis:** [`../investigations/cli-removal-impact.md`](../investigations/cli-removal-impact.md)
+**Related analysis:** [`../investigations/cli-removal.md`](../investigations/cli-removal.md)
 **Status:** proposal prepared; implementation pending
 
 ## Objective

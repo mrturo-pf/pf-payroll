@@ -80,7 +80,7 @@ def get_payroll_repository(
     list_period_ranges() can predict the first future period's net_pay_clp
     via pf-rates-backed UF values; every other PayrollRepository consumer
     simply never reads it. See docs/proposals/net-pay-prediction-
-    reimplementation-design-recommendation.md.
+    reimplementation-recommendation.md.
     """
     return SqlAlchemyPayrollRepository(session, get_market_data_repository())
 

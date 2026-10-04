@@ -377,11 +377,11 @@ async def _apply_ipc_step(
     latest figure's own period is not itself later than `increase_month`
     (it never should be, since IPC is only ever published for the past,
     but this is the explicit guard requested in
-    docs/proposals/net-pay-prediction-reimplementation-design-plan.md).
+    docs/proposals/net-pay-prediction-reimplementation-plan.md).
     The ratio between those two points (M months of real data) is then
     extrapolated up to the employer's full configured cycle (N months) by
     `_extrapolate_cycle_ratio()` -- see its own docstring and
-    docs/proposals/future-increase-ipc-extrapolation-design-recommendation.md
+    docs/proposals/future-increase-ipc-extrapolation-recommendation.md
     for why M alone previously understated the real adjustment.
 
     Any missing ingredient (no prior real increase to anchor on, no IPC
@@ -396,7 +396,7 @@ async def _apply_ipc_step(
     (a net decrease) after extrapolation, the previous net pay is kept
     as-is instead of being reduced -- salaries do not get cut due to
     deflation in practice, only held flat (explicit user requirement, see
-    docs/proposals/net-pay-prediction-reimplementation-design-plan.md).
+    docs/proposals/net-pay-prediction-reimplementation-plan.md).
     Gated on the final, consolidated ratio rather than the raw M-month-only
     ratio (docs/proposals/future-increase-ipc-extrapolation-design-
     recommendation.md, Section 5) since that consolidated ratio is what

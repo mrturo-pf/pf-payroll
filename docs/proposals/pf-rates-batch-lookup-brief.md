@@ -177,7 +177,7 @@ A design recommendation resolving:
 ## Response format
 
 - **Deliverable:** a new Markdown file in this same folder
-  (`docs/proposals/pf-rates-batch-lookup-design-recommendation.md`).
+  (`docs/proposals/pf-rates-batch-lookup-recommendation.md`).
 - Ground every claim in the actual code (`pf_rates_client.py`, `_http_client.py`,
   `_ttl_cache.py`, `payroll_repository_shared.py`, `payroll_repository_queries.py`,
   `export_exchange_rates_csv.py`, `export_combined_financial_data_csv.py`,
@@ -187,7 +187,7 @@ A design recommendation resolving:
 - **Note for whoever picks this up:** a first pass at exactly this recommendation's
   job was already produced directly (skipping the brief step, since the investigation
   that normally justifies a brief had already happened live in conversation) as
-  `pf-rates-batch-lookup-design-plan.md` in this same folder. This brief was written
+  `pf-rates-batch-lookup-plan.md` in this same folder. This brief was written
   retroactively, after that plan, specifically so this proposal's paper trail matches
   this folder's established three-document convention (brief → recommendation → plan)
   for anyone reading the history later. Treat the existing plan as a strong draft

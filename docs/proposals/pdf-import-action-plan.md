@@ -1,7 +1,7 @@
 # PDF import — action plan (living document)
 
-> **Rule for this document:** unlike `pdf-import-design-brief.md` and
-> `pdf-import-design-recommendation.md` (which are the original request and analysis,
+> **Rule for this document:** unlike `pdf-import-brief.md` and
+> `pdf-import-recommendation.md` (which are the original request and analysis,
 > and stay frozen as they were written), **this file gets updated every work session**
 > on the feature. Any progress, new finding, decision made, or scope change goes here,
 > dated, before a stage is considered closed. If you find this document out of date
@@ -115,7 +115,7 @@ validation described in "What was done" without triggering `PayrollValidationErr
     the user's real payslip (`secrets/Liquidación_202608.PDF`, never committed — only
     used locally to design/test the template). Maps WALMART-CHILE's 13 real concepts to
     their `concept_code` from `PAY_CONCEPT`, with the confidence already agreed on in
-    `pdf-import-design-recommendation.md` (High=0.9, Medium-High=0.75, Medium=0.6).
+    `pdf-import-recommendation.md` (High=0.9, Medium-High=0.75, Medium=0.6).
     Verified end to end against the real PDF: employer, period (2026-8, already under
     the new convention), worked days (30), and net pay (3,133,182) — all 13 concepts
     resolve to a `concept_code`, zero unresolved rows.
@@ -144,7 +144,7 @@ validation described in "What was done" without triggering `PayrollValidationErr
 - There is only a template for WALMART-CHILE. Any other employer/format currently falls
   into "no template" (preview with unresolved rows, but the header still parsed).
 - No OCR, no LLM — scanned PDFs with no selectable text layer return an empty preview.
-  Out of scope for the MVP, as stated in `pdf-import-design-recommendation.md`.
+  Out of scope for the MVP, as stated in `pdf-import-recommendation.md`.
 
 ## Stage 2 — Endpoint 2, `commit` mode
 
@@ -290,7 +290,7 @@ internal `session.commit()`s really do vanish with `resolve("validate")`. For th
 
 ## Closing gaps vs. the original design (2026-09-25)
 
-After Stage 3 shipped, `pdf-import-design-recommendation.md` was reviewed end to end
+After Stage 3 shipped, `pdf-import-recommendation.md` was reviewed end to end
 against the real code (not just against what this document's "Overall status" table
 said), and three real divergences from the approved design turned up. All three were
 closed in the same session:

@@ -1,9 +1,9 @@
 # Batch lookups for pf-rates — recommendation
 
-> This recommendation answers `pf-rates-batch-lookup-design-brief.md` after a direct,
+> This recommendation answers `pf-rates-batch-lookup-brief.md` after a direct,
 > code-grounded investigation across `pf-rates`, `pf-payroll`, and `pf-sheets`. A
 > stronger implementation-oriented draft already exists as
-> `pf-rates-batch-lookup-design-plan.md`; this document's job is to make the design
+> `pf-rates-batch-lookup-plan.md`; this document's job is to make the design
 > choices explicit, justify them against the real code, and confirm which parts of the
 > original instruction do **not** survive contact with the actual codebase.
 

@@ -17,7 +17,7 @@ def is_increase_period(
     Moved here (from a repository staticmethod) so both the period-range
     listing and the future net_pay projection can share the exact same
     cadence check without duplicating it -- see
-    docs/proposals/net-pay-prediction-reimplementation-design-plan.md.
+    docs/proposals/net-pay-prediction-reimplementation-plan.md.
     """
     period_month_index = (period_year * 12) + period_month
     first_increase_index = (

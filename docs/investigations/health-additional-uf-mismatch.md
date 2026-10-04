@@ -343,7 +343,7 @@ returns no warnings either. Nothing left open on this investigation.
 
 ## Related prior context
 
-- `docs/proposals/pdf-import-design-recommendation.md` -- the original PDF
+- `docs/proposals/pdf-import-recommendation.md` -- the original PDF
   import design, including the `COMISIÓN AFP` -> `HEALTH_ADDITIONAL_UF`
   mapping bug fixed this same week (see git history: `c152f1a`), which is a
   *different*, already-resolved bug, unrelated to this one.

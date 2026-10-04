@@ -372,7 +372,7 @@ suppressions.
 - `tests/unit/application/test_export_payroll.py`
 - `tests/integration/api/test_payroll_export.py`
 - `tests/integration/api/test_payroll_export_roundtrip.py`
-- `docs/proposals/spreadsheet-export-design-plan.md` (this file)
+- `docs/proposals/spreadsheet-export-plan.md` (this file)
 
 **Modified:**
 - `src/payroll/infrastructure/importers/xlsx_importer.py` (added `wide_columns()`,

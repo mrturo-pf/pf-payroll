@@ -1,6 +1,6 @@
 # API Reference
 
-Complete reference for all interfaces exposed by pf-payroll: HTTP API and CLI commands.
+Complete reference for all HTTP interfaces exposed by pf-payroll.
 
 ## HTTP API
 
@@ -71,29 +71,4 @@ Currencies and income tax brackets are **not** served by pf-payroll; fetch them 
 pf-rates' `GET /monetary-units` and `GET /income-tax-brackets` (see
 [pf-rates' API Reference](../../pf-rates/docs/api.md)).
 
-## CLI
-
-Run the CLI with:
-
-```bash
-python -m payroll.interfaces.cli.main <command>
-```
-
-Or use the Makefile shortcut for payroll import:
-
-```bash
-make import-payroll CSV_FILE=docs/payroll-input.csv
-```
-
-Available commands:
-
-| Command | Purpose |
-| --- | --- |
-| `health` | Basic healthcheck. |
-| `import-payroll <file>` | Imports a CSV/XLSX payroll file. Runs on the same transactional-scope machinery as `POST /payroll/import/spreadsheet`: the whole import + reconciliation pipeline runs inside one SAVEPOINT, and only actually commits once every period reconciles cleanly -- a genuine declared-vs-computed conflict rolls everything back and fails the command with a non-zero exit code instead of persisting partially-reconciled data. On that failure, stderr prints the plain message first, then (on its own line) the same structured `{"message": str, "conflicting_periods": [...]}` detail as the HTTP endpoint's 400 `detail` -- listing only the period(s) that actually conflicted, so a multi-period file does not require scanning every clean one by hand. |
-| `template-test <pdf>` | Previews a payroll PDF against the current **active** templates (read from pf-db, via the same `TemplateReader` the HTTP endpoint uses) without persisting anything -- prints which template matched (if any) and which rows are still unresolved. `payment_date` is always the generic "last business day of the month" guess here, never the employer's real configured rule (unlike `POST /payroll/pdf-preview`, which does resolve it when the employer is registered). This command used to need **no database access at all** when templates lived in a git-tracked JSON file; moving templates into pf-db means it now opens a read-only DB session like every other CLI command does, purely to fetch the current templates. Helper for sanity-checking a template managed via `POST`/`PUT /payroll/templates*` against a real PDF before trusting it in production. |
-| `summary` | Lists payroll period summaries. |
-| `period-detail <period_id>` | Returns one payroll period with detail. |
-| `plan-snapshots` | Lists available pension and health plans. |
-
-All CLI commands emit JSON except `health`.
+All supported `pf-payroll` interfaces are HTTP endpoints documented above. Payroll import, PDF preview, payroll queries, and reference-data queries are available through the HTTP API; no CLI is provided.

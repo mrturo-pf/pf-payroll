@@ -2691,12 +2691,10 @@ async def test_api_dependencies_build_payroll_repository_and_use_case(
     repository = dependencies.get_payroll_repository(fake_session)  # type: ignore[arg-type]
     use_case = dependencies.get_import_payroll_use_case(repository)
     queries = dependencies.get_payroll_queries(repository)
-    compute_tax_use_case = dependencies.get_compute_income_tax_use_case(repository)  # type: ignore[arg-type]
 
     assert isinstance(repository, SqlAlchemyPayrollRepository)
     assert isinstance(use_case, ImportPayroll)
     assert queries.__class__.__name__ == "PayrollQueries"
-    assert compute_tax_use_case.__class__.__name__ == "ComputeIncomeTax"
 
 
 def test_payroll_models_are_declared() -> None:

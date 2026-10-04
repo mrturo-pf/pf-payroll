@@ -31,7 +31,6 @@ PATH=.venv/bin:$PATH make <target>
 | `make env-write` | Regenerate `.env` with default local DB values |
 | `make check` | **Full validation** — lint → dead-code → typecheck → dup-check → test → test-cov |
 | `make run` | Start FastAPI with auto-reload (port 8000) |
-| `make cli` | Launch Typer CLI interactive shell |
 
 ### Quality checks (individual)
 
@@ -158,13 +157,13 @@ Follow this sequence to add new functionality:
        # ...
    ```
 
-4. **Wire dependency** in `interfaces/api/dependencies.py` (or CLI equivalent)
+4. **Wire dependency** in `interfaces/api/dependencies.py`
    ```python
    def get_payroll_repository() -> PayrollRepository:
        return SqlAlchemyPayrollRepository(SessionLocal)
    ```
 
-5. **Add route** in `interfaces/api/routes/` or a command in `interfaces/cli/main.py`
+5. **Add route** in `interfaces/api/routes/`
    ```python
    @router.get("/payroll-periods/{period_id}")
    async def get_period(
@@ -212,13 +211,6 @@ make run
 ```
 
 Add breakpoints in your IDE or use `breakpoint()` in the code.
-
-### CLI debugging
-
-```bash
-make cli
-# Interactive Typer shell
-```
 
 ### Database inspection
 

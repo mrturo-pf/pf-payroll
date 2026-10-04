@@ -48,11 +48,6 @@ local-up: ## Start full local stack (DB verification, env, deps, API)
 		ENV_FILE="$(ENV_FILE)" \
 		./scripts/local_stack.sh
 
-.PHONY: import-payroll
-import-payroll: ## Import payroll CSV/XLSX file (usage: make import-payroll CSV_FILE=docs/payroll-input.csv)
-	@test -n "$(CSV_FILE)" || (echo "CSV_FILE is required. Usage: make import-payroll CSV_FILE=docs/payroll-input.csv" && exit 1)
-	PYTHONPATH=src "$(VENV)/bin/python" -m payroll.interfaces.cli.main import-payroll "$(CSV_FILE)"
-
 # Override clean to add service-specific artifacts
 .PHONY: clean
 clean: ## Remove build artifacts, caches, and service-specific files

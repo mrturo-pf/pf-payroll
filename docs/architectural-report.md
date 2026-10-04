@@ -16,12 +16,12 @@
 
 ## 2. Architecture Design: Modular Monolith
 
-A ports-and-adapters (hexagonal) architecture is used to isolate Chilean tax and social-security calculation logic from delivery mechanisms (API, CLI) and storage.
+A ports-and-adapters (hexagonal) architecture is used to isolate Chilean tax and social-security calculation logic from the HTTP API and storage.
 
 ```text
 ┌────────────────────────────────────────────────────────────────┐
 │                   Interfaces (Adapters In)                     │
-│              CLI (Typer)      │      HTTP API (FastAPI)        │
+│              HTTP API (FastAPI)        │
 └──────────────────────────┬─────────────────────────────────────┘
                            │
 ┌──────────────────────────▼─────────────────────────────────────┐

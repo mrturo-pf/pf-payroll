@@ -25,7 +25,6 @@ from payroll.infrastructure.exporters.spreadsheet_exporter import (
 from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
 
 # Use cases
-from payroll.application.use_cases.compute_income_tax import ComputeIncomeTax
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.export_payroll import ExportPayroll
 from payroll.application.use_cases.import_payroll import ImportPayroll
@@ -235,17 +234,6 @@ def get_payroll_queries(
 ) -> PayrollQueries:
     """Get payroll queries."""
     return PayrollQueries(repository)
-
-
-def get_compute_income_tax_use_case(
-    repository: PayrollRepository = Depends(get_payroll_repository),
-) -> ComputeIncomeTax:
-    """Get compute income tax use case."""
-    return ComputeIncomeTax(
-        repository,
-        get_market_data_repository(),
-        get_income_tax_bracket_client(),
-    )
 
 
 def get_deflate_amounts_use_case(

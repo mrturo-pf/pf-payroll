@@ -104,14 +104,7 @@ Expected response for `/health`:
 {"status":"ok"}
 ```
 
-### Option C: CLI (Typer)
-
-pf-payroll also provides a CLI for administrative tasks:
-
-```bash
-make cli
-# Interactive shell with available commands
-```
+HTTP API clients can use the documented payroll, import, PDF-preview, and reference-data endpoints. The project no longer provides a CLI.
 
 ## Step 7: Run tests
 
@@ -132,7 +125,7 @@ Expected output: 100% coverage on `src/`.
 - [Development Guide](development.md) - Make commands, testing, git hooks
 - [Database Guide](database.md) - Schema, tables, local setup
 - [Deployment Guide](deployment.md) - CI/CD, Cloud Run deployment
-- [API Reference](api.md) - HTTP API, CLI commands
+- [API Reference](api.md) - HTTP API endpoints
 - [Payroll Workflow](payroll-workflow.md) - End-to-end payroll flow
 - [Architectural Report](architectural-report.md) - Architecture design and target state
 

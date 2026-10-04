@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 import importlib
-import runpy
-import sys
 from datetime import date
 from decimal import Decimal
 
 import pandas as pd
 import pytest
-import typer
-from typer.testing import CliRunner
 
 from payroll.application.dto import MoneyDTO
 from payroll.application.use_cases.compute_unemployment_insurance import (
@@ -47,7 +43,6 @@ from payroll.infrastructure.importers.xlsx_importer import (
     to_long_format,
 )
 from payroll.infrastructure.logging.logger import logger
-from payroll.interfaces.cli.main import app as cli_app
 from payroll.shared.constants import DEFAULT_CURRENCY
 
 
@@ -259,14 +254,6 @@ def test_logger_is_available() -> None:
     assert logger is not None
 
 
-def test_cli_health_command() -> None:
-    """Test cli health command."""
-    result = CliRunner().invoke(cli_app, ["health"])
-
-    assert result.exit_code == 0
-    assert result.stdout.strip() == "ok"
-
-
 def test_importing_db_modules_exposes_expected_types() -> None:
     """Test importing db modules exposes expected types."""
     base_module = importlib.import_module("payroll.infrastructure.db.base")
@@ -294,25 +281,8 @@ def test_package_modules_import() -> None:
         "payroll.interfaces",
         "payroll.interfaces.api",
         "payroll.interfaces.api.routes",
-        "payroll.interfaces.cli",
         "payroll.shared",
     ]
 
     for module_name in modules:
         assert importlib.import_module(module_name) is not None
-
-
-def test_cli_module_runs_as_main(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Test cli module runs as main."""
-    called: list[bool] = []
-
-    def fake_call(self: typer.Typer, *args: object, **kwargs: object) -> None:
-        """Handle fake call."""
-        called.append(True)
-
-    monkeypatch.setattr(typer.Typer, "__call__", fake_call)
-    sys.modules.pop("payroll.interfaces.cli.main", None)
-
-    runpy.run_module("payroll.interfaces.cli.main", run_name="__main__")
-
-    assert called == [True]

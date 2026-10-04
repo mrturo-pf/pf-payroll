@@ -5,7 +5,7 @@ This guide focuses on the payroll business flow endpoints. For the **complete AP
 ## Business flow
 
 ```text
-import -> assign plans -> compute contributions -> compute tax -> query results
+import -> automatic contribution and tax processing -> query results
 ```
 
 ## 1. Import payroll
@@ -17,11 +17,6 @@ curl -X POST http://127.0.0.1:8000/payroll/import/spreadsheet \
   -F "file=@tests/fixtures/sample_payroll.csv"
 ```
 
-CLI:
-
-```bash
-python -m payroll.interfaces.cli.main import-payroll tests/fixtures/sample_payroll.csv
-```
 
 ### Alternative: import from a PDF payslip
 
@@ -55,13 +50,10 @@ curl -X POST http://127.0.0.1:8000/payroll/pdf-preview \
 ```
 
 Before wiring a new employer's template (create it via `POST /payroll/templates` --
-see [`docs/api.md`](api.md)), iterate on it locally with the CLI helper -- it opens a
-read-only DB session to fetch the current active templates, then prints which one
-matched (if any) and exactly which rows are still unresolved:
-
-```bash
-python -m payroll.interfaces.cli.main template-test payslip.pdf
-```
+see [`docs/api.md`](api.md)), iterate on it through `POST /payroll/pdf-preview`. The
+endpoint reads the current active templates from the database and reports which template
+matched and which rows remain unresolved. The project no longer provides a CLI template
+helper.
 
 **Step B -- confirm the (possibly hand-edited) rows from one or more previews:**
 
@@ -159,8 +151,6 @@ Period summary and detail:
 ```bash
 curl http://127.0.0.1:8000/payroll
 curl http://127.0.0.1:8000/payroll/1
-python -m payroll.interfaces.cli.main summary
-python -m payroll.interfaces.cli.main period-detail 1
 ```
 
 ## Import format

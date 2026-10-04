@@ -3,18 +3,129 @@
 from datetime import date
 from decimal import Decimal
 
+import pytest
+from fastapi import HTTPException
+
 from payroll.application.dto import (
     ImportedContributionValidationDTO,
     ImportedPayrollPeriodDTO,
     PayrollPeriodRangeContextDTO,
     PayrollPeriodRangeDTO,
 )
+from payroll.application.errors import PayrollValidationError
 from payroll.interfaces.api.routes.payroll import (
+    DeletePayrollPeriodsRequest,
+    ImportPayrollPeriodRequest,
     ImportedContributionValidationRead,
+    delete_payroll_period,
+    delete_payroll_periods,
+    _execute_delete_payroll_periods,
+    _validate_period_ids,
     build_reconciliation_conflict_detail,
     to_imported_contribution_validation_read,
     to_payroll_period_read,
 )
+
+
+class _DeleteScope:
+    """Capture transaction resolution."""
+
+    def __init__(self) -> None:
+        """Initialize the scope."""
+        self.resolutions: list[str] = []
+
+    async def resolve(self, mode: str) -> None:
+        """Capture the requested resolution."""
+        self.resolutions.append(mode)
+
+
+class _DeleteUseCase:
+    """Capture delete execution."""
+
+    def __init__(self, error: Exception | None = None) -> None:
+        """Initialize the use case."""
+        self.error = error
+        self.period_ids: list[int] | None = None
+
+    async def execute(self, period_ids: list[int]) -> None:
+        """Capture IDs or raise the configured error."""
+        self.period_ids = period_ids
+        if self.error is not None:
+            raise self.error
+
+
+def _period_request(period_id: int | None) -> ImportPayrollPeriodRequest:
+    """Build a minimal period request for ID validation."""
+    return ImportPayrollPeriodRequest(
+        period_id=period_id,
+        employer="ACME",
+        period_year=2026,
+        period_month=1,
+        payment_date=date(2026, 1, 31),
+        rows=[],
+    )
+
+
+def test_validate_period_ids_accepts_null_and_positive_ids() -> None:
+    """Accept insert blocks and positive update IDs."""
+    _validate_period_ids([_period_request(None), _period_request(481)])
+
+
+@pytest.mark.parametrize("period_id", [0, -1])
+def test_validate_period_ids_rejects_non_positive_ids(period_id: int) -> None:
+    """Reject non-positive update IDs."""
+    with pytest.raises(ValueError, match="must be positive"):
+        _validate_period_ids([_period_request(period_id)])
+
+
+def test_validate_period_ids_rejects_duplicates() -> None:
+    """Reject duplicate update IDs."""
+    with pytest.raises(ValueError, match="must not be duplicated"):
+        _validate_period_ids([_period_request(481), _period_request(481)])
+
+
+@pytest.mark.asyncio
+async def test_execute_delete_resolves_commit() -> None:
+    """Resolve a successful delete as commit."""
+    scope = _DeleteScope()
+    use_case = _DeleteUseCase()
+    response = await _execute_delete_payroll_periods([481], scope, use_case)
+    assert response.status_code == 204
+    assert use_case.period_ids == [481]
+    assert scope.resolutions == ["commit"]
+
+
+@pytest.mark.asyncio
+async def test_execute_delete_resolves_validate_on_error() -> None:
+    """Resolve a failed delete as validate."""
+    scope = _DeleteScope()
+    use_case = _DeleteUseCase(PayrollValidationError("blocked"))
+    with pytest.raises(HTTPException) as error:
+        await _execute_delete_payroll_periods([481], scope, use_case)
+    assert error.value.status_code == 400
+    assert scope.resolutions == ["validate"]
+
+
+@pytest.mark.asyncio
+async def test_collection_delete_route_delegates_payload() -> None:
+    """Pass collection IDs through the collection route."""
+    scope = _DeleteScope()
+    use_case = _DeleteUseCase()
+    response = await delete_payroll_periods(
+        DeletePayrollPeriodsRequest(period_ids=[481, 482]), scope, use_case
+    )
+    assert response.status_code == 204
+    assert use_case.period_ids == [481, 482]
+
+
+@pytest.mark.asyncio
+async def test_single_delete_route_delegates_path_id() -> None:
+    """Pass the path ID through the single-resource route."""
+    scope = _DeleteScope()
+    use_case = _DeleteUseCase()
+    response = await delete_payroll_period(481, scope, use_case)
+    assert response.status_code == 204
+    assert use_case.period_ids == [481]
 
 
 def test_to_imported_contribution_validation_read_returns_none_for_none() -> None:

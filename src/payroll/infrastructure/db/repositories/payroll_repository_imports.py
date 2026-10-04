@@ -207,7 +207,11 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                 f"Unknown payroll concepts in import: {', '.join(missing_codes)}"
             )
 
-        target_ids = [row.period_id for row in rows if row.period_id is not None]
+        target_ids = [
+            getattr(row, "period_id", None)
+            for row in rows
+            if getattr(row, "period_id", None) is not None
+        ]
         if len(target_ids) != len(set(target_ids)):
             raise PayrollValidationError("period_id values must not be duplicated.")
 
@@ -225,7 +229,9 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
             first_row = period_rows[0]
             worked_days = getattr(first_row, "worked_days", 30)
             row_target_ids = {
-                row.period_id for row in period_rows if row.period_id is not None
+                getattr(row, "period_id", None)
+                for row in period_rows
+                if getattr(row, "period_id", None) is not None
             }
             if len(row_target_ids) > 1:
                 raise PayrollValidationError(

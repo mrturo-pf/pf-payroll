@@ -6,6 +6,7 @@ import pytest
 
 from helpers.db_fakes import assert_get_transactional_session_lifecycle
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
+from payroll.application.use_cases.delete_payroll_periods import DeletePayrollPeriods
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.preview_pdf_import import PreviewPdfImport
 from payroll.application.use_cases.process_imported_payroll_periods import (
@@ -16,6 +17,7 @@ from payroll.interfaces.api.dependencies import (
     get_complementary_insurance_repository,
     get_transactional_complementary_insurance_repository,
     get_deflate_amounts_use_case,
+    get_transactional_delete_payroll_periods_use_case,
     get_transactional_import_payroll_use_case,
     get_transactional_payroll_repository,
     get_preview_pdf_import_use_case,
@@ -24,6 +26,12 @@ from payroll.interfaces.api.dependencies import (
     get_template_repository,
     get_transactional_process_imported_payroll_periods_use_case,
 )
+
+
+def test_get_transactional_delete_payroll_periods_use_case_is_instantiable() -> None:
+    """Test that the delete-periods use case can be created."""
+    use_case = get_transactional_delete_payroll_periods_use_case(repository=MagicMock())
+    assert isinstance(use_case, DeletePayrollPeriods)
 
 
 def test_get_complementary_insurance_repository() -> None:

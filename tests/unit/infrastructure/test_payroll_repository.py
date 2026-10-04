@@ -2079,6 +2079,114 @@ async def test_get_period_range_builds_context_for_current_period() -> None:
     assert context.current.is_current is True
 
 
+async def _async_one(*_args: object) -> int:
+    """Return a synthetic pension plan ID."""
+    return 1
+
+
+async def _async_many(*_args: object) -> tuple[int, ...]:
+    """Return a synthetic health plan ID tuple."""
+    return (1,)
+
+
+async def _async_noop(*_args: object, **_kwargs: object) -> None:
+    """Do nothing for a patched plan validator."""
+
+
+@pytest.mark.asyncio
+async def test_import_rejects_duplicate_target_ids() -> None:
+    """Reject duplicate update identities before resolving plans."""
+    session = FakeSession(
+        [FakeResult(scalar_rows=[SimpleNamespace(code="SALARY_BASE")])]
+    )
+    repository = SqlAlchemyPayrollRepository(session)
+    rows = [build_import_row(period_id=481), build_import_row(period_id=481)]
+
+    with pytest.raises(ValueError, match="period_id values must not be duplicated"):
+        await repository.import_rows(rows)
+
+
+@pytest.mark.asyncio
+async def test_import_rejects_inconsistent_target_ids() -> None:
+    """Reject mixed target identities within one natural-key group."""
+    session = FakeSession(
+        [FakeResult(scalar_rows=[SimpleNamespace(code="SALARY_BASE")])]
+    )
+    repository = SqlAlchemyPayrollRepository(session)
+    rows = [build_import_row(period_id=481), build_import_row(period_id=482)]
+
+    with pytest.raises(ValueError, match="same period_id"):
+        await repository.import_rows(rows)
+
+
+@pytest.mark.asyncio
+async def test_import_rejects_unknown_target_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject an update target that does not exist."""
+    employer = SimpleNamespace(id=1, name="ACME", payment_month_offset=0)
+    session = FakeSession(
+        [
+            FakeResult(scalar_rows=[SimpleNamespace(code="SALARY_BASE")]),
+            FakeResult(scalar_one=employer),
+            FakeResult(scalar_one=None),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)
+    monkeypatch.setattr(repository, "_deduce_pension_plan_for_date", _async_one)
+    monkeypatch.setattr(repository, "_deduce_health_plan_ids_for_month", _async_many)
+    monkeypatch.setattr(repository, "_get_pension_plan", _async_noop)
+
+    with pytest.raises(ValueError, match="does not exist"):
+        await repository.import_rows([build_import_row(period_id=481)])
+
+
+@pytest.mark.asyncio
+async def test_import_rejects_target_identity_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject an update whose natural identity differs from the target."""
+    employer = SimpleNamespace(id=1, name="ACME", payment_month_offset=0)
+    period = SimpleNamespace(id=481, employer_id=2, period_year=2026, period_month=1)
+    session = FakeSession(
+        [
+            FakeResult(scalar_rows=[SimpleNamespace(code="SALARY_BASE")]),
+            FakeResult(scalar_one=employer),
+            FakeResult(scalar_one=period),
+        ]
+    )
+    repository = SqlAlchemyPayrollRepository(session)
+    monkeypatch.setattr(repository, "_deduce_pension_plan_for_date", _async_one)
+    monkeypatch.setattr(repository, "_deduce_health_plan_ids_for_month", _async_many)
+    monkeypatch.setattr(repository, "_get_pension_plan", _async_noop)
+
+    with pytest.raises(ValueError, match="does not match"):
+        await repository.import_rows([build_import_row(period_id=481)])
+
+
+@pytest.mark.asyncio
+async def test_delete_periods_removes_owned_data_and_refreshes_summary() -> None:
+    """Delete a locked batch and execute every owned-child delete."""
+    session = FakeSession([FakeResult(scalar_rows=[SimpleNamespace(id=481)])])
+
+    await SqlAlchemyPayrollRepository(session).delete_periods([481])
+
+    assert len(session.executed) == 6
+    assert session.commit_count == 2
+
+
+@pytest.mark.asyncio
+async def test_delete_periods_rejects_missing_ids_before_deleting() -> None:
+    """Reject a batch with missing periods before child deletion starts."""
+    session = FakeSession([FakeResult(scalar_rows=[])])
+
+    with pytest.raises(ValueError, match="do not exist"):
+        await SqlAlchemyPayrollRepository(session).delete_periods([481])
+
+    assert len(session.executed) == 1
+    assert session.commit_count == 0
+
+
 @pytest.mark.asyncio
 async def test_get_period_range_builds_context_for_previous_period() -> None:
     """Target older than the resolved current -> is_previous True, has a predecessor.

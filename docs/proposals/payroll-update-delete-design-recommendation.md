@@ -79,27 +79,12 @@ about period identity.
 
 ### 3.1 Update or insert: `POST /payroll/import/json`
 
-Request shape:
+Request shape: use the complete period object described in the brief's
+[validation example](payroll-update-delete-design-brief.md#validate-an-update-without-persisting-it),
+with an optional `period_id` field. The abbreviated form is:
 
 ```json
-{
-  "mode": "validate",
-  "periods": [
-    {
-      "period_id": 481,
-      "employer": "Synthetic Employer",
-      "period_year": 2026,
-      "period_month": 8,
-      "payment_date": "2026-08-31",
-      "worked_days": 30,
-      "declared_net_pay_clp": "1000000",
-      "rows": [
-        {"concept_code": "SALARY_BASE", "amount_clp": "1300000"},
-        {"concept_code": "HEALTH_BASE", "amount_clp": "123500"}
-      ]
-    }
-  ]
-}
+{"mode": "validate", "periods": [{"period_id": 481, "...": "complete period object"}]}
 ```
 
 `period_id` is optional at the Pydantic boundary:

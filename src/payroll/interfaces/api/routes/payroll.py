@@ -1023,6 +1023,7 @@ async def import_payroll_rows(
                 worked_days=period.worked_days,
                 declared_net_pay_clp=period.declared_net_pay_clp,
                 period_id=period.period_id,
+                require_period_contract_validation=True,
             )
             for period in payload.periods
             for row in period.rows

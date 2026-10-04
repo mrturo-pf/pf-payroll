@@ -56,7 +56,43 @@ have no preview mode and never return deleted records.
 | `GET` | `/payroll/spreadsheet` | Exports persisted payroll periods as CSV or XLSX, optionally filtered by employer, year, and month. Returns a header-only file when no periods match. |
 | `GET` | `/payroll/{period_id}` | Returns one period in the exact same nested `id`/`employer`/`period`/`amount` shape as a single item of `GET /payroll` above, filtered to this `period_id` -- a complete replacement for the old detail-only response (employer metadata, line items, plans, status, etc. are no longer returned here; use `GET /payroll/spreadsheet` or the CLI for that level of detail). Unlike `GET /payroll`, which only covers its own `previous_months`/`future_months` window (12 each by default), this endpoint supports any historical `period_id` regardless of age. Returns **404** if `period_id` does not exist. |
 
-### PDF templates
+
+#### Structured JSON import identity and batch rules
+
+For `POST /payroll/import/json`, an omitted or `null` `period_id` means
+**insert-only**. If the submitted `(employer, period_year, period_month)` already
+exists, the complete request returns `409 Conflict` with structured
+`natural_key_conflicts` containing the persisted `period_id`; it never silently
+overwrites the existing payroll. An explicit existing `period_id` remains the
+only update operation and preserves that period's ID.
+
+A request may mix new insertions and explicit updates. The whole request is
+atomic: in `mode="commit"`, any natural-key, identity, reconciliation,
+worked-days-capacity, contract-eligibility, or persistence error rolls back every
+operation. `mode="validate"` runs the same projected batch and rolls it back.
+
+For each calendar year/month, the projected sum of `worked_days` across employers
+must not exceed 30. New periods require an employment-contract interval that
+overlaps the worked calendar month, not necessarily `payment_date`; this permits
+a former employer to submit a final settlement after the contract ended. The
+current model validates month overlap and aggregate days, not exact day-by-day
+allocation.
+
+Example natural-key conflict detail:
+
+```json
+{
+  "message": "One or more payroll natural keys already exist.",
+  "natural_key_conflicts": [
+    {
+      "period_id": 481,
+      "employer": "Synthetic Employer",
+      "period_year": 2026,
+      "period_month": 8
+    }
+  ]
+}
+```
 
 Manages the versioned employer-specific label-to-concept mapping templates `POST
 /payroll/pdf-preview` matches PDFs against. Persisted in pf-db's `PAY_PDF_TEMPLATE` /

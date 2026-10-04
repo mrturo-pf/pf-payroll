@@ -1,9 +1,10 @@
 """Import-oriented payroll repository operations."""
 
+import calendar
 from collections import defaultdict
 from datetime import date
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from payroll.application.dto import (
@@ -20,6 +21,7 @@ from payroll.application.errors import (
 from payroll.application.ports.repositories import MarketDataRepository
 from payroll.infrastructure.db.models import (
     EmployerModel,
+    EmploymentContractModel,
     PayrollConceptModel,
 )
 from payroll.infrastructure.db.models.payroll import (
@@ -186,6 +188,154 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
             ]
         )
 
+    async def _preflight_json_periods(
+        self,
+        grouped_rows: dict[tuple[str, int, int], list[ImportPayrollRowDTO]],
+    ) -> None:
+        """Validate JSON-only identity, contract, and capacity invariants."""
+        natural_key_conflicts: list[dict[str, object]] = []
+        contract_conflicts: list[dict[str, object]] = []
+        capacity_keys = {(year, month) for _, year, month in grouped_rows}
+
+        for (employer_name, year, month), period_rows in grouped_rows.items():
+            if not period_rows[0].require_period_contract_validation:
+                continue
+            employer_result = await self._session.execute(
+                select(EmployerModel).where(EmployerModel.name == employer_name)
+            )
+            employer = employer_result.scalar_one_or_none()
+            if employer is None:
+                raise PayrollConflictError(
+                    "An employment contract must exist before importing payroll "
+                    f"for employer {employer_name!r}."
+                )
+            target_id = next(
+                (
+                    row.period_id
+                    for row in period_rows
+                    if getattr(row, "period_id", None) is not None
+                ),
+                None,
+            )
+            if target_id is None:
+                period_result = await self._session.execute(
+                    select(PayrollPeriodModel).where(
+                        PayrollPeriodModel.employer_id == employer.id,
+                        PayrollPeriodModel.period_year == year,
+                        PayrollPeriodModel.period_month == month,
+                    )
+                )
+                existing_period = period_result.scalar_one_or_none()
+                if existing_period is not None:
+                    natural_key_conflicts.append(
+                        {
+                            "period_id": existing_period.id,
+                            "employer": employer_name,
+                            "period_year": year,
+                            "period_month": month,
+                        }
+                    )
+
+            if target_id is None:
+                month_start = date(year, month, 1)
+                month_end = date(year, month, calendar.monthrange(year, month)[1])
+                contract_result = await self._session.execute(
+                    select(EmploymentContractModel.id).where(
+                        EmploymentContractModel.employer_id == employer.id,
+                        EmploymentContractModel.started_at <= month_end,
+                        (
+                            EmploymentContractModel.ended_at.is_(None)
+                            | (EmploymentContractModel.ended_at >= month_start)
+                        ),
+                    )
+                )
+                if contract_result.first() is None:
+                    contract_conflicts.append(
+                        {
+                            "employer": employer_name,
+                            "period_year": year,
+                            "period_month": month,
+                            "message": (
+                                "No employment contract interval overlaps the "
+                                "worked calendar month."
+                            ),
+                        }
+                    )
+
+        if natural_key_conflicts:
+            raise PayrollConflictError(
+                "One or more payroll natural keys already exist.",
+                detail={
+                    "message": "One or more payroll natural keys already exist.",
+                    "natural_key_conflicts": natural_key_conflicts,
+                },
+            )
+        if contract_conflicts:
+            raise PayrollConflictError(
+                "One or more employers have no eligible contract interval.",
+                detail={
+                    "message": (
+                        "One or more employers have no eligible contract interval."
+                    ),
+                    "contract_conflicts": contract_conflicts,
+                },
+            )
+
+        for year, month in capacity_keys:
+            await self._session.execute(
+                select(func.pg_advisory_xact_lock(year * 100 + month))
+            )
+            period_result = await self._session.execute(
+                select(PayrollPeriodModel)
+                .where(
+                    PayrollPeriodModel.period_year == year,
+                    PayrollPeriodModel.period_month == month,
+                )
+                .with_for_update()
+            )
+            periods = list(period_result.scalars().all())
+            projected_days = sum(period.worked_days for period in periods)
+            period_by_id = {period.id: period for period in periods}
+            for (
+                employer_name,
+                period_year,
+                period_month,
+            ), period_rows in grouped_rows.items():
+                if (period_year, period_month) != (year, month):
+                    continue
+                target_id = next(
+                    (
+                        row.period_id
+                        for row in period_rows
+                        if getattr(row, "period_id", None) is not None
+                    ),
+                    None,
+                )
+                if target_id is not None and target_id in period_by_id:
+                    projected_days -= period_by_id[target_id].worked_days
+                projected_days += getattr(period_rows[0], "worked_days", 30)
+            if projected_days > 30:
+                raise PayrollConflictError(
+                    "The submitted payroll would exceed the worked-days capacity.",
+                    detail={
+                        "message": (
+                            "The submitted payroll would exceed the "
+                            "worked-days capacity."
+                        ),
+                        "worked_days_conflicts": [
+                            {
+                                "period_year": year,
+                                "period_month": month,
+                                "current_worked_days": sum(
+                                    period.worked_days for period in periods
+                                ),
+                                "projected_worked_days": projected_days,
+                                "maximum_worked_days": 30,
+                            }
+                        ],
+                    },
+                )
+
     async def import_rows(
         self, rows: list[ImportPayrollRowDTO]
     ) -> ImportPayrollResultDTO:
@@ -220,6 +370,13 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
         )
         for row in rows:
             grouped_rows[(row.employer, row.period_year, row.period_month)].append(row)
+
+        if any(
+            getattr(row, "require_period_contract_validation", False)
+            for period_rows in grouped_rows.values()
+            for row in period_rows
+        ):
+            await self._preflight_json_periods(grouped_rows)
 
         imported_periods: list[ImportedPayrollPeriodDTO] = []
         imported_items = 0

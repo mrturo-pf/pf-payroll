@@ -222,6 +222,61 @@ def test_import_payroll_rows_endpoint_validate_mode_never_commits() -> None:
     # jscpd:ignore-end
 
 
+def test_import_payroll_rows_endpoint_mixes_insert_and_explicit_update() -> None:
+    """A commit batch may mix a new insertion and an explicit update."""
+    scope = FakeTransactionalSessionScope()
+    fake_import = _override_happy_path(scope)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
+    periods = [
+        _period([SAMPLE_ROW], period_month=1, payment_date="2026-01-31"),
+        _period(
+            [SAMPLE_ROW],
+            period_month=2,
+            payment_date="2026-02-28",
+            period_id=481,
+        ),
+    ]
+
+    try:
+        response = client.post(
+            "/payroll/import/json", json=_payload_periods(periods, mode="commit")
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["period_count"] == 2
+    assert fake_import.called_with is not None
+    assert [row.period_id for row in fake_import.called_with] == [None, 481]
+    assert scope.resolved_with == ["commit"]
+
+
+def test_import_payroll_rows_endpoint_mixed_commit_rolls_back_on_any_failure() -> None:
+    """A failure in one block prevents a mixed commit from resolving commit."""
+    scope = FakeTransactionalSessionScope()
+    fake_import = _override_happy_path(scope)
+    client = TestClient(app, headers={"X-API-Key": "test-key"})
+    periods = [
+        _period([SAMPLE_ROW], period_month=1, payment_date="2026-01-31"),
+        _period(
+            [{"concept_code": None, "amount_clp": "5000"}],
+            period_month=2,
+            payment_date="2026-02-28",
+        ),
+    ]
+
+    try:
+        response = client.post(
+            "/payroll/import/json", json=_payload_periods(periods, mode="commit")
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert fake_import.called_with is None
+    assert scope.resolved_with == ["validate"]
+
+
 def test_import_payroll_rows_endpoint_commit_rejects_unresolved_concept_code() -> None:
     """mode="commit" fails outright (422) if any row has no concept_code.
 

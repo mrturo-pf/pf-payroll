@@ -1173,6 +1173,21 @@ async def preview_pdf_import(
     return [to_pdf_import_preview_response(preview) for preview in previews]
 
 
+async def _execute_delete_payroll_periods(
+    period_ids: list[int],
+    scope: TransactionalSessionScope,
+    use_case: object,
+) -> Response:
+    """Execute a delete request and resolve its transaction exactly once."""
+    try:
+        await use_case.execute(period_ids)  # type: ignore[attr-defined]
+    except PayrollError as exc:
+        await scope.resolve("validate")
+        raise to_http_exception(exc, default_status=400) from exc
+    await scope.resolve("commit")
+    return Response(status_code=204)
+
+
 @router.delete("", status_code=204)
 async def delete_payroll_periods(
     payload: DeletePayrollPeriodsRequest,
@@ -1180,13 +1195,7 @@ async def delete_payroll_periods(
     use_case=Depends(get_transactional_delete_payroll_periods_use_case),
 ) -> Response:
     """Delete all requested payroll periods atomically."""
-    try:
-        await use_case.execute(payload.period_ids)
-    except PayrollError as exc:
-        await scope.resolve("validate")
-        raise to_http_exception(exc, default_status=400) from exc
-    await scope.resolve("commit")
-    return Response(status_code=204)
+    return await _execute_delete_payroll_periods(payload.period_ids, scope, use_case)
 
 
 @router.delete("/{period_id}", status_code=204)
@@ -1196,13 +1205,7 @@ async def delete_payroll_period(
     use_case=Depends(get_transactional_delete_payroll_periods_use_case),
 ) -> Response:
     """Delete one payroll period atomically."""
-    try:
-        await use_case.execute([period_id])
-    except PayrollError as exc:
-        await scope.resolve("validate")
-        raise to_http_exception(exc, default_status=400) from exc
-    await scope.resolve("commit")
-    return Response(status_code=204)
+    return await _execute_delete_payroll_periods([period_id], scope, use_case)
 
 
 @router.get("", response_model=list[PayrollPeriodRead])

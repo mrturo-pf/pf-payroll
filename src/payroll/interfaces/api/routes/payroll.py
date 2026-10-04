@@ -14,6 +14,7 @@ from fastapi import (
     HTTPException,
     Path,
     Query,
+    Response,
     UploadFile,
 )
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ from payroll.application.errors import (
     PayrollImportNotValidatedError,
     PayrollValidationError,
 )
+
 from payroll.application.services.import_reconciliation import (
     conflicting_reconciliation_periods,
     is_import_fully_validated,
@@ -49,6 +51,7 @@ from payroll.interfaces.api.dependencies import (
     get_transactional_import_payroll_use_case,
     get_transactional_process_imported_payroll_periods_use_case,
     get_transactional_session,
+    get_transactional_delete_payroll_periods_use_case,
 )
 
 if TYPE_CHECKING:
@@ -367,21 +370,9 @@ class ImportPayrollRowRequest(BaseModel):
 
 
 class ImportPayrollPeriodRequest(BaseModel):
-    """Represent one payslip/period block inside a POST /payroll/import/json request.
+    """Represent one payslip/period block inside a JSON import request."""
 
-    All rows within one block come from one payslip (e.g. one element of the
-    array returned by POST /payroll/pdf-preview, confirmed by a human), so
-    employer/period/payment/contract-kind fields are declared once per block
-    instead of once per row -- mirroring PdfImportPreviewResponse's own
-    header-fields-once, rows-carry-only-their-own-data shape. This is
-    deliberately a copy/paste target: take one PdfImportPreviewResponse
-    array element and use it as-is as one entry of ImportPayrollJsonRequest's
-    `periods` list (extra fields such as `template_id`/`raw_label`/`kind`/
-    `confidence` are silently ignored, not rejected).
-
-    Declared net pay is handled as period input, not a persisted status label.
-    """
-
+    period_id: int | None = None
     employer: str
     period_year: int
     period_month: int
@@ -391,46 +382,14 @@ class ImportPayrollPeriodRequest(BaseModel):
     rows: list[ImportPayrollRowRequest]
 
 
+class DeletePayrollPeriodsRequest(BaseModel):
+    """Represent an atomic bulk payroll-period deletion request."""
+
+    period_ids: list[int]
+
+
 class ImportPayrollJsonRequest(BaseModel):
-    """Represent the request body for POST /payroll/import/json.
-
-    `periods` carries one or more ImportPayrollPeriodRequest blocks in a
-    single request -- e.g. the *entire* array returned by a batched POST
-    /payroll/pdf-preview call (one entry per uploaded PDF) can be submitted
-    here verbatim, once a human has confirmed/edited each element. `periods`
-    must have at least one element, and no two elements may share the same
-    (employer, period_year, period_month): each block owns its own header
-    fields (payment_date, contract kind, declared net pay) independently, so
-    silently merging two "same period" blocks would mean picking one's
-    header over the other's with no signal to the caller -- concatenate
-    their `rows` client-side into one block instead if that's genuinely the
-    same period.
-
-    mode="commit" persists everything, exactly like POST /payroll/import/spreadsheet --
-    and requires every row in every period to already have a resolved
-    concept_code; any row with concept_code=null makes the whole request
-    fail with 422, nothing is written. mode="validate" runs the exact same
-    pipeline on the rows that *do* have a resolved concept_code -- so
-    contributions, taxes and net-pay warnings are genuinely computed -- then
-    everything is discarded via TransactionalSessionScope.resolve("validate").
-    If any row was still missing a concept_code, or the computed result has
-    a genuine declared-vs-computed conflict, the request fails with the
-    same 422 (PayrollImportNotValidatedError) reporting `unresolved_rows` /
-    conflicting periods in the error detail -- see
-    PayrollImportNotValidatedError's docstring for why 422 instead of a 200
-    a caller would otherwise have to inspect, or the plain 400 most other
-    business-rule violations in this codebase use. `mode`
-    applies to the whole batch; there is no per-period mode.
-
-    Known side effect, in both modes: ProcessImportedPayrollPeriods calls
-    pf-rates to resolve missing market data (exchange rates/UTM), and that
-    call may cache data in pf-rates' own database. A pf-payroll rollback
-    never undoes that -- harmless (public, non-sensitive reference data), but
-    mode="validate" is not 100% free of side effects end-to-end.
-
-    Response's `periods[].id` is `null` in mode="validate" on purpose -- see
-    ImportedPeriodRead's docstring.
-    """
+    """Represent the request body for POST /payroll/import/json."""
 
     mode: Literal["commit", "validate"] = "commit"
     periods: list[ImportPayrollPeriodRequest]
@@ -968,6 +927,15 @@ def _reject_duplicate_period_keys(periods: list[ImportPayrollPeriodRequest]) -> 
         )
 
 
+def _validate_period_ids(periods: list[ImportPayrollPeriodRequest]) -> None:
+    """Validate explicit update identities before persistence begins."""
+    ids = [period.period_id for period in periods if period.period_id is not None]
+    if any(period_id <= 0 for period_id in ids):
+        raise PayrollValidationError("period_id must be positive.")
+    if len(ids) != len(set(ids)):
+        raise PayrollValidationError("period_id values must not be duplicated.")
+
+
 @router.post("/import/json", response_model=ImportPayrollResponse)
 async def import_payroll_rows(
     payload: ImportPayrollJsonRequest,
@@ -1023,6 +991,7 @@ async def import_payroll_rows(
     try:
         if not payload.periods:
             raise PayrollValidationError("The periods list must not be empty.")
+        _validate_period_ids(payload.periods)
         _reject_duplicate_period_keys(payload.periods)
 
         if unresolved and payload.mode == "commit":
@@ -1053,6 +1022,7 @@ async def import_payroll_rows(
                 amount_clp=row.amount_clp,
                 worked_days=period.worked_days,
                 declared_net_pay_clp=period.declared_net_pay_clp,
+                period_id=period.period_id,
             )
             for period in payload.periods
             for row in period.rows
@@ -1201,6 +1171,38 @@ async def preview_pdf_import(
         raise to_http_exception(exc, default_status=400) from exc
 
     return [to_pdf_import_preview_response(preview) for preview in previews]
+
+
+@router.delete("", status_code=204)
+async def delete_payroll_periods(
+    payload: DeletePayrollPeriodsRequest,
+    scope: TransactionalSessionScope = Depends(get_transactional_session),
+    use_case=Depends(get_transactional_delete_payroll_periods_use_case),
+) -> Response:
+    """Delete all requested payroll periods atomically."""
+    try:
+        await use_case.execute(payload.period_ids)
+    except PayrollError as exc:
+        await scope.resolve("validate")
+        raise to_http_exception(exc, default_status=400) from exc
+    await scope.resolve("commit")
+    return Response(status_code=204)
+
+
+@router.delete("/{period_id}", status_code=204)
+async def delete_payroll_period(
+    period_id: int = Path(..., gt=0),
+    scope: TransactionalSessionScope = Depends(get_transactional_session),
+    use_case=Depends(get_transactional_delete_payroll_periods_use_case),
+) -> Response:
+    """Delete one payroll period atomically."""
+    try:
+        await use_case.execute([period_id])
+    except PayrollError as exc:
+        await scope.resolve("validate")
+        raise to_http_exception(exc, default_status=400) from exc
+    await scope.resolve("commit")
+    return Response(status_code=204)
 
 
 @router.get("", response_model=list[PayrollPeriodRead])

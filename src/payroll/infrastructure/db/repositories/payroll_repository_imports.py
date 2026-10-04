@@ -11,7 +11,12 @@ from payroll.application.dto import (
     ImportPayrollRowDTO,
     ImportedPayrollPeriodDTO,
 )
-from payroll.application.errors import PayrollConflictError, PayrollValidationError
+from payroll.application.errors import (
+    PayrollConflictError,
+    PayrollNotFoundError,
+    PayrollValidationError,
+)
+
 from payroll.application.ports.repositories import MarketDataRepository
 from payroll.infrastructure.db.models import (
     EmployerModel,
@@ -21,6 +26,7 @@ from payroll.infrastructure.db.models.payroll import (
     PayrollItemModel,
     PayrollPeriodHealthPlanModel,
     PayrollPeriodModel,
+    PayrollComplementaryInsuranceModel,
 )
 from payroll.infrastructure.db.repositories.reference_data_repository import (
     SqlAlchemyReferenceDataRepository,
@@ -201,6 +207,10 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                 f"Unknown payroll concepts in import: {', '.join(missing_codes)}"
             )
 
+        target_ids = [row.period_id for row in rows if row.period_id is not None]
+        if len(target_ids) != len(set(target_ids)):
+            raise PayrollValidationError("period_id values must not be duplicated.")
+
         grouped_rows: dict[tuple[str, int, int], list[ImportPayrollRowDTO]] = (
             defaultdict(list)
         )
@@ -214,6 +224,14 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
         for (employer_name, year, month), period_rows in sorted(grouped_rows.items()):
             first_row = period_rows[0]
             worked_days = getattr(first_row, "worked_days", 30)
+            row_target_ids = {
+                row.period_id for row in period_rows if row.period_id is not None
+            }
+            if len(row_target_ids) > 1:
+                raise PayrollValidationError(
+                    "All rows for one period must carry the same period_id."
+                )
+            target_id = next(iter(row_target_ids), None)
 
             # Try to resolve explicit plan IDs from the rows first
             pension_plan_id = self._resolve_period_plan_id(
@@ -278,14 +296,39 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                 payment_date=first_row.payment_date,
             )
 
-            period_result = await self._session.execute(
-                select(PayrollPeriodModel).where(
-                    PayrollPeriodModel.employer_id == employer.id,
-                    PayrollPeriodModel.period_year == year,
-                    PayrollPeriodModel.period_month == month,
+            if target_id is None:
+                period_result = await self._session.execute(
+                    select(PayrollPeriodModel).where(
+                        PayrollPeriodModel.employer_id == employer.id,
+                        PayrollPeriodModel.period_year == year,
+                        PayrollPeriodModel.period_month == month,
+                    )
                 )
-            )
+            else:
+                period_result = await self._session.execute(
+                    select(PayrollPeriodModel)
+                    .where(PayrollPeriodModel.id == target_id)
+                    .with_for_update()
+                )
             period = period_result.scalar_one_or_none()
+            if period is None and target_id is not None:
+                raise PayrollNotFoundError(
+                    f"Payroll period {target_id} does not exist."
+                )
+            if (
+                period is not None
+                and target_id is not None
+                and (
+                    period.employer_id != employer.id
+                    or period.period_year != year
+                    or period.period_month != month
+                )
+            ):
+                raise PayrollConflictError(
+                    f"Payroll period {target_id} does not match the submitted "
+                    "employer and period identity."
+                )
+
             if period is None:
                 period = PayrollPeriodModel(
                     employer_id=employer.id,
@@ -300,22 +343,22 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
                 )
                 self._session.add(period)
                 await self._session.flush()
-                if health_plan_ids is not None:
-                    await self._sync_period_health_plans(period, health_plan_ids)
             else:
                 period.payment_date = first_row.payment_date
                 period.worked_days = worked_days
                 period.declared_net_pay_clp = first_row.declared_net_pay_clp
                 period.expected_net_pay_clp = None
                 period.net_pay_difference_clp = None
-                if pension_plan_id is not None and health_plan_ids is not None:
+                if pension_plan_id is not None:
                     period.pension_plan_id = pension_plan_id
-                    await self._sync_period_health_plans(period, health_plan_ids)
                 await self._session.execute(
                     delete(PayrollItemModel).where(
                         PayrollItemModel.period_id == period.id
                     )
                 )
+
+            if health_plan_ids is not None:
+                await self._sync_period_health_plans(period, health_plan_ids)
 
             items = [
                 PayrollItemModel(
@@ -359,3 +402,34 @@ class SqlAlchemyPayrollImportRepository(SqlAlchemyPayrollRepositoryBase):
             imported_items=imported_items,
             periods=imported_periods,
         )
+
+    async def delete_periods(self, period_ids: list[int]) -> None:
+        """Delete locked periods and refresh the summary once."""
+        result = await self._session.execute(
+            select(PayrollPeriodModel)
+            .where(PayrollPeriodModel.id.in_(period_ids))
+            .with_for_update()
+        )
+        periods = list(result.scalars().all())
+        found_ids = {period.id for period in periods}
+        missing_ids = sorted(set(period_ids) - found_ids)
+        if missing_ids:
+            raise PayrollNotFoundError(f"Payroll periods do not exist: {missing_ids}.")
+
+        await self._session.execute(
+            delete(PayrollComplementaryInsuranceModel).where(
+                PayrollComplementaryInsuranceModel.period_id.in_(period_ids)
+            )
+        )
+        await self._session.execute(
+            delete(PayrollPeriodHealthPlanModel).where(
+                PayrollPeriodHealthPlanModel.period_id.in_(period_ids)
+            )
+        )
+        await self._session.execute(
+            delete(PayrollItemModel).where(PayrollItemModel.period_id.in_(period_ids))
+        )
+        await self._session.execute(
+            delete(PayrollPeriodModel).where(PayrollPeriodModel.id.in_(period_ids))
+        )
+        await self._refresh_summary_view()

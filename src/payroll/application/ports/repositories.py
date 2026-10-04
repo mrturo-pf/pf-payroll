@@ -105,6 +105,10 @@ class PayrollRepository(Protocol):
         """Import rows."""
         ...
 
+    async def delete_periods(self, period_ids: list[int]) -> None:
+        """Delete payroll periods atomically, including owned data."""
+        ...
+
     async def get_contribution_context(
         self,
         command: ComputeContributionsCommandDTO,

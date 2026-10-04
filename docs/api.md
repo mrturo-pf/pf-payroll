@@ -28,6 +28,24 @@ optional BCCh credentials) and the startup background sync — see
 
 ### Payroll
 
+#### Update and delete semantics
+
+`POST /payroll/import/json` accepts optional `period_id` on each `periods[]` block.
+Omitted or `null` preserves the existing natural-key insert/upsert behavior; a positive
+ID updates that exact period in place, preserving its primary key. The submitted
+employer/year/month must match the locked target, and an unknown ID returns `404` rather
+than creating a replacement. Duplicate or non-positive IDs return `400`; updates
+replace the complete submitted item set. `mode="validate"` runs the real calculation
+pipeline and rolls back, while `mode="commit"` persists the atomic batch.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `DELETE` | `/payroll/{period_id}` | Physically deletes one period and its owned items, plan snapshots, and complementary-insurance associations. Returns `204`, `404` when missing, or `409` for a database dependency conflict. |
+| `DELETE` | `/payroll` | Atomically deletes `{"period_ids": [481, 482]}`. The list must contain 1–500 unique positive IDs. All targets are locked and verified before deletion; any missing ID returns `404` and deletes nothing. Success returns `204`; dependency conflicts return `409`. |
+
+Both delete routes use the same transaction and refresh the payroll summary once. They
+have no preview mode and never return deleted records.
+
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/payroll/import/spreadsheet` | Imports a CSV or XLSX payroll file and persists employers, periods, and items. Runs on the same transactional-scope machinery as `/payroll/import/json`: the whole import + reconciliation pipeline runs inside one SAVEPOINT. `mode` is sent as a multipart form field alongside `file` (not JSON, since this is a file upload) and defaults to `"commit"` -- unchanged behavior for existing callers -- which only actually commits once every period reconciles cleanly (see `validated`/`saved` below); a genuine declared-vs-computed conflict rolls everything back and fails the request with **422** instead of persisting partially-reconciled data. `mode="validate"` runs the identical pipeline against the same SAVEPOINT machinery and always rolls back regardless of the result; if the result is not fully validated, the request fails with the same **422** instead of returning 200 with `validated: false` -- a caller still previews an entire file's conflicts in one request before ever touching the database, just via the error's `detail` now instead of a 200 body. Both modes share the exact same structured `detail`: it is `{"message": str, "conflicting_periods": [...]}`, where `conflicting_periods` lists *only* the period(s) that actually conflicted (same shape as a normal response period, `id` always `null` since nothing was persisted) -- a multi-period file with one bad period does not force scanning every clean one to find it. If related market data is missing, it first fetches the exact dates/periods needed for the imported payroll so calculations can continue immediately; when the imported payroll already includes the pension and health contribution rows, the import flow also computes `UNEMPLOYMENT_INSURANCE` and `INCOME_TAX` automatically. Any unresolved market-data remainder can still be retried in the background sync flow. |

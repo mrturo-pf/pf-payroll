@@ -169,6 +169,7 @@ class ImportPayrollRowDTO:
     declared_net_pay_clp: Decimal | None = None
     expected_net_pay_clp: Decimal | None = None
     net_pay_difference_clp: Decimal | None = None
+    period_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

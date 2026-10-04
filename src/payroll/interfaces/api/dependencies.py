@@ -26,6 +26,7 @@ from payroll.infrastructure.importers.xlsx_importer import XlsxPayrollImporter
 
 # Use cases
 from payroll.application.use_cases.deflate_amounts import DeflateAmounts
+from payroll.application.use_cases.delete_payroll_periods import DeletePayrollPeriods
 from payroll.application.use_cases.export_payroll import ExportPayroll
 from payroll.application.use_cases.import_payroll import ImportPayroll
 from payroll.application.use_cases.payroll_queries import PayrollQueries
@@ -172,6 +173,13 @@ def get_transactional_complementary_insurance_repository(
 ) -> ComplementaryInsuranceRepository:
     """Get a complementary insurance repository bound to the same scope."""
     return SqlAlchemyComplementaryInsuranceRepository(scope.session)
+
+
+def get_transactional_delete_payroll_periods_use_case(
+    repository: PayrollRepository = Depends(get_transactional_payroll_repository),
+) -> DeletePayrollPeriods:
+    """Get the transactional payroll-period deletion use case."""
+    return DeletePayrollPeriods(repository)
 
 
 def get_transactional_import_payroll_use_case(

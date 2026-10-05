@@ -4,23 +4,14 @@ from datetime import date
 
 import pytest
 
+from unit.employer_contract_fixtures import contract_command, employer_command
+from payroll.application import errors
 from payroll.application.dto import EmploymentContractMaintenanceDTO
-from payroll.application.errors import (
-    PayrollConflictError,
-    PayrollNotFoundError,
-    PayrollValidationError,
-)
-from payroll.infrastructure.db.models import EmployerModel
-from payroll.infrastructure.db.models.payroll import (
-    EmploymentContractModel,
-    EmployerFixedDayRoll,
-    EmployerPaymentDateRule,
-    PayrollPeriodModel,
-)
+from payroll.infrastructure.db import models
+from payroll.infrastructure.db.models import payroll
 from payroll.infrastructure.db.repositories.payroll_repository import (
-    SqlAlchemyPayrollRepository,
+    SqlAlchemyPayrollRepository as Repo,
 )
-from tests.unit.employer_contract_fixtures import contract_command, employer_command
 
 
 class Result:
@@ -68,11 +59,11 @@ class Session:
         """Accept a flush."""
 
 
-def employer_model(id: int = 1) -> EmployerModel:
+def employer_model(id: int = 1) -> models.EmployerModel:
     """Build a fully populated employer model."""
-    model = EmployerModel(id=id, name="ACME", country_code="CL", tax_id=None)
-    model.payment_date_rule = EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH
-    model.payment_fixed_day_roll = EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY
+    model = models.EmployerModel(id=id, name="ACME", country_code="CL", tax_id=None)
+    model.payment_date_rule = payroll.EmployerPaymentDateRule.LAST_BUSINESS_DAY_OF_MONTH
+    model.payment_fixed_day_roll = payroll.EmployerFixedDayRoll.PREVIOUS_BUSINESS_DAY
     return model
 
 
@@ -81,7 +72,7 @@ async def test_maintain_employers_creates_and_updates() -> None:
     """Create and update employers in one batch."""
     existing = employer_model(1)
     session = Session([Result(scalar_one=existing)])
-    result = await SqlAlchemyPayrollRepository(session).maintain_employers(
+    result = await Repo(session).maintain_employers(
         [employer_command(), employer_command(1)]
     )
     assert len(result.employers) == 2
@@ -92,16 +83,14 @@ async def test_maintain_employers_creates_and_updates() -> None:
 async def test_maintain_employers_rejects_unknown_update() -> None:
     """Reject an update targeting an unknown employer."""
     session = Session([Result(scalar_one=None)])
-    with pytest.raises(PayrollNotFoundError):
-        await SqlAlchemyPayrollRepository(session).maintain_employers(
-            [employer_command(9)]
-        )
+    with pytest.raises(errors.PayrollNotFoundError):
+        await Repo(session).maintain_employers([employer_command(9)])
 
 
 @pytest.mark.asyncio
 async def test_maintain_contracts_creates_and_updates() -> None:
     """Create and update contracts after employer validation."""
-    existing = EmploymentContractModel(
+    existing = payroll.EmploymentContractModel(
         id=4,
         employer_id=1,
         started_at=date(2025, 1, 1),
@@ -118,14 +107,14 @@ async def test_maintain_contracts_creates_and_updates() -> None:
             Result(scalar_one=existing),
         ]
     )
-    result = await SqlAlchemyPayrollRepository(session).maintain_contracts(
+    result = await Repo(session).maintain_contracts(
         [contract_command(), contract_command(4)]
     )
     assert len(result.contracts) == 2
-    with pytest.raises(PayrollNotFoundError):
-        await SqlAlchemyPayrollRepository(
-            Session([Result(scalar_one=None)])
-        ).maintain_contracts([contract_command(99)])
+    with pytest.raises(errors.PayrollNotFoundError):
+        await Repo(Session([Result(scalar_one=None)])).maintain_contracts(
+            [contract_command(99)]
+        )
 
 
 @pytest.mark.asyncio
@@ -138,10 +127,8 @@ async def test_maintain_contracts_rejects_unknown_update() -> None:
             Result(scalar_one=None),
         ]
     )
-    with pytest.raises(PayrollNotFoundError):
-        await SqlAlchemyPayrollRepository(session).maintain_contracts(
-            [contract_command(99)]
-        )
+    with pytest.raises(errors.PayrollNotFoundError):
+        await Repo(session).maintain_contracts([contract_command(99)])
     """Reject invalid interval and overlapping contracts."""
     bad = EmploymentContractMaintenanceDTO(
         id=None,
@@ -151,9 +138,9 @@ async def test_maintain_contracts_rejects_unknown_update() -> None:
         is_indefinite=False,
         position="Engineer",
     )
-    with pytest.raises(PayrollValidationError):
-        await SqlAlchemyPayrollRepository(Session([])).maintain_contracts([bad])
-    conflict = EmploymentContractModel(
+    with pytest.raises(errors.PayrollValidationError):
+        await Repo(Session([])).maintain_contracts([bad])
+    conflict = payroll.EmploymentContractModel(
         id=8,
         employer_id=2,
         started_at=date(2026, 1, 1),
@@ -164,17 +151,15 @@ async def test_maintain_contracts_rejects_unknown_update() -> None:
     session = Session(
         [Result(scalar_one=employer_model()), Result(scalar_rows=[conflict])]
     )
-    with pytest.raises(PayrollConflictError):
-        await SqlAlchemyPayrollRepository(session).maintain_contracts(
-            [contract_command()]
-        )
+    with pytest.raises(errors.PayrollConflictError):
+        await Repo(session).maintain_contracts([contract_command()])
 
 
 @pytest.mark.asyncio
 async def test_list_employers_and_contracts() -> None:
     """List employers and contracts."""
     model = employer_model()
-    contract = EmploymentContractModel(
+    contract = payroll.EmploymentContractModel(
         id=1,
         employer_id=1,
         started_at=date(2026, 1, 1),
@@ -182,7 +167,7 @@ async def test_list_employers_and_contracts() -> None:
         is_indefinite=True,
         position=None,
     )
-    repository = SqlAlchemyPayrollRepository(
+    repository = Repo(
         Session(
             [
                 Result(scalar_rows=[model]),
@@ -214,17 +199,15 @@ async def test_maintain_contracts_rejects_all_invalid_date_shapes(
     command: EmploymentContractMaintenanceDTO,
 ) -> None:
     """Reject every invalid contract date shape."""
-    with pytest.raises(PayrollValidationError):
-        await SqlAlchemyPayrollRepository(Session([])).maintain_contracts([command])
+    with pytest.raises(errors.PayrollValidationError):
+        await Repo(Session([])).maintain_contracts([command])
 
 
 @pytest.mark.asyncio
 async def test_delete_employers_rejects_missing_and_blocked() -> None:
     """Reject missing and dependent employers."""
-    with pytest.raises(PayrollNotFoundError):
-        await SqlAlchemyPayrollRepository(
-            Session([Result(scalar_rows=[])])
-        ).delete_employers([1])
+    with pytest.raises(errors.PayrollNotFoundError):
+        await Repo(Session([Result(scalar_rows=[])])).delete_employers([1])
     session = Session(
         [
             Result(scalar_rows=[employer_model()]),
@@ -232,8 +215,8 @@ async def test_delete_employers_rejects_missing_and_blocked() -> None:
             Result(scalar_rows=[]),
         ]
     )
-    with pytest.raises(PayrollConflictError):
-        await SqlAlchemyPayrollRepository(session).delete_employers([1])
+    with pytest.raises(errors.PayrollConflictError):
+        await Repo(session).delete_employers([1])
 
 
 @pytest.mark.asyncio
@@ -246,18 +229,16 @@ async def test_delete_employers_succeeds_without_dependents() -> None:
             Result(scalar_rows=[]),
         ]
     )
-    await SqlAlchemyPayrollRepository(session).delete_employers([1])
+    await Repo(session).delete_employers([1])
     assert len(session.statements) == 4
 
 
 @pytest.mark.asyncio
 async def test_delete_contracts_rejects_missing_and_payroll_blocker() -> None:
     """Reject missing contracts and contracts referenced by a payroll month."""
-    with pytest.raises(PayrollNotFoundError):
-        await SqlAlchemyPayrollRepository(
-            Session([Result(scalar_rows=[])])
-        ).delete_contracts([1])
-    contract = EmploymentContractModel(
+    with pytest.raises(errors.PayrollNotFoundError):
+        await Repo(Session([Result(scalar_rows=[])])).delete_contracts([1])
+    contract = payroll.EmploymentContractModel(
         id=1,
         employer_id=1,
         started_at=date(2026, 1, 1),
@@ -265,7 +246,7 @@ async def test_delete_contracts_rejects_missing_and_payroll_blocker() -> None:
         is_indefinite=True,
         position=None,
     )
-    period = PayrollPeriodModel(
+    period = payroll.PayrollPeriodModel(
         id=8,
         employer_id=1,
         period_year=2026,
@@ -274,14 +255,14 @@ async def test_delete_contracts_rejects_missing_and_payroll_blocker() -> None:
         worked_days=30,
     )
     session = Session([Result(scalar_rows=[contract]), Result(scalar_rows=[period])])
-    with pytest.raises(PayrollConflictError):
-        await SqlAlchemyPayrollRepository(session).delete_contracts([1])
+    with pytest.raises(errors.PayrollConflictError):
+        await Repo(session).delete_contracts([1])
 
 
 @pytest.mark.asyncio
 async def test_delete_contracts_succeeds_without_payroll_blocker() -> None:
     """Delete a contract without a payroll in its month."""
-    contract = EmploymentContractModel(
+    contract = payroll.EmploymentContractModel(
         id=1,
         employer_id=1,
         started_at=date(2026, 1, 1),
@@ -290,5 +271,5 @@ async def test_delete_contracts_succeeds_without_payroll_blocker() -> None:
         position=None,
     )
     session = Session([Result(scalar_rows=[contract]), Result(scalar_rows=[])])
-    await SqlAlchemyPayrollRepository(session).delete_contracts([1])
+    await Repo(session).delete_contracts([1])
     assert len(session.statements) == 3

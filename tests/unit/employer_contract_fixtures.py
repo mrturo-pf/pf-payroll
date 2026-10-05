@@ -2,15 +2,12 @@
 
 from datetime import date
 
-from payroll.application.dto import (
-    EmployerMaintenanceDTO,
-    EmploymentContractMaintenanceDTO,
-)
+from payroll.application import dto
 
 
-def employer_command(id: int | None = None) -> EmployerMaintenanceDTO:
+def employer_command(id: int | None = None) -> dto.EmployerMaintenanceDTO:
     """Build an employer command."""
-    return EmployerMaintenanceDTO(
+    return dto.EmployerMaintenanceDTO(
         id=id,
         name="ACME",
         tax_id=None,
@@ -20,9 +17,11 @@ def employer_command(id: int | None = None) -> EmployerMaintenanceDTO:
     )
 
 
-def contract_command(id: int | None = None) -> EmploymentContractMaintenanceDTO:
+def contract_command(
+    id: int | None = None,
+) -> dto.EmploymentContractMaintenanceDTO:
     """Build a contract command."""
-    return EmploymentContractMaintenanceDTO(
+    return dto.EmploymentContractMaintenanceDTO(
         id=id,
         employer_id=1,
         started_at=date(2026, 1, 1),

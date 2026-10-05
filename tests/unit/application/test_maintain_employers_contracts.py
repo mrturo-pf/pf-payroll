@@ -12,7 +12,7 @@ from payroll.application.use_cases.maintain_employers_contracts import (
     MaintainEmployers,
     MaintainEmploymentContracts,
 )
-from tests.unit.employer_contract_fixtures import (
+from unit.employer_contract_fixtures import (
     contract_command as contract,
     employer_command as employer,
 )

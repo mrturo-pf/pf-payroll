@@ -152,51 +152,7 @@ period from the payment date where the domain requires it.
 
 ### Mixed employer create/update
 
-```json
-{
-  "employers": [
-    {
-      "id": 481,
-      "name": "Existing Employer Corrected",
-      "country_code": "CL"
-    },
-    {
-      "name": "New Employer",
-      "country_code": "CL"
-    }
-  ]
-}
-```
-
-The exact editable fields and response shape belong to the recommendation. The
-request must either apply both mutations or apply neither.
-
-### Mixed contract create/update
-
-```json
-{
-  "contracts": [
-    {
-      "id": 91,
-      "employer_id": 481,
-      "started_at": "2026-01-01",
-      "ended_at": "2026-06-30",
-      "is_indefinite": false,
-      "position": "Updated position"
-    },
-    {
-      "employer_id": 482,
-      "started_at": "2026-07-01",
-      "ended_at": null,
-      "is_indefinite": true,
-      "position": "New position"
-    }
-  ]
-}
-```
-
-The examples are synthetic and illustrative. They do not authorize these exact
-route names, IDs, or fields as the final contract.
+The recommendation contains the canonical synthetic batch example; this brief intentionally avoids duplicating request JSON.
 
 ## Error contract requirements
 

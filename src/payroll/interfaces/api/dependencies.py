@@ -29,6 +29,12 @@ from payroll.application.use_cases.deflate_amounts import DeflateAmounts
 from payroll.application.use_cases.delete_payroll_periods import DeletePayrollPeriods
 from payroll.application.use_cases.export_payroll import ExportPayroll
 from payroll.application.use_cases.import_payroll import ImportPayroll
+from payroll.application.use_cases.maintain_employers_contracts import (
+    DeleteEmployers,
+    DeleteEmploymentContracts,
+    MaintainEmployers,
+    MaintainEmploymentContracts,
+)
 from payroll.application.use_cases.payroll_queries import PayrollQueries
 from payroll.application.use_cases.preview_pdf_import import PreviewPdfImport
 from payroll.application.use_cases.process_imported_payroll_periods import (
@@ -180,6 +186,34 @@ def get_transactional_delete_payroll_periods_use_case(
 ) -> DeletePayrollPeriods:
     """Get the transactional payroll-period deletion use case."""
     return DeletePayrollPeriods(repository)
+
+
+def get_transactional_delete_employers_use_case(
+    repository: PayrollRepository = Depends(get_transactional_payroll_repository),
+) -> DeleteEmployers:
+    """Get the transactional employer deletion use case."""
+    return DeleteEmployers(repository)
+
+
+def get_transactional_delete_contracts_use_case(
+    repository: PayrollRepository = Depends(get_transactional_payroll_repository),
+) -> DeleteEmploymentContracts:
+    """Get the transactional contract deletion use case."""
+    return DeleteEmploymentContracts(repository)
+
+
+def get_transactional_maintain_employers_use_case(
+    repository: PayrollRepository = Depends(get_transactional_payroll_repository),
+) -> MaintainEmployers:
+    """Get the transactional employer maintenance use case."""
+    return MaintainEmployers(repository)
+
+
+def get_transactional_maintain_contracts_use_case(
+    repository: PayrollRepository = Depends(get_transactional_payroll_repository),
+) -> MaintainEmploymentContracts:
+    """Get the transactional contract maintenance use case."""
+    return MaintainEmploymentContracts(repository)
 
 
 def get_transactional_import_payroll_use_case(

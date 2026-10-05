@@ -7,6 +7,9 @@ from fastapi.responses import JSONResponse
 
 from payroll.application.errors import PayrollError
 from payroll.interfaces.api.routes.health import router as health_router
+from payroll.interfaces.api.routes.employers_contracts import (
+    router as employers_contracts_router,
+)
 from payroll.interfaces.api.routes.payroll import router as payroll_router
 from payroll.interfaces.api.routes.payroll_export import (
     router as payroll_export_router,
@@ -33,6 +36,7 @@ app.include_router(health_router)
 # template-management routes.
 app.include_router(payroll_export_router, dependencies=[Depends(verify_api_key)])
 app.include_router(pdf_templates_router, dependencies=[Depends(verify_api_key)])
+app.include_router(employers_contracts_router, dependencies=[Depends(verify_api_key)])
 app.include_router(payroll_router, dependencies=[Depends(verify_api_key)])
 app.include_router(reference_data_router, dependencies=[Depends(verify_api_key)])
 

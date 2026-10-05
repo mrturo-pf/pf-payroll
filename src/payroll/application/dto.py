@@ -47,6 +47,124 @@ class PayrollPeriodDetailFields:
 
 
 @dataclass(frozen=True, slots=True)
+class EmployerMaintenanceDTO:
+    """Represent one employer create/update command and result."""
+
+    id: int | None
+    name: str
+    tax_id: str | None
+    country_code: str
+    payment_date_rule: str | None = None
+    payment_month_offset: int = 0
+    payment_day_of_month: int | None = None
+    payment_business_day_offset: int = 0
+    payment_calendar_day_offset: int = 0
+    payment_effective_on_processing_next_day: bool = False
+    payment_fixed_day_roll: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class EmploymentContractMaintenanceDTO:
+    """Represent one employment-contract create/update command and result."""
+
+    id: int | None
+    employer_id: int
+    started_at: date
+    ended_at: date | None
+    is_indefinite: bool
+    position: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class EmployerReferenceDTO:
+    """Represent the employer reference nested in a contract response."""
+
+    id: int
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class EmploymentContractReadDTO:
+    """Represent an employment contract in a nested read response."""
+
+    id: int
+    employer: EmployerReferenceDTO
+    started_at: date
+    ended_at: date | None
+    is_indefinite: bool
+    position: str | None
+    is_in_effect: bool
+
+
+@dataclass(frozen=True, slots=True)
+class EmploymentContractNestedReadDTO:
+    """Represent a contract nested under an employer response."""
+
+    id: int
+    started_at: date
+    ended_at: date | None
+    is_indefinite: bool
+    position: str | None
+    is_in_effect: bool
+
+
+@dataclass(frozen=True, slots=True)
+class FirstIncreasePeriodReadDTO:
+    """Represent the first salary-increase period."""
+
+    year: int
+    month: int
+
+
+@dataclass(frozen=True, slots=True)
+class PaymentDateReadDTO:
+    """Represent employer payment-date configuration."""
+
+    rule: str | None
+    month_offset: int
+    day_of_month: int | None
+    business_day_offset: int
+    calendar_day_offset: int
+    effective_on_processing_next_day: bool
+    fixed_day_roll: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class IncreaseReadDTO:
+    """Represent employer salary-increase configuration."""
+
+    frequency: int | None
+    first_increase_period: FirstIncreasePeriodReadDTO | None
+
+
+@dataclass(frozen=True, slots=True)
+class EmployerReadDTO:
+    """Represent an employer with its full fields and nested contracts."""
+
+    id: int
+    name: str
+    tax_id: str | None
+    country_code: str
+    increase: IncreaseReadDTO
+    payment_date: PaymentDateReadDTO
+    contracts: list[EmploymentContractNestedReadDTO]
+
+
+@dataclass(frozen=True, slots=True)
+class EmployerMaintenanceResultDTO:
+    """Represent an employer maintenance batch result."""
+
+    employers: list[EmployerMaintenanceDTO]
+
+
+@dataclass(frozen=True, slots=True)
+class ContractMaintenanceResultDTO:
+    """Represent a contract maintenance batch result."""
+
+    contracts: list[EmploymentContractMaintenanceDTO]
+
+
+@dataclass(frozen=True, slots=True)
 class MoneyDTO:
     """Represent Money DTO."""
 

@@ -5,6 +5,12 @@ from decimal import Decimal
 from typing import Protocol
 
 from payroll.application.dto import (
+    ContractMaintenanceResultDTO,
+    EmployerMaintenanceDTO,
+    EmployerMaintenanceResultDTO,
+    EmployerReadDTO,
+    EmploymentContractMaintenanceDTO,
+    EmploymentContractReadDTO,
     ComputeContributionsCommandDTO,
     ComputeContributionsResultDTO,
     ComputeIncomeTaxCommandDTO,
@@ -92,6 +98,36 @@ class EmployerPaymentRuleReader(Protocol):
 
 class PayrollRepository(Protocol):
     """Persistence port for payroll operations."""
+
+    async def maintain_employers(
+        self, employers: list[EmployerMaintenanceDTO]
+    ) -> EmployerMaintenanceResultDTO:
+        """Create/update employers atomically."""
+        ...
+
+    async def maintain_contracts(
+        self, contracts: list[EmploymentContractMaintenanceDTO]
+    ) -> ContractMaintenanceResultDTO:
+        """Create/update employment contracts atomically."""
+        ...
+
+    async def list_employers(self) -> list[EmployerReadDTO]:
+        """List employers."""
+        ...
+
+    async def list_contracts(
+        self, employer_id: int | None = None
+    ) -> list[EmploymentContractReadDTO]:
+        """List employment contracts."""
+        ...
+
+    async def delete_employers(self, employer_ids: list[int]) -> None:
+        """Delete employers when no dependent data exists."""
+        ...
+
+    async def delete_contracts(self, contract_ids: list[int]) -> None:
+        """Delete contracts when no payroll blocks the deletion."""
+        ...
 
     async def get_effective_employment_contract(
         self, employer_id: int, payment_date: date

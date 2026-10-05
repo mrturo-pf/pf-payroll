@@ -110,7 +110,22 @@ converter would otherwise swallow `GET /payroll/templates` as `period_id="templa
 | `PUT` | `/payroll/templates/{template_id}` | Replaces an existing template's employer metadata and fields **in place** -- mutates the row, does not create a new `template_id`/version (bumping `version` is a plain field edit in the request body, not automatic). Same body shape and validation as `POST`, minus `template_id` (taken from the path). **404** if the template doesn't exist (never a silent create); **400** on the same constraint violations as `POST`. |
 | `DELETE` | `/payroll/templates/{template_id}` | Logical delete only -- sets `is_active: false`; never a row `DELETE`. Returns the now-inactive template. **404** if the template doesn't exist. A subsequent `POST /payroll/pdf-preview` will no longer match against it, but `GET /payroll/templates/{template_id}` (and `?include_inactive=true` on the list) still finds it. |
 
-### Reference data
+### Employer and employment-contract maintenance
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/payroll/employers` | Lists employers with `{ id, name, tax_id, country_code, increase: { frequency, first_increase_period: { year, month } | null }, payment_date: { rule, month_offset, day_of_month, business_day_offset, calendar_day_offset, effective_on_processing_next_day, fixed_day_roll }, contracts }`. Nested contracts contain id, started_at, ended_at, is_indefinite, position, and is_in_effect; the employer is not repeated. |
+| `POST` | `/payroll/employers` | Atomic batch create/update. Omitted/null `id` creates; an existing positive `id` updates; an unknown `id` is an error and never becomes a create. |
+| `DELETE` | `/payroll/employers` | Atomic batch deletion by `{ "ids": [ ... ] }`. Returns `409` when contracts or payroll periods block deletion. |
+| `GET` | `/payroll/contracts` | Lists contracts as `{ id, employer: { id, name }, started_at, ended_at, is_indefinite, position, is_in_effect }`, optionally filtered by `employer_id`. `is_in_effect` is true when today's date is within the contract interval. |
+| `POST` | `/payroll/contracts` | Atomic batch create/update using ID presence. Contracts require a real `employer_id`, `started_at`, and non-overlapping validity intervals. |
+| `DELETE` | `/payroll/contracts` | Atomic batch deletion by `{ "ids": [ ... ] }`. Returns `409` when worked-month payroll periods block deletion. |
+
+Employer/contract maintenance is additive and uses IDs for all relationships. A
+contract's worked-month eligibility is distinct from its payroll payment date, so
+final settlements after an employer change remain representable. Global interval
+non-overlap is enforced by the coordinated `pf-db` schema constraint.
+
 
 | Method | Path | Description |
 | --- | --- | --- |

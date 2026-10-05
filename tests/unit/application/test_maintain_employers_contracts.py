@@ -1,14 +1,10 @@
 """Tests for employer and employment-contract maintenance use cases."""
 
-from datetime import date
 from unittest.mock import AsyncMock
 
 import pytest
 
-from payroll.application.dto import (
-    EmployerMaintenanceDTO,
-    EmploymentContractMaintenanceDTO,
-)
+from payroll.application.dto import EmployerMaintenanceDTO
 from payroll.application.errors import PayrollValidationError
 from payroll.application.use_cases.maintain_employers_contracts import (
     DeleteEmployers,
@@ -16,30 +12,10 @@ from payroll.application.use_cases.maintain_employers_contracts import (
     MaintainEmployers,
     MaintainEmploymentContracts,
 )
-
-
-def employer(id: int | None = None) -> EmployerMaintenanceDTO:
-    """Build an employer command."""
-    return EmployerMaintenanceDTO(
-        id=id,
-        name="ACME",
-        tax_id=None,
-        country_code="CL",
-        payment_date_rule="last_business_day_of_month",
-        payment_fixed_day_roll="previous_business_day",
-    )
-
-
-def contract(id: int | None = None) -> EmploymentContractMaintenanceDTO:
-    """Build a contract command."""
-    return EmploymentContractMaintenanceDTO(
-        id=id,
-        employer_id=1,
-        started_at=date(2026, 1, 1),
-        ended_at=None,
-        is_indefinite=True,
-        position="Engineer",
-    )
+from tests.unit.employer_contract_fixtures import (
+    contract_command as contract,
+    employer_command as employer,
+)
 
 
 @pytest.mark.asyncio

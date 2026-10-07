@@ -440,109 +440,109 @@ Inventory 01 included a literal Scheduler `X-API-Key` in exported files. Invento
 
 The GCP evidence phase is substantially complete for the existing service, but implementation is not authorized. Remaining blockers are IAM design, Scheduler credential rotation, error classification, environment-scoped GitHub secret inventory, Postman URL reconciliation, database migration validation, and explicit approval for resource creation/deployment.
 
-## 10. Investigación complementaria: contratos, GitHub, IAM y migración local (2026-10-07)
+## 10. Complementary investigation: contracts, GitHub, IAM, and local migration (2026-10-07)
 
-### HTTP, OpenAPI, documentación y Postman
+### HTTP, OpenAPI, documentation, and Postman
 
-La inspección estática de `modules/pf-payroll/src/payroll/interfaces/api/routes/` encontró 27 rutas de aplicación:
+Static inspection of `modules/pf-payroll/src/payroll/interfaces/api/routes/` found 27 application routes:
 
 - `GET /health`;
-- 15 rutas de payroll/import/export/query/delete;
-- 5 rutas de templates;
-- 6 rutas de employers/contracts/reference data.
+- 15 payroll/import/export/query/delete routes;
+- 5 template routes;
+- 6 employer/contract/reference-data routes.
 
-`modules/pf-payroll/docs/api.md` documenta las 27 rutas de aplicación y además documenta las tres rutas generadas por FastAPI (`/docs`, `/redoc`, `/openapi.json`), para 30 entradas documentales. No se encontró una ruta implementada ausente de `docs/api.md` en esta comparación estática.
+`modules/pf-payroll/docs/api.md` documents the 27 application routes and the three FastAPI-generated routes (`/docs`, `/redoc`, `/openapi.json`), for 30 documented entries. No implemented route was missing from `docs/api.md` in this static comparison.
 
-La colección Postman contiene 28 requests bajo `pf-payroll`, cubriendo las operaciones funcionales. Cuatro requests usan IDs literales (`/payroll/481`, `walmart-chile-v1`, `acme-chile-v1`) donde la comparación mecánica no puede equipararlos automáticamente con los parámetros `{period_id}`/`{template_id}`; semánticamente cubren esas operaciones. Esto debe normalizarse durante el rename, no resolverse mediante reemplazo ciego.
+The Postman collection contains 28 requests under `pf-payroll`, covering the functional operations. Four requests use literal IDs (`/payroll/481`, `walmart-chile-v1`, `acme-chile-v1`) where mechanical comparison cannot automatically match them to `{period_id}`/`{template_id}` parameters; semantically, they cover those operations. This must be normalized during the rename, not solved through blind replacement.
 
-El contrato vigente todavía usa `period_id` en rutas/documentación/Postman. La implementación propuesta `payroll_id` requiere actualizar simultáneamente:
+The current contract still uses `period_id` in routes, documentation, and Postman. The proposed `payroll_id` implementation requires simultaneous updates to:
 
-- route parameter y OpenAPI;
-- DTOs/commands/ports;
+- route parameters and OpenAPI;
+- DTOs, commands, and ports;
 - `docs/api.md`;
-- Postman variables, examples y descriptions;
-- tests de contrato.
+- Postman variables, examples, and descriptions;
+- contract tests.
 
-Los nombres de URL concretos no cambian: `/payroll/481` seguirá siendo `/payroll/481`.
+Concrete URL names do not change: `/payroll/481` remains `/payroll/481`.
 
-### GitHub: environments, secrets y workflow history
+### GitHub: environments, secrets, and workflow history
 
-La consulta read-only de `mrturo-pf/pf-payroll` confirmó:
+The read-only query of `mrturo-pf/pf-payroll` confirmed:
 
-- repositorio público, activo, rama por defecto `main`;
-- workflows activos: Debug CI, CI / Deploy to Cloud Run, CI / Expire Stale Deployment Approvals y GCP Setup - pf-payroll;
-- environments `GCP` y `production`;
-- `production` tiene protección `required_reviewers`; `GCP` no mostró reglas de protección;
-- `main` no está protegido;
-- existen runs recientes exitosos, incluyendo deploy run `37255381815` para SHA `db9e94d1...`;
-- la historia de workflows continúa visible en el repositorio actual.
+- public, active repository with default branch `main`;
+- active workflows: Debug CI, CI / Deploy to Cloud Run, CI / Expire Stale Deployment Approvals, and GCP Setup - pf-payroll;
+- environments `GCP` and `production`;
+- `production` has a `required_reviewers` protection rule; `GCP` showed no protection rules;
+- `main` is not protected;
+- recent successful runs exist, including deploy run `37255381815` for SHA `db9e94d1...`;
+- workflow history remains visible in the current repository.
 
-No fue posible confirmar los nombres de secrets de repositorio o environment: los endpoints de secrets de GitHub devolvieron HTTP 500. Un resultado vacío de `gh secret list` no debe interpretarse como ausencia de secrets. Falta repetir esta consulta con un token/permisos o endpoint operativo, sin leer valores. Tampoco está probado que GitHub preserve exactamente secrets, environments, reviewers, hooks y Actions history después del rename; debe verificarse después de la operación si se autoriza.
+Repository- or environment-scoped secret names could not be confirmed: GitHub secret endpoints returned HTTP 500. An empty `gh secret list` result must not be interpreted as absence of secrets. This query must be repeated with working permissions or an operational endpoint, without reading values. It is also unproven that GitHub preserves secrets, environments, reviewers, hooks, and Actions history exactly after a rename; that must be verified after the operation if authorized.
 
-### Matriz IAM objetivo propuesta
+### Proposed target IAM matrix
 
-La siguiente matriz es diseño, no una concesión ejecutada:
+The following matrix is design, not an executed grant:
 
-| Identidad | Necesidad | Permisos objetivo |
+| Identity | Need | Target permission |
 |---|---|---|
-| Runtime `pf-svc-income` | Leer secretos concretos | `roles/secretmanager.secretAccessor` solo en `PF_DATABASE_URL`, `PF_RATES_API_KEY` y `PF_INCOME_API_KEY` |
-| Runtime `pf-svc-income` | Base de datos Cloud SQL, solo si el backend realmente es Cloud SQL | `roles/cloudsql.client`; omitirlo si la base es externa y no hay connector |
-| Runtime `pf-svc-income` | Llamar `pf-rates` | Invoker/configuración de aplicación según el modelo actual; no asumir acceso a la base de datos de `pf-rates` |
-| Deployer GitHub | Publicar imagen | `roles/artifactregistry.writer` en el repositorio objetivo |
-| Deployer GitHub | Desplegar Cloud Run | `roles/run.admin` limitado al proyecto/servicio según la política aprobada y `roles/iam.serviceAccountUser` solo sobre la cuenta runtime |
-| Setup/administración | Crear recursos, secretos y bindings | Identidad separada, temporal o administrativa; no reutilizarla como runtime |
+| Runtime `pf-svc-income` | Read specific secrets | `roles/secretmanager.secretAccessor` only on `PF_DATABASE_URL`, `PF_RATES_API_KEY`, and `PF_INCOME_API_KEY` |
+| Runtime `pf-svc-income` | Cloud SQL database, only if the backend is actually Cloud SQL | `roles/cloudsql.client`; omit it for an external database without a connector |
+| Runtime `pf-svc-income` | Call `pf-rates` | Invoker/application configuration according to the current model; do not assume database access to `pf-rates` |
+| GitHub deployer | Publish images | `roles/artifactregistry.writer` on the target repository |
+| GitHub deployer | Deploy Cloud Run | Approved `roles/run.admin` scope and `roles/iam.serviceAccountUser` only on the runtime account |
+| Setup/administration | Create resources, secrets, and bindings | Separate temporary or administrative identity; never reuse it as runtime |
 
-La cuenta actual `pf-payroll` combina todos esos roles a nivel de proyecto. No debe copiarse automáticamente. `pf-rates` tiene acceso a `PF_DATABASE_URL` y `PF_RATES_API_KEY`; el primero requiere justificación explícita o eliminación.
+The current `pf-payroll` account combines all of those roles at project level. It must not be copied automatically. `pf-rates` has access to `PF_DATABASE_URL` and `PF_RATES_API_KEY`; database-secret access requires explicit justification or removal.
 
-### Rollback y criterios de salida propuestos
+### Proposed rollback and exit criteria
 
-Propuesta operativa para aprobación: conservar el servicio, imagen, cuenta antigua y secreto antiguo durante **14 días calendario y hasta completar al menos un flujo representativo de payroll**, usando el plazo más largo. Extender hasta 30 días requiere una decisión explícita; Cloud Run permanece con escala mínima cero para controlar coste.
+Operational proposal for approval: retain the old service, image, account, and secret for **14 calendar days and until at least one representative payroll flow completes**, whichever is longer. Extending the period to 30 days requires an explicit decision; Cloud Run remains at scale-to-zero to control cost.
 
-Cerrar la ventana solo cuando:
+Close the window only when:
 
-- todos los consumidores conocidos usan la nueva URL y `PF_INCOME_API_KEY`;
-- `/health`, lectura, import JSON, import spreadsheet, PDF preview, export y reference data pasan con datos sintéticos;
-- el nuevo servicio lee/escribe correctamente `INC_*`;
-- no hay aumento no explicado de `500`/`502`, latencia o errores de `pf-rates`;
-- se completa un rollback probado o se documenta por qué el servicio antiguo ya no forma parte del rollback;
-- se han retirado referencias operativas antiguas y el usuario autoriza cleanup.
+- all known consumers use the new URL and `PF_INCOME_API_KEY`;
+- `/health`, reads, JSON import, spreadsheet import, PDF preview, export, and reference-data requests pass with synthetic data;
+- the new service correctly reads and writes `INC_*`;
+- there is no unexplained increase in `500`/`502`, latency, or `pf-rates` errors;
+- a rollback has been tested, or the old service is explicitly documented as outside rollback scope;
+- old operational references have been retired and the user authorizes cleanup.
 
-### Validación local de la migración `pf-db`
+### Local `pf-db` migration validation
 
-Se inició un PostgreSQL 16 local mediante `modules/pf-db/docker-compose.yml` y se aplicaron las migraciones Alembic hasta `0016` en una base fresca. El esquema confirmó las 17 tablas `PAY_*`, `PAY_MV_SUMARY`, sus secuencias, constraints y FKs.
+A local PostgreSQL 16 instance was started with `modules/pf-db/docker-compose.yml`, and Alembic migrations were applied through `0016` on a fresh database. The schema confirmed the 17 `PAY_*` tables, `PAY_MV_SUMARY`, sequences, constraints, and foreign keys.
 
-Después se ejecutó una prueba transaccional local con un employer y payroll sintéticos:
+A local transactional test then used a synthetic employer and payroll:
 
-- renombró el mapa completo de tablas a `INC_*`, incluyendo `PAY_PERIOD → INC_PAYROLL` y `PAY_MV_SUMARY → INC_MV_SUMARY`;
-- renombró `period_id → payroll_id` en las tablas dependientes;
-- renombró `period_year/month → accrual_year/month` en payroll y materialized view;
-- comprobó conservación de filas e IDs;
-- comprobó FKs hacia `INC_PAYROLL` y `INC_CONCEPT`;
-- comprobó columnas del materialized view renombrado;
-- ejecutó `ROLLBACK`;
-- verificó que el employer sintético no quedó persistido y que `alembic_version` permaneció en `0016`.
+- renamed the complete table map to `INC_*`, including `PAY_PERIOD → INC_PAYROLL` and `PAY_MV_SUMARY → INC_MV_SUMARY`;
+- renamed `period_id → payroll_id` in dependent tables;
+- renamed `period_year/month → accrual_year/month` in payroll and the materialized view;
+- verified row and ID preservation;
+- verified foreign keys to `INC_PAYROLL` and `INC_CONCEPT`;
+- verified columns on the renamed materialized view;
+- executed `ROLLBACK`;
+- verified that the synthetic employer was not persisted and `alembic_version` remained `0016`.
 
-Resultado: **la operación de rename es técnicamente viable como transacción local y reversible**. Esta prueba no sustituye la migración Alembic hand-written ni valida todavía nombres explícitos de todas las constraints/índices, sequence ownership, refresh/semántica de datos existentes o locks en una copia representativa; esos siguen siendo requisitos de implementación de `pf-db`.
+Result: **the rename operation is technically viable as a reversible local transaction**. This test does not replace a hand-written Alembic migration and does not yet validate explicit names for every constraint/index, sequence ownership, refresh/data semantics, or locks against a representative copy; those remain `pf-db` implementation requirements.
 
-### Clasificación inicial de errores observados
+### Initial classification of observed errors
 
-El baseline de Cloud Logging contiene:
+The Cloud Logging baseline contains:
 
-- `400`, `422`: probablemente validación/request inválido, sujeto a confirmar con casos sintéticos;
-- `403`: autenticación/autorización o API key incorrecta, requiere trazabilidad;
-- `404`: IDs/rutas/plantillas inexistentes y `/`, probablemente esperado en algunos casos;
-- `409`: conflictos de natural key o estado, revisar como comportamiento contractual;
-- `500`: aparece en payroll, summary, spreadsheet y reference data; no debe asumirse esperado;
-- `502`: aparece en imports JSON/rows/spreadsheet y requiere separar fallo downstream de datos de error del servicio;
-- `302`: llamada HTTP sin TLS, debe eliminarse de clientes/consumidores.
+- `400`, `422`: likely request validation, subject to synthetic-case confirmation;
+- `403`: authentication/authorization or incorrect API key, requiring traceability;
+- `404`: missing IDs/routes/templates and `/`, probably expected in some cases;
+- `409`: natural-key or state conflicts, to be reviewed as contract behavior;
+- `500`: appears on payroll, summary, spreadsheet, and reference-data routes; must not be assumed expected;
+- `502`: appears on JSON/rows/spreadsheet imports and must be separated into downstream failures versus service/data errors;
+- `302`: an HTTP-without-TLS call that should be removed from consumers.
 
-Esta clasificación es hipótesis de trabajo, no conclusión de causa raíz. La aceptación debe incluir casos que prueben cada clase.
+This classification is a working hypothesis, not a root-cause conclusion. Acceptance must include cases that exercise each class.
 
-## 11. Estado de investigación tras validaciones complementarias
+## 11. Investigation status after complementary validation
 
-La investigación documental y de contrato está suficientemente avanzada para preparar cambios locales en código, migración, docs y tests. Antes de cualquier mutación GCP o cutover permanecen: rotación de la credencial Scheduler expuesta, inventario válido de secrets GitHub, autorización de la matriz IAM, clasificación final de `500/502`, reconciliación de URLs y aprobación del rollback de 14 días.
+The documentation and contract investigation is sufficiently advanced to prepare local code, migration, documentation, and test changes. Before any GCP mutation or cutover, the remaining gates are rotation of the exposed Scheduler credential, a valid GitHub secret inventory, approval of the IAM matrix, final `500/502` classification, URL reconciliation, and approval of the 14-day rollback window.
 
-La recomendación sigue siendo proceder solo con preparación local/PR hasta cerrar esos gates. El camino más económico y seguro continúa siendo una ventana corta de mantenimiento para el esquema, un servicio Cloud Run paralelo temporal con escala cero, IAM least privilege y una ventana de rollback de 14 días extendida hasta probar el comportamiento payroll representativo.
+The recommendation remains to proceed only with local/PR preparation until those gates close. The most economical and safe path remains a short schema maintenance window, a temporary parallel Cloud Run service at scale-to-zero, least-privilege IAM, and a 14-day rollback window extended until representative payroll behavior is proven.
 
 ## 12. Conclusion
 

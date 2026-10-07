@@ -29,4 +29,6 @@ jobs:
           repository: mrturo-pf/pf-base
           path: ecosystem-root
       - name: Validate Markdown language
-        run: python3 ecosystem-root/scripts/check-language.py --all
+        run: |
+          python3 ecosystem-root/scripts/check-language.py --all --mode comments
+          python3 ecosystem-root/scripts/check-language.py --all --mode user-facing --report

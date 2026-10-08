@@ -574,7 +574,48 @@ The Cloud Logging baseline contains:
 
 This classification is a working hypothesis, not a root-cause conclusion. Acceptance must include cases that exercise each class.
 
-## 11. Investigation status after complementary validation
+## 11.1 Execution order
+
+The work must proceed in three phases. The first phase is read-only and must not mutate GCP, GitHub, production services, secrets, IAM, databases, or consumers.
+
+### Phase 1 — Safe investigation
+
+1. Complete the environment-scoped GitHub secret inventory by name and metadata only.
+2. Review and redact or remove artifacts containing credentials, raw logs, or sensitive data.
+3. Identify external consumers from authorized logs, Postman, repositories, workflows, jobs, and configuration.
+4. Reconcile current and historical Cloud Run URLs and the stale Postman URL.
+5. Classify the observed `500`, `502`, `403`, `404`, `409`, and `422` responses into expected contract behavior versus real failures.
+6. Detect Scheduler jobs, backups, restore procedures, and operational scripts that depend on `PAY_*` or `pf-payroll`.
+
+### Phase 2 — Decisions and approvals
+
+Approve the following before any implementation mutation:
+
+1. Rotation or revocation of the exposed Scheduler credential.
+2. Least-privilege IAM matrix.
+3. Whether `pf-rates` needs access to `PF_DATABASE_URL`.
+4. Separation of runtime and deployer identities.
+5. Final Cloud Run CPU, memory, concurrency, region, and scaling configuration.
+6. Schema maintenance window.
+7. Rollback window: proposed minimum of 14 calendar days and one representative payroll flow, whichever is longer.
+8. Acceptance and rollback criteria, including baseline error classification.
+
+### Phase 3 — Controlled changes
+
+Only after Phase 1 is complete and Phase 2 is explicitly approved:
+
+1. Rotate or revoke the exposed credential.
+2. Correct Postman and known consumer configurations.
+3. Apply the approved IAM changes.
+4. Create the target Artifact Registry, service account, and Secret Manager resources.
+5. Apply and validate the reversible `pf-db` migration, including `INC_MV_PAY_SUMMARY` and its renamed columns.
+6. Deploy `pf-svc-income` with immutable image identity and the approved Cloud Run configuration.
+7. Execute health, authenticated, database, and representative smoke tests.
+8. Start the approved rollback observation window and monitor the old/new services.
+
+The urgent real security action is credential rotation/revocation. The remaining Phase 1 items are investigation or validation, and Phase 2 items are decisions; none of them should be treated as completed infrastructure changes. Do not create target resources, mutate IAM, alter the database, or deploy the renamed service until the investigation is closed and the required approvals are recorded.
+
+## 12. Investigation status after complementary validation
 
 The documentation and contract investigation is sufficiently advanced to prepare local code, migration, documentation, and test changes. Before any GCP mutation or cutover, the remaining gates are rotation of the exposed Scheduler credential, a valid GitHub secret inventory, approval of the IAM matrix, final `500/502` classification, URL reconciliation, and approval of the 14-day rollback window.
 

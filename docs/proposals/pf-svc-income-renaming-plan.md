@@ -47,6 +47,45 @@ Inventory 03 confirms the existing service baseline but does not authorize imple
 
 Resource creation, secret rotation, repository rename, pushes, and deployment remain explicit authorization gates.
 
+## 1.2 Required execution order
+
+This order is normative for the proposal. Phase 1 is read-only. Phase 2 records approvals. Phase 3 contains mutations and cannot start until the preceding phases are complete.
+
+### Phase 1 — Safe investigation, without mutations
+
+1. Complete the environment-scoped GitHub secret inventory using names and metadata only.
+2. Review, redact, or remove artifacts containing credentials, raw logs, or sensitive data.
+3. Identify consumers through authorized logs, Postman, repositories, workflows, jobs, and configuration.
+4. Reconcile current and historical Cloud Run URLs, including the stale Postman URL.
+5. Classify `500`, `502`, `403`, `404`, `409`, and `422` responses as expected contract behavior or actual failures.
+6. Detect Scheduler jobs, backups, restore procedures, and scripts that depend on `PAY_*` or `pf-payroll`.
+
+### Phase 2 — Decisions and approvals
+
+Approve, document, and assign owners for:
+
+1. Rotation or revocation of the exposed Scheduler credential.
+2. Least-privilege IAM matrix.
+3. `pf-rates` access to `PF_DATABASE_URL`.
+4. Runtime/deployer identity separation.
+5. Final Cloud Run CPU, memory, concurrency, region, and scaling configuration.
+6. Schema maintenance window.
+7. Rollback window of at least 14 calendar days and one representative payroll flow, whichever is longer.
+8. Acceptance and rollback criteria, including baseline error classification.
+
+### Phase 3 — Controlled changes, with explicit authorization
+
+1. Rotate or revoke the exposed credential.
+2. Correct Postman and known consumer configurations.
+3. Apply the approved IAM changes.
+4. Create target Artifact Registry, service account, and Secret Manager resources.
+5. Apply and validate the reversible `pf-db` migration, including `INC_MV_PAY_SUMMARY` and its renamed columns.
+6. Deploy `pf-svc-income` with immutable image identity and approved Cloud Run settings.
+7. Execute health, authenticated, database, and representative smoke tests.
+8. Start and monitor the approved rollback observation window.
+
+The exposed credential is the urgent real security action. Phase 1 items are investigation/validation, Phase 2 items are decisions, and Phase 3 items are controlled mutations. No target resource, IAM change, database migration, consumer cutover, or deployment is authorized merely because it appears in this plan.
+
 ## 2. Decisions to record before implementation
 
 - [x] GitHub repository target is `mrturo-pf/pf-svc-income`.

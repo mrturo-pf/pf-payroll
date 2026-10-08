@@ -117,39 +117,41 @@ income ↛ payroll infrastructure
 
 ### Database migration
 
-`pf-db` owns a new reversible migration mapping the existing objects to the provisional target names:
+The migration owns the following approved physical-name map. The ecosystem convention is proposed to allow up to 30 characters for table/materialized-view names; PostgreSQL's standard limit remains 63 bytes. The longest target below is `INC_PAY_PDF_TEMPLATE_FIELD` at 26 ASCII characters.
 
 ```text
-PAY_PERIOD            → INC_PAYROLL
-PAY_PENS_INST         → INC_PENS_INST
-PAY_HLTH_INST         → INC_HLTH_INST
-PAY_PENS_PLAN         → INC_PENS_PLAN
-PAY_HLTH_PLAN         → INC_HLTH_PLAN
-PAY_CNTRB_CAP         → INC_CNTRB_CAP
-PAY_COMP_PROV         → INC_COMP_PROV
-PAY_COMP_PLAN         → INC_COMP_PLAN
-PAY_EMPLOYER          → INC_EMPLOYER
-PAY_EMP_CONT          → INC_EMP_CONT
-PAY_PRD_HLTH          → INC_PRD_HLTH
-PAY_PRD_COMP          → INC_PRD_COMP
-PAY_CONCEPT           → INC_CONCEPT
-PAY_ITEM              → INC_ITEM
-PAY_PDF_TEMPLATE      → INC_PDF_TEMPLATE
-PAY_PDF_TEMPLATE_FIELD→ INC_PDF_TEMPLATE_FIELD
-PAY_MV_SUMARY         → INC_MV_SUMARY
+PAY_PENS_INST          → INC_PENS_INST
+PAY_HLTH_INST          → INC_HLTH_INST
+PAY_PENS_PLAN          → INC_PENS_PLAN
+PAY_HLTH_PLAN          → INC_HLTH_PLAN
+PAY_CNTRB_CAP          → INC_CNTRB_CAP
+PAY_COMP_PROV          → INC_COMP_PROV
+PAY_COMP_PLAN          → INC_COMP_PLAN
+PAY_EMPLOYER           → INC_EMPLOYER
+PAY_EMP_CONT           → INC_EMP_CONT
+PAY_PERIOD             → INC_PAYROLL
+PAY_PRD_HLTH           → INC_PAY_PRD_HLTH
+PAY_PRD_COMP           → INC_PAY_PRD_COMP
+PAY_CONCEPT            → INC_PAY_CONCEPT
+PAY_ITEM               → INC_PAY_ITEM
+PAY_PDF_TEMPLATE       → INC_PAY_PDF_TEMPLATE
+PAY_PDF_TEMPLATE_FIELD → INC_PAY_PDF_TEMPLATE_FIELD
+PAY_MV_SUMARY          → INC_MV_PAY_SUMMARY
 ```
+
+All targets are uppercase and use the `INC_` service prefix. `INC_MV_PAY_SUMMARY` intentionally makes the payroll domain explicit and corrects `SUMARY` to `SUMMARY`; it has 18 ASCII characters and fits the proposed 30-character limit. Index and constraint names must be explicit, unique within the schema, and below PostgreSQL's 63-byte limit. No migration or generator should rely on automatic identifier truncation.
 
 The migration also includes the approved semantic column renames:
 
 ```text
-PAY_PRD_HLTH.period_id     → INC_PRD_HLTH.payroll_id
-PAY_PRD_COMP.period_id     → INC_PRD_COMP.payroll_id
-PAY_ITEM.period_id         → INC_ITEM.payroll_id
-PAY_MV_SUMARY.period_id    → INC_MV_SUMARY.payroll_id
+PAY_PRD_HLTH.period_id     → INC_PAY_PRD_HLTH.payroll_id
+PAY_PRD_COMP.period_id     → INC_PAY_PRD_COMP.payroll_id
+PAY_ITEM.period_id         → INC_PAY_ITEM.payroll_id
+PAY_MV_SUMARY.period_id    → INC_MV_PAY_SUMMARY.payroll_id
 PAY_PERIOD.period_year     → INC_PAYROLL.accrual_year
 PAY_PERIOD.period_month    → INC_PAYROLL.accrual_month
-PAY_MV_SUMARY.period_year  → INC_MV_SUMARY.accrual_year
-PAY_MV_SUMARY.period_month → INC_MV_SUMARY.accrual_month
+PAY_MV_SUMARY.period_year  → INC_MV_PAY_SUMMARY.accrual_year
+PAY_MV_SUMARY.period_month → INC_MV_PAY_SUMMARY.accrual_month
 ```
 
 Primary-key columns remain `id` and all `BIGSERIAL`/sequence values are preserved. No new keys, alternate keys, audit columns, nullable honorarios fields, or generic income ledger are introduced by this rename.

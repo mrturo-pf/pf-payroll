@@ -118,7 +118,9 @@ At minimum:
 ## Decisions required before implementation
 
 - Package split: retain `payroll`; introduce shared `income` capabilities and dependency tests.
-- Exact `INC_*` target map and migration compatibility strategy.
+- Proposed ecosystem database identifier limit is 30 characters; PostgreSQL's 63-byte limit remains the technical ceiling.
+- `PAY_MV_SUMARY` is explicitly renamed to `INC_MV_PAY_SUMMARY`, correcting the historical spelling and making the payroll domain visible in the materialized-view name.
+- Explicit index and constraint naming policy: names must remain below PostgreSQL's 63-byte identifier limit, be unique within the schema, and must not depend on automatic truncation.
 - HTTP route policy (`/payroll/*` retained or separate API migration).
 - API key migration strategy.
 - Old URL rollback/compatibility window and objective exit criteria.

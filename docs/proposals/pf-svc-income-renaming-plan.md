@@ -56,6 +56,9 @@ Resource creation, secret rotation, repository rename, pushes, and deployment re
 - [x] Existing `/payroll/*` HTTP routes remain; detail route is `/payroll/{payroll_id}`.
 - [x] Existing `PAY_*` objects are renamed through `pf-db`; `PAY_PERIOD → INC_PAYROLL`.
 - [x] Exact `INC_*` target map is approved, subject to migration implementation validation.
+- [x] `PAY_MV_SUMARY` target is explicitly `INC_MV_PAY_SUMMARY` (18 ASCII characters), correcting `SUMARY` to `SUMMARY` and making the payroll domain explicit.
+- [ ] Update `pf-db` naming documentation/validators from 14 to 30 characters before implementing the migration.
+- [ ] Review all generated and explicit index/constraint names for uniqueness and a maximum of 63 bytes; no automatic truncation.
 - [x] No custom domain/DNS behavior is involved.
 - [x] API key migration is atomic: target `PF_INCOME_API_KEY`; no application fallback to `PF_PAYROLL_API_KEY`.
 - [ ] Rollback exit criteria and observation period are approved.
@@ -114,10 +117,10 @@ Repository: `pf-db`.
 
 Expected changes:
 
-- add a reversible hand-written migration renaming the approved `PAY_*` objects to `INC_*`, including `PAY_PERIOD → INC_PAYROLL`;
+- add a reversible hand-written migration renaming the approved `PAY_*` objects to the `INC_*` map (maximum 30 characters), including `PAY_PERIOD → INC_PAYROLL` and the full PDF-template names;
 - rename relationship columns from `period_id` to `payroll_id` and temporal columns from `period_year`/`period_month` to `accrual_year`/`accrual_month`;
 - preserve all `id` PKs, `BIGSERIAL` sequences, monetary types, enums, nullability, defaults, rows and IDs;
-- explicitly audit/rename PK/FK/unique/check constraint names, indexes, sequence ownership, materialized-view definition/columns, seeds, restore scripts and inspection SQL;
+- explicitly audit/rename PK/FK/unique/check constraint names, indexes, sequence ownership, materialized-view definition/columns, seeds, restore scripts and inspection SQL; keep explicit index/constraint names below PostgreSQL's 63-byte limit and do not rely on automatic truncation;
 - use a short maintenance boundary unless a separately designed compatibility bridge is approved;
 
 Exit criteria:

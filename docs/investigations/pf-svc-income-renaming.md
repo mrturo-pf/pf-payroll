@@ -177,7 +177,7 @@ Candidate new service identity:
 
 The user has decided to rename the physical payroll-owned tables into an `INC_*` vocabulary, with the central period table becoming `INC_PAYROLL`. This is a real schema migration owned by `pf-db`, not a documentation-only rename.
 
-Provisional one-to-one mapping for the existing objects is:
+The approved target map uses the proposed 30-character ecosystem limit. PostgreSQL still permits up to 63 bytes per identifier; the longest target, `INC_PAY_PDF_TEMPLATE_FIELD`, is 26 ASCII characters.
 
 | Current | Target |
 |---|---|
@@ -191,15 +191,15 @@ Provisional one-to-one mapping for the existing objects is:
 | `PAY_EMPLOYER` | `INC_EMPLOYER` |
 | `PAY_EMP_CONT` | `INC_EMP_CONT` |
 | `PAY_PERIOD` | `INC_PAYROLL` |
-| `PAY_PRD_HLTH` | `INC_PRD_HLTH` |
-| `PAY_PRD_COMP` | `INC_PRD_COMP` |
-| `PAY_CONCEPT` | `INC_CONCEPT` |
-| `PAY_ITEM` | `INC_ITEM` |
-| `PAY_PDF_TEMPLATE` | `INC_PDF_TEMPLATE` |
-| `PAY_PDF_TEMPLATE_FIELD` | `INC_PDF_TEMPLATE_FIELD` |
-| `PAY_MV_SUMARY` | `INC_MV_SUMARY` |
+| `PAY_PRD_HLTH` | `INC_PAY_PRD_HLTH` |
+| `PAY_PRD_COMP` | `INC_PAY_PRD_COMP` |
+| `PAY_CONCEPT` | `INC_PAY_CONCEPT` |
+| `PAY_ITEM` | `INC_PAY_ITEM` |
+| `PAY_PDF_TEMPLATE` | `INC_PAY_PDF_TEMPLATE` |
+| `PAY_PDF_TEMPLATE_FIELD` | `INC_PAY_PDF_TEMPLATE_FIELD` |
+| `PAY_MV_SUMARY` | `INC_MV_PAY_SUMMARY` |
 
-The exact target names are a design gate before migration. The mapping must respect the existing maximum-name convention, foreign-key dependency order, and the fact that `INC_PAYROLL` is a payroll-period table rather than a generic income ledger.
+The mapping must respect the 30-character convention, foreign-key dependency order, and the fact that `INC_PAYROLL` is a payroll-period table rather than a generic income ledger. `INC_MV_PAY_SUMMARY` explicitly corrects the historical `SUMARY` spelling and makes the payroll domain visible.
 
 The migration must update, in dependency order:
 
@@ -210,13 +210,23 @@ The migration must update, in dependency order:
 - tests, fixtures, Postman descriptions, and database docs;
 - migration comments and ownership documentation.
 
-The migration must be reversible and tested against a copy of existing data. It must use table renames, not drop/recreate operations, preserve IDs and rows, and verify every foreign key, index, view refresh, seed, rollback, and application query. `pf-db` remains the schema owner; `pf-svc-income` follows after the migration is available.
+The migration must be reversible and tested against a copy of existing data. It must use table renames, not drop/recreate operations for base tables, preserve IDs and rows, and verify every foreign key, index, view refresh, seed, rollback, and application query. The materialized view is the intentional exception: because its name and exposed column aliases change, the migration must recreate it from the approved definition after renaming the base tables/columns. `pf-db` remains the schema owner; `pf-svc-income` follows after the migration is available.
 
 `PF_DATABASE_URL` and the PostgreSQL database name `pf_db` remain unchanged.
 
 ### 5.6.1 Database migration scope beyond table names
 
 The approved migration is not only `PAY_* → INC_*`. It has three explicit layers.
+
+#### Database identifier length policy
+
+The proposed `INC_*` targets are validated against PostgreSQL and the ecosystem tooling. The ecosystem convention should increase the maximum table/materialized-view name length from **14 to 30 characters**. PostgreSQL's standard identifier limit remains **63 bytes**, so the proposed longest target, `INC_PAY_PDF_TEMPLATE_FIELD` (26 ASCII characters), remains safely valid.
+
+The approved target vocabulary is the mapping recorded in section 5.6 above. The length policy applies to every target in that map, including `INC_MV_PAY_SUMMARY`.
+
+The target `INC_MV_PAY_SUMMARY` intentionally makes the payroll domain explicit and corrects `SUMARY` to `SUMMARY`. It has 18 ASCII characters and remains within the proposed 30-character convention. This is an explicit rename decision, not an incidental spelling cleanup.
+
+The migration must keep table and view names explicit and quoted. Index and constraint names must also be explicit, unique within the schema, and kept below PostgreSQL's 63-byte limit; do not rely on automatic truncation or generated-name collision handling. Update the documented convention and validators in `pf-db` before implementing the migration.
 
 #### A. Preserve physical identity where possible
 
@@ -238,18 +248,44 @@ The following column renames are included because they encode the old “period�
 | Current object/column | Target object/column | Reason |
 |---|---|---|
 | `PAY_PERIOD.id` | `INC_PAYROLL.id` | Preserve PK column `id`; table identity changes |
-| `PAY_PRD_HLTH.period_id` | `INC_PRD_HLTH.payroll_id` | FK now points to a payroll |
-| `PAY_PRD_COMP.period_id` | `INC_PRD_COMP.payroll_id` | FK now points to a payroll |
-| `PAY_ITEM.period_id` | `INC_ITEM.payroll_id` | FK now points to a payroll |
-| `PAY_MV_SUMARY.period_id` | `INC_MV_SUMARY.payroll_id` | Analytics output follows entity language |
+| `PAY_PRD_HLTH.period_id` | `INC_PAY_PRD_HLTH.payroll_id` | FK now points to a payroll |
+| `PAY_PRD_COMP.period_id` | `INC_PAY_PRD_COMP.payroll_id` | FK now points to a payroll |
+| `PAY_ITEM.period_id` | `INC_PAY_ITEM.payroll_id` | FK now points to a payroll |
+| `PAY_MV_SUMARY.period_id` | `INC_MV_PAY_SUMMARY.payroll_id` | Analytics output follows entity language |
 | `PAY_PERIOD.period_year` | `INC_PAYROLL.accrual_year` | Current field identifies the worked/devengado month |
 | `PAY_PERIOD.period_month` | `INC_PAYROLL.accrual_month` | Current field identifies the worked/devengado month |
-| `PAY_MV_SUMARY.period_year` | `INC_MV_SUMARY.accrual_year` | View mirrors the payroll accrual month |
-| `PAY_MV_SUMARY.period_month` | `INC_MV_SUMARY.accrual_month` | View mirrors the payroll accrual month |
+| `PAY_MV_SUMARY.period_year` | `INC_MV_PAY_SUMMARY.accrual_year` | View mirrors the payroll accrual month |
+| `PAY_MV_SUMARY.period_month` | `INC_MV_PAY_SUMMARY.accrual_month` | View mirrors the payroll accrual month |
 
 The base table's PK remains `id`, not `payroll_id`, because changing every surrogate-key column would create unnecessary ORM, sequence, FK, and client churn. The semantic name belongs in DTOs, commands, route parameters, and FK columns; the base PK can remain the conventional `id`.
 
-#### C. Rename dependent database objects and verify them
+#### C. Recreate the materialized view with semantic column names
+
+`INC_MV_PAY_SUMMARY` must change both its physical name and its exposed period-oriented columns. The target definition must expose:
+
+| Current | Target |
+|---|---|
+| `PAY_MV_SUMARY` | `INC_MV_PAY_SUMMARY` |
+| `period_id` | `payroll_id` |
+| `period_year` | `accrual_year` |
+| `period_month` | `accrual_month` |
+
+The migration steps are:
+
+1. stop old traffic and enter the approved schema maintenance boundary;
+2. capture and verify the current materialized-view definition and unique-index metadata;
+3. drop the old materialized view and its dependent unique index, or use an equivalent transactional replacement sequence;
+4. rename the base tables and base columns in the approved dependency order;
+5. create `INC_MV_PAY_SUMMARY` with the updated table references and column aliases `payroll_id`, `accrual_year`, and `accrual_month`;
+6. recreate the unique index with an explicit, unique name below PostgreSQL's 63-byte identifier limit;
+7. refresh the materialized view and verify its rows, columns, aggregates, and index;
+8. update the SQLAlchemy model, repository refresh query, inspection SQL, architecture/schema documentation, and tests;
+9. validate upgrade, downgrade, and rollback semantics on a fresh database and a copy containing representative synthetic data.
+
+The view's calculated columns remain unchanged: `employer_id`, `payment_date`, `taxable_income_clp`, `gross_income_clp`, `total_discounts_clp`, and `net_pay_clp`. The migration must prove that the rename changes identifiers and aliases without changing aggregate semantics or losing rows. A downgrade must restore `PAY_MV_SUMARY` and the original `period_id`, `period_year`, and `period_month` aliases together with the original base-table names.
+
+
+#### D. Rename dependent database objects and verify them
 
 The migration must explicitly audit and, where naming conventions require it, rename:
 
@@ -513,11 +549,11 @@ A local PostgreSQL 16 instance was started with `modules/pf-db/docker-compose.ym
 
 A local transactional test then used a synthetic employer and payroll:
 
-- renamed the complete table map to `INC_*`, including `PAY_PERIOD → INC_PAYROLL` and `PAY_MV_SUMARY → INC_MV_SUMARY`;
+- renamed the complete table map to `INC_*`, including `PAY_PERIOD → INC_PAYROLL` and `PAY_MV_SUMARY → INC_MV_PAY_SUMMARY`;
 - renamed `period_id → payroll_id` in dependent tables;
 - renamed `period_year/month → accrual_year/month` in payroll and the materialized view;
 - verified row and ID preservation;
-- verified foreign keys to `INC_PAYROLL` and `INC_CONCEPT`;
+- verified foreign keys to `INC_PAYROLL` and `INC_PAY_CONCEPT`;
 - verified columns on the renamed materialized view;
 - executed `ROLLBACK`;
 - verified that the synthetic employer was not persisted and `alembic_version` remained `0016`.

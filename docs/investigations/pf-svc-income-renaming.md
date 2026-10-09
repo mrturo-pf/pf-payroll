@@ -615,6 +615,66 @@ Only after Phase 1 is complete and Phase 2 is explicitly approved:
 
 The urgent real security action is credential rotation/revocation. The remaining Phase 1 items are investigation or validation, and Phase 2 items are decisions; none of them should be treated as completed infrastructure changes. Do not create target resources, mutate IAM, alter the database, or deploy the renamed service until the investigation is closed and the required approvals are recorded.
 
+## 11.2 Phase 1 execution record (2026-10-08)
+
+Phase 1 was executed without mutating GCP, GitHub, production services, secrets, IAM, databases, or consumers.
+
+### Completed evidence
+
+- Cloud Run is readable: `pf-payroll` is at 100% traffic on `pf-payroll-00056-lgk`, URL `https://pf-payroll-yqd4p7fzaa-uc.a.run.app`, using runtime account `pf-payroll@coreassistant-474022.iam.gserviceaccount.com`.
+- Cloud Run runtime configuration exposes `PF_DATABASE_URL`, `PF_PAYROLL_API_KEY`, `PF_RATES_API_KEY`, and `PF_RATES_URL`; no secret values were read.
+- Scheduler is readable: enabled job `gcp-scheduler-runner-chile` runs `30 4 * * *` UTC and targets `gcp-scheduler-runner`, not `pf-payroll`.
+- Postman collection and both environments are valid JSON. The GCP environment still uses the historical URL `https://pf-payroll-646185261155.us-central1.run.app`, while Cloud Run reports `https://pf-payroll-yqd4p7fzaa-uc.a.run.app`; this is an identified reconciliation item, not an authorized update.
+- No inventory archives, `sa-key.json`, Cloud Shell exports, or investigation tarballs were found in this repository checkout. Cloud Shell home artifacts were not accessible from this local checkout and must be reviewed in Cloud Shell separately.
+- Repository and documentation scans identify the expected `pf-payroll`, `PF_PAYROLL_API_KEY`, `PAY_*`, Postman, migration, restore, and Cloud Run Job references. These are dependencies to classify, not evidence that they should be mechanically replaced.
+
+### GitHub read-only inventory completed
+
+The GitHub blocker was resolved after clearing proxy and certificate environment overrides. For `mrturo-pf/pf-payroll`, the read-only inventory confirms:
+
+- repository is public, active, and defaults to `main`;
+- repository secret names are `GCP_SA_KEY` and `GH_PAT`; values were not requested or exposed;
+- repository variables are empty;
+- environments are `GCP` and `production`;
+- `GCP` has no protection rules; `production` has a required-reviewer protection rule;
+- `main` is not branch-protected;
+- no repository hooks were returned;
+- active workflows are Debug CI, CI / Deploy to Cloud Run, CI / Expire Stale Deployment Approvals, GCP Setup - pf-payroll, and CI / Documentation language;
+- GitHub code search found the current and historical Cloud Run URLs, `PF_PAYROLL_API_KEY`, and `pf-payroll-url` references in the expected payroll, Postman, common-workflow, and root coordination files.
+
+This closes the GitHub secret-name and repository-metadata evidence gap without reading secret values or changing repository settings.
+
+### Blocked evidence
+
+- Artifact Registry listing is blocked by VPC Service Controls.
+- Secret Manager listing is blocked by VPC Service Controls.
+- Cloud Logging read for the 30-day `pf-payroll` request baseline is blocked by VPC Service Controls. The `500`/`502`/`403`/`404`/`409`/`422` classification therefore remains based on previously supplied inventory evidence and is not newly revalidated in this run.
+
+### Phase 1 response evidence received (2026-10-08)
+
+The operator-provided Cloud Shell response and inventory package remove the previous VPC Service Controls blocker for the following read-only evidence:
+
+- Artifact Registry has four Docker repositories in `us-central1`: `pf-payroll`, `pf-rates`, `gcp-scheduler-runner`, and `gcp-todoist-runner`. The `pf-payroll` repository is approximately 3.6 GB, uses Google-managed encryption, has vulnerability scanning disabled, and currently has cleanup policy dry-run enabled. No `pf-svc-income` repository exists.
+- The active `pf-payroll` image is pinned by digest `sha256:70cc7b2a4867c474970a9723a6b2526b1054a79725258dfc3801acc3ca7dc363`; tags include the commit tag `db9e94d1e4802b62a799c6e277e235aa468df58f` and `latest`.
+- Secret Manager contains `PF_DATABASE_URL`, `PF_PAYROLL_API_KEY`, `PF_RATES_API_KEY`, and `PF_RATES_GDRIVE_EXPORT_FOLDER_ID`. `PF_INCOME_API_KEY` does not exist. The first three relevant secrets each have one enabled version; no secret values were read.
+- `PF_PAYROLL_API_KEY` is accessible only to `pf-payroll`. `PF_RATES_GDRIVE_EXPORT_FOLDER_ID` is accessible only to `pf-rates`. `PF_DATABASE_URL` and `PF_RATES_API_KEY` are accessible to both `pf-payroll` and `pf-rates`; this confirms the least-privilege review item rather than just hypothesizing it.
+- The 30-day logging summary contains 221 requests: 157 with `200`, 19 with `502`, 13 with `404`, 12 with `500`, 7 with `403`, 6 with `422`, 3 with `409`, 3 with `400`, and 1 with `302`.
+- Observed clients are primarily Postman (`170` requests across runtime versions), `curl` (`39`), and browser-compatible user agents (`8`). Most traffic uses the historical URL; the current URL appears mainly for health checks. This makes Postman/consumer URL reconciliation a concrete cutover requirement.
+- The endpoint summary confirms `500`/`502` responses on imports, spreadsheet, summary, and reference-data operations, plus one plain-HTTP `302`. The evidence identifies where to investigate, but does not establish root causes.
+- Source-IP output was generated. It contains potentially sensitive personal or operational data and must not be committed or shared without review and redaction.
+
+- The corrected Artifact Registry package-version inventory completed successfully and contains the image digests and build metadata for the `pf-payroll` package. The target repository check returned `NOT_FOUND`, confirming that `pf-svc-income` has not been created.
+- The clean identity-reference summary completed without scanning its own output file.
+- No Cloud Run Jobs were returned in `us-central1`, and no Cloud SQL instances were returned for the project. The empty placeholder backup file is an artifact of the command template, not evidence of a backup resource.
+- Scheduler metadata confirms one enabled `POST` job, `gcp-scheduler-runner-chile`, targeting `gcp-scheduler-runner`; no direct `pf-payroll` target was found.
+- The local dependency scan found Cloud Shell command history and the generated inventory itself. It did not establish an external backup/restore consumer; those matches must not be treated as independent production dependencies.
+
+The collected package contains source IPs, endpoint URLs, user agents, and local shell-history references. It must be treated as sensitive working evidence, reviewed/redacted, and excluded from commits or broad sharing.
+
+### Phase 1 status
+
+Phase 1 is now **complete for the available read-only GCP evidence**. The remaining work is not missing inventory: it is review/redaction of sensitive evidence, causal classification of the observed HTTP errors using authorized logs or application diagnostics, confirmation of external consumers outside the inspected project/repositories, and the Phase 2 decisions. No secret values were read and no GCP mutation was performed.
+
 ## 12. Investigation status after complementary validation
 
 The documentation and contract investigation is sufficiently advanced to prepare local code, migration, documentation, and test changes. Before any GCP mutation or cutover, the remaining gates are rotation of the exposed Scheduler credential, a valid GitHub secret inventory, approval of the IAM matrix, final `500/502` classification, URL reconciliation, and approval of the 14-day rollback window.

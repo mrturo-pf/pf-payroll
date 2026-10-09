@@ -210,7 +210,7 @@ The API key transition is atomic:
 - create `PF_INCOME_API_KEY` in Secret Manager;
 - deploy the new service configured only with `PF_INCOME_API_KEY`;
 - update clients/Postman to use the new key variable;
-- revoke/remove old `PF_PAYROLL_API_KEY` access as part of cutover;
+- retain `PF_PAYROLL_API_KEY` access for the old service until the rollback window is explicitly closed; revoke/remove old-secret access only during approved cleanup;
 - do not implement fallback logic between the old and new names;
 - if cutover fails, rollback uses the old service and its already-known old secret as an operational rollback path, not as application-level dual-secret compatibility.
 

@@ -234,7 +234,23 @@ Status: pending classification and approval.
 
 The existing `pf-db` tooling reads `NEON_DATABASE_URL` from the gitignored `secrets/neon.env`; never copy that value into commands, logs, proposals, or chat. Because a production dump contains RUTs, salaries, health information, and other sensitive data, its storage, encryption, access, retention, and deletion must be explicitly approved.
 
-Status: pending Neon provider/backup evidence and restore rehearsal; blocks Decision 6.
+**Security finding:** the operator's response artifact contained a complete `NEON_DATABASE_URL` line from the gitignored local environment. The local response copy was redacted, but the Neon credential must be treated as exposed and rotated in the Neon control plane; deleting the response file alone is insufficient. The 2.1 MB logical dump is also sensitive payroll data and must remain restricted outside git/shareable inventory paths or be deleted according to the approved retention decision.
+
+**Control-plane evidence received:** Neon project `personal-finances` (`wild-hat-66882594`) is in `aws-us-east-1`, with default/primary branch `production` (`br-empty-glade-adv4sfa9`) in `ready` state. Its read/write endpoint is in `aws-us-east-1`, currently `idle`, with autoscaling `0.25–2` CU and suspend timeout `0`. Project history retention is only **6 hours**, so it cannot by itself cover the proposed 14-day rollback window. The approved logical dump must therefore be stored securely for the rollback window, with a tested restore and explicit deletion decision.
+
+**Role evidence received:** the application connection uses `neondb_owner`. This role is not a least-privilege runtime role: the inspected role metadata shows `rolcreaterole`, `rolcreatedb`, and `rolbypassrls` enabled. **Role evidence update:** the corrected grant query shows `neondb_owner` has all listed DML/DDL-related table privileges on every `PAY_*`/`RAT_*` object, all grantable. All objects are owned by `neondb_owner`. Role membership shows `neondb_owner` inherits `neon_superuser`; `neon_service` also inherits `neon_superuser`, which has broad `pg_read_all_data` and `pg_write_all_data` memberships. These roles are unsuitable as least-privilege application identities. A dedicated runtime role design is mandatory before deployment; do not improvise grants during the schema migration.
+
+**Privilege evidence update:** `neondb_owner` has database `CREATE`/`TEMPORARY`, public schema `CREATE`, and all grantable table privileges. All application objects and sequences are owned by `neondb_owner`. Default privileges from `cloud_admin` grant broad table/sequence access to `neon_superuser`. No row-level security policies were returned; the first RLS flag query was version-incompatible and requires the corrected catalog query. Public routines returned no security-definer application routine; most results were extension support functions.
+
+**Snapshot schedule evidence:** `neonctl snapshots schedule get` confirms that no automatic snapshot schedule is configured for the `production` branch. Since History Retention is only 6 hours, the approved logical dump and tested restore remain the required rollback evidence for the proposed 14-day window.
+
+The operator also created a 2.1 MB logical dump and restored it into the local PostgreSQL environment successfully. The dump contains real payroll data and must remain restricted, outside git/shareable inventory locations, until its approved deletion point. This is evidence of local restore tooling, not yet a production backup-retention or restore-rehearsal approval.
+
+The materialized-view column query returned zero rows because the chosen `information_schema.columns` query did not expose the materialized-view columns; use `pg_attribute`/catalog inspection before treating the result as an empty view. The local `migration-check`/`alembic current` command was initially inconclusive because it was run from the wrong path and the host environment lacked the required driver; the later `uv run alembic current` reached Neon and confirmed `0016 (head)`.
+
+**Updated proposal:** retain the Neon provider/backup decision, confirm Neon retention/PITR through the approved Neon control plane, inspect the materialized-view columns with a catalog query, and rehearse restore validation locally with the correct `pf-db` environment before approving the migration window.
+
+Status: Neon connection and local restore evidence received; provider retention/PITR approval and final restore rehearsal remain pending.
 
 ### Decision 10 — GitHub deploy authentication
 
@@ -265,6 +281,14 @@ Therefore the deterministic URL is not automatically “stale”. Prepare the ta
 
 Status: pending IAM/URL evidence and approval.
 
+### Decision 13 — Neon runtime roles
+
+**Proposal:** do not use Neon owner-level `neondb_owner` as the runtime identity for `pf-svc-income`. Create or select a dedicated application role with only the privileges required by the service, and separate roles for `pf-rates` and the renamed service if the provider and migration strategy permit it. Map exact table, sequence, schema, and materialized-view privileges before migration; do not grant `CREATEROLE`, `CREATEDB`, `BYPASSRLS`, or owner privileges to runtime roles.
+
+The corrected response includes `table_name` and confirms the broad privilege pattern; the exact least-privilege target matrix still needs to be designed from application DML. This decision is database-level least privilege and must be coordinated with `pf-db`; it must not be improvised inside the production migration window.
+
+Status: exact privilege evidence received; dedicated role design and approval remain pending.
+
 ### Phase 2 gate
 
 Resolution order:
@@ -272,10 +296,10 @@ Resolution order:
 1. Handle Decision 1 independently as a security incident.
 2. Obtain read-only evidence for Decisions 2–5, 9, 10, and 12; complete Decision 8a.
 3. Approve Decisions 2, 3, 4, 5, 10, and 12.
-4. Approve Decisions 6, 7, 9, and 11.
+4. Approve Decisions 6, 7, 9, 11, and 13.
 5. Approve Decision 8b–8c.
 
-Phase 3 remains blocked until Decision 1 is closed and Decisions 2–12 are approved with named approver, date, and evidence link. Preparing this package does not rotate credentials, change IAM, create GCP resources, alter the database, update Postman, or deploy a service.
+Phase 3 remains blocked until Decision 1 is closed and Decisions 2–13 are approved with named approver, date, and evidence link. Preparing this package does not rotate credentials, change IAM, create GCP resources, alter the database, update Postman, or deploy a service.
 
 ## 2. Decisions to record before implementation
 

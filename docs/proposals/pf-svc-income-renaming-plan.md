@@ -24,6 +24,12 @@ Superseded-by: none
 - [x] External consumer and Cloud Logging inventory completed in reduced-summary form; raw logs excluded from the sanitized package.
 - [x] Current Artifact Registry repository/image inventory completed; target repository confirmed absent.
 - [ ] Cloud Run URL policy and Postman target choice approved; both currently advertised URL formats are valid and must not be labeled stale without a decision.
+
+The lifecycle states intentionally describe different artifacts: the ecosystem index
+tracks the overall investigation as `investigating`; the brief and recommendation
+record an approved design; and this plan remains `planned` because implementation is
+blocked and not authorized. These statuses are compatible, not competing claims: the
+recommendation is approved while execution remains pending explicit gates.
 - [ ] Classification of baseline `500`/`502`/`403`/`404`/`409`/`422` responses completed.
 - [ ] Scheduler credential exposure remediated.
 - [ ] Least-privilege IAM design approved; current broad service-account roles must not be copied blindly.
@@ -56,7 +62,8 @@ This order is normative for the proposal. Phase 1 is read-only. Phase 2 records 
 1. Complete the environment-scoped GitHub secret inventory using names and metadata only.
 2. Review, redact, or remove artifacts containing credentials, raw logs, or sensitive data.
 3. Identify consumers through authorized logs, Postman, repositories, workflows, jobs, and configuration.
-4. Reconcile current and historical Cloud Run URLs, including the stale Postman URL.
+4. Reconcile current and historically advertised Cloud Run URLs, including the
+   Postman-configured URL, without assuming that either is stale.
 5. Classify `500`, `502`, `403`, `404`, `409`, and `422` responses as expected contract behavior or actual failures.
 6. Detect Scheduler jobs, backups, restore procedures, and scripts that depend on `PAY_*` or `pf-payroll`.
 

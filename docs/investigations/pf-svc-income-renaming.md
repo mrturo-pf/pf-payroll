@@ -545,7 +545,7 @@ Close the window only when:
 
 ### Local `pf-db` migration validation
 
-A local PostgreSQL 16 instance was started with `modules/pf-db/docker-compose.yml`, and Alembic migrations were applied through `0016` on a fresh database. The schema confirmed the 17 `PAY_*` tables, `PAY_MV_SUMARY`, sequences, constraints, and foreign keys.
+A local PostgreSQL 16 instance was started with `modules/pf-db/docker-compose.yml`, and Alembic migrations were applied through `0016` on a fresh database. The schema confirmed the 15 `PAY_*` tables, the 5 `RAT_*` tables, the `PAY_MV_SUMARY` materialized view, sequences, constraints, and foreign keys.
 
 A local transactional test then used a synthetic employer and payroll:
 
@@ -583,7 +583,8 @@ The work must proceed in three phases. The first phase is read-only and must not
 1. Complete the environment-scoped GitHub secret inventory by name and metadata only.
 2. Review and redact or remove artifacts containing credentials, raw logs, or sensitive data.
 3. Identify external consumers from authorized logs, Postman, repositories, workflows, jobs, and configuration.
-4. Reconcile current and historical Cloud Run URLs and the stale Postman URL.
+4. Reconcile current and historically advertised Cloud Run URLs, including the
+   Postman-configured URL, without assuming that either is stale.
 5. Classify the observed `500`, `502`, `403`, `404`, `409`, and `422` responses into expected contract behavior versus real failures.
 6. Detect Scheduler jobs, backups, restore procedures, and operational scripts that depend on `PAY_*` or `pf-payroll`.
 

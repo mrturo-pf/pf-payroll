@@ -5,10 +5,10 @@
 > `pf-payroll` ORM/models, calculation services, import/export paths, PDF preview, API,
 > CLI, tests, and the current Postman surface.
 >
-> The user's decisions are treated as closed requirements: remove the persisted review
-> workflow; replace period-level contract kind with an employer-linked employment
-> contract table; remove the old fields from all API/import/export/PDF/JSON contracts;
-> migrate existing data first; and drop both PostgreSQL enum types.
+> **Historical note:** this recommendation predates the released removal of the
+> `pf-payroll` CLI. References to CLI commands below describe the pre-removal state
+> and are not supported interfaces.
+>
 
 ## 1. Executive recommendation
 

@@ -2,7 +2,9 @@
 
 **Date:** 2026-10-04
 **Scope:** `pf-payroll` and consumers within the `pf-*` ecosystem
-**Status:** analysis complete; code changes not yet applied
+**Status:** released; historical decision record. The CLI removal described here has
+been implemented. Command listings and implementation paths below describe the
+pre-removal state and are not supported interfaces.
 
 ## Executive summary
 

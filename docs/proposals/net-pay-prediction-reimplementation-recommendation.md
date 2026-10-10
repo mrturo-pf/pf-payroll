@@ -7,7 +7,9 @@
 > (context, constraints) and the recommendation (concrete design) into one, grounded
 > entirely in the real git history and the real pf-rates contract -- no guessing.
 
-## 1. The symptom, and why it is not a bug
+> **Historical note:** any CLI references in this document describe the pre-removal
+> state of `pf-payroll`; the CLI is not a supported interface.
+>
 
 `GET /payroll/period-range` (`payroll_repository_queries.py::list_period_ranges()`)
 already has code whose *only* purpose is to populate `net_pay_clp` for the first

@@ -7,9 +7,11 @@
 > dated, before a stage is considered closed. If you find this document out of date
 > relative to the code, update it yourself before continuing.
 
+> The `pf-payroll` CLI was removed as a released change. Any CLI references retained
+> below are historical implementation context, not supported interfaces.
+
 ## Overall status
 
-| Stage | Description | Status |
 | --- | --- | --- |
 | 0 | Period semantics (code + historical data) | **Complete** — code, local data, Neon (fixed by the user) and the source CSV are all aligned now |
 | 1 | Endpoint 1 — PDF preview (MVP) | **Complete** — template-based extractor, real WALMART-CHILE template, `POST /payroll/import/pdf-preview` route |

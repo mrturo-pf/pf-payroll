@@ -5,7 +5,9 @@
 after reading the current `pf-payroll` routes, DTOs, use cases, repository ports,
 SQLAlchemy adapters, transaction scope, models, tests, and API documentation.
 
-## 1. Executive recommendation
+> **Historical note:** any CLI references in this document describe the pre-removal
+> state of `pf-payroll`; the CLI is not a supported interface.
+>
 
 Implement the feature in two coherent parts:
 

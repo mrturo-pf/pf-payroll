@@ -1,4 +1,6 @@
-## Executive summary
+> **Historical note:** any CLI references in this document describe the pre-removal
+> state of `pf-payroll`; the CLI is not a supported interface.
+>
 
 It's feasible and **low-risk** to build the PDF import flow by reusing 100% of the
 reconciliation that already exists (a new `from_rows()` + `ProcessImportedPayrollPeriods`

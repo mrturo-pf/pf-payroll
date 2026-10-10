@@ -1,4 +1,8 @@
-## Context
+## Historical context
+
+This brief predates the released removal of the `pf-payroll` CLI. Any CLI references
+below describe the pre-removal implementation and are not supported interfaces.
+
 
 `PAY_PERIOD` currently persists two columns that the user wants to remove:
 

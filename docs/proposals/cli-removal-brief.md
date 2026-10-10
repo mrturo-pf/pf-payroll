@@ -3,7 +3,8 @@
 **Date:** 2026-10-04
 **Repository:** `pf-payroll`
 **Related analysis:** [`../investigations/cli-removal.md`](../investigations/cli-removal.md)
-**Status:** proposal prepared; implementation pending
+**Status:** released; implementation completed. This brief is retained as historical
+context for the CLI removal; the CLI is not a supported interface.
 
 ## Objective
 

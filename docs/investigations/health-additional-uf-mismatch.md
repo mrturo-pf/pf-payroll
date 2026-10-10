@@ -355,7 +355,7 @@ returns no warnings either. Nothing left open on this investigation.
 
 The "Resolution" above closed the single 2026-08 period that had been
 manually reported. This session ran the **full 22-period real CSV**
-(`WALMART-CHILE`, 2024-11 through 2026-08, via the CLI's `import-payroll`,
+(`WALMART-CHILE`, 2024-11 through 2026-08, via the historical CLI's `import-payroll`,
 which exercises the exact same pipeline as `POST /payroll/import`) through
 the same reconciliation, now with a real Neon-restored local database
 (real `health_plans`, real `RAT_EXCH_RATE`, real contribution caps -- no

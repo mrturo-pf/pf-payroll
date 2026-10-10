@@ -20,159 +20,98 @@ Superseded-by: none
 - [x] Local synthetic `pf-db` rename probe completed with transactional rollback and no persisted synthetic rows.
 - [x] GitHub workflow/environment/history inventory completed read-only; repository and environment secret names were reviewed without reading values.
 - [x] Environment-scoped secret inventory completed.
-- [ ] Scheduler credential exposure from inventory 01 remediated and old artifacts redacted/removed.
-- [x] External consumer and Cloud Logging inventory completed in reduced-summary form; raw logs excluded from the sanitized package.
-- [x] Current Artifact Registry repository/image inventory completed; target repository confirmed absent.
-- [ ] Cloud Run URL policy and Postman target choice approved; both currently advertised URL formats are valid and must not be labeled stale without a decision.
-
-The lifecycle states intentionally describe different artifacts: the ecosystem index
-tracks the overall investigation as `investigating`; the brief and recommendation
-record an approved design; and this plan remains `planned` because implementation is
-blocked and not authorized. These statuses are compatible, not competing claims: the
-recommendation is approved while execution remains pending explicit gates.
-- [ ] Classification of baseline `500`/`502`/`403`/`404`/`409`/`422` responses completed.
-- [ ] Scheduler credential exposure remediated.
-- [ ] Least-privilege IAM design approved; current broad service-account roles must not be copied blindly.
+- [ ] External register gates `IMP-001` through `IMP-007` are resolved or explicitly
+  accepted for cutover.
+- [ ] Cloud Run URL policy and Postman target choice approved; neither advertised
+  URL is assumed stale without a decision.
 - [ ] Repository rename authorization received.
 - [ ] Implementation slices completed and validated.
 - [ ] Cross-repository commits/pushes authorized separately.
 - [ ] Deployment approval explicitly authorized.
-- [ ] Rollback window of 14 calendar days (or until one representative payroll flow completes, whichever is longer) approved.
+- [ ] Rollback window of 14 calendar days (or until one representative payroll flow
+  completes, whichever is longer) approved.
+
+The lifecycle states intentionally describe different artifacts: the ecosystem
+index tracks the overall investigation as `investigating`; the brief and
+recommendation record an approved design; and this plan remains `planned` because
+implementation is blocked and not authorized. These statuses are compatible: the
+recommendation is approved while execution remains pending explicit gates.
 
 ## 1.1 Latest evidence and blockers (2026-10-07)
 
-Inventory 03 confirms the existing service baseline but does not authorize implementation:
+Inventory confirms that the current `pf-payroll` service remains active and the
+`pf-svc-income` target resources do not exist. Rename-specific blockers are
+consumer inventory, URL cutover, schema migration validation, package-boundary
+review, and explicit authorization.
 
-- current Cloud Run service `pf-payroll` remains healthy at 100% traffic on revision `pf-payroll-00056-lgk`;
-- target Artifact Registry, service account, and `PF_INCOME_API_KEY` do not exist;
-- current runtime identity has broad project roles: Artifact Registry writer, Cloud SQL client, Service Account User, Cloud Run Admin, and Secret Manager accessor;
-- no VPC connector, custom DNS zone, forwarding rule, alert, dashboard, log metric, or uptime check was found in the collected outputs;
-- Cloud Logging confirms real Postman/curl consumers and a baseline containing `500`, `502`, `403`, `404`, `409`, and `422` responses;
-- the first inventory exposed a Scheduler credential and requires separate rotation/remediation;
-- `pf-rates` currently has access to `PF_DATABASE_URL` and `PF_RATES_API_KEY`; the database-secret access requires justification before reproducing IAM.
-
-Resource creation, secret rotation, repository rename, pushes, and deployment remain explicit authorization gates.
+Unrelated security, IAM, backup, error-baseline, and observability findings are
+registered as `IMP-001` through `IMP-007` in the ecosystem improvement register.
+They may provide release gates, but their detailed remediation does not belong in
+this rename plan.
 
 ## 1.2 Required execution order
 
-This order is normative for the proposal. Phase 1 is read-only. Phase 2 records approvals. Phase 3 contains mutations and cannot start until the preceding phases are complete.
+This order is normative for the proposal. Phase 1 is read-only. Approval gates are
+recorded before Phase 3 mutations; external follow-ups remain in the register.
+
 
 ### Phase 1 — Safe investigation, without mutations
 
-1. Complete the environment-scoped GitHub secret inventory using names and metadata only.
-2. Review, redact, or remove artifacts containing credentials, raw logs, or sensitive data.
-3. Identify consumers through authorized logs, Postman, repositories, workflows, jobs, and configuration.
-4. Reconcile current and historically advertised Cloud Run URLs, including the
+1. Identify known consumers through authorized logs, Postman, repositories,
+   workflows, jobs, and configuration.
+2. Reconcile current and historically advertised Cloud Run URLs, including the
    Postman-configured URL, without assuming that either is stale.
-5. Classify `500`, `502`, `403`, `404`, `409`, and `422` responses as expected contract behavior or actual failures.
-6. Detect Scheduler jobs, backups, restore procedures, and scripts that depend on `PAY_*` or `pf-payroll`.
+3. Validate the approved API, package, schema, migration, and rollback contracts.
+4. Record any unrelated finding in the ecosystem improvement register instead of
+   expanding this plan.
 
 ### Phase 2 — Decisions and approvals
 
-Approve, document, and assign owners for:
-
-1. Rotation or revocation of the exposed Scheduler credential.
-2. Least-privilege IAM matrix.
-3. `pf-rates` access to `PF_DATABASE_URL`.
-4. Runtime/deployer identity separation.
-5. Final Cloud Run CPU, memory, concurrency, region, and scaling configuration.
-6. Schema maintenance window.
-7. Rollback window of at least 14 calendar days and one representative payroll flow, whichever is longer.
-8. Acceptance and rollback criteria, including baseline error classification.
+Approve the rename-specific package, schema, API, consumer, cutover, and rollback
+contracts. Resolve or explicitly accept the registered external gates before Phase 3.
 
 ### Phase 3 — Controlled changes, with explicit authorization
 
-1. Rotate or revoke the exposed credential.
-2. Correct Postman and known consumer configurations.
-3. Apply the approved IAM changes.
-4. Create target Artifact Registry, service account, and Secret Manager resources.
-5. Apply and validate the reversible `pf-db` migration, including `INC_MV_PAY_SUMMARY` and its renamed columns.
-6. Deploy `pf-svc-income` with immutable image identity and approved Cloud Run settings.
-7. Execute health, authenticated, database, and representative smoke tests.
-8. Start and monitor the approved rollback observation window.
+1. Apply only approved consumer, repository, package, schema, and Postman changes.
+2. Apply the reversible `pf-db` migration before traffic uses the new ORM names.
+3. Deploy `pf-svc-income` with immutable identity and approved settings.
+4. Execute representative synthetic smoke tests and monitor the approved rollback
+   window.
+5. Handle external security and operations gates through their registered entries.
 
-The exposed credential is the urgent real security action. Phase 1 items are investigation/validation, Phase 2 items are decisions, and Phase 3 items are controlled mutations. No target resource, IAM change, database migration, consumer cutover, or deployment is authorized merely because it appears in this plan.
+No target resource, database migration, consumer cutover, or deployment is
+authorized merely because it appears in this plan.
 
 ## 1.3 Phase 2 decision package
 
 The following decisions are prepared from the Phase 1 evidence. They are proposals for explicit approval, not executed changes. No credential rotation, IAM mutation, resource creation, schema migration, consumer update, or deployment is authorized by this section alone.
 
-### Decision 1 — Exposed Scheduler credential (out-of-band incident)
+### Out-of-scope operational and security follow-ups
 
-**Proposal:** treat the `X-API-Key` exposed in inventory 01 as an independent security incident, outside the scope and schedule of this rename. It belongs to `gcp-scheduler-runner`, not to `pf-payroll`, and must not wait for the Phase 2/Phase 3 sequence.
+The following findings are not part of the rename design. They are registered in
+[`ECOSYSTEM-IMPROVEMENT-REGISTER.md`](../../../../docs/proposals/ECOSYSTEM-IMPROVEMENT-REGISTER.md)
+and remain separate workstreams:
 
-Incident actions, subject to explicit operational approval:
+- `IMP-001` — Scheduler credential exposure and incident response;
+- `IMP-002` — Neon credential, backup, restore, and sensitive-dump hardening;
+- `IMP-003` — least-privilege database runtime roles;
+- `IMP-004` — `pf-rates` access to `PF_DATABASE_URL`;
+- `IMP-005` — deployer/runtime identity separation and WIF;
+- `IMP-006` — ecosystem HTTP error baseline;
+- `IMP-007` — Cloud Run observability and capacity standards.
 
-1. Rotate or revoke the key and update the enabled Scheduler job in the same change; validate the next scheduled execution.
-2. Review `gcp-scheduler-runner` logs for unexpected use during the exposure window.
-3. Remove or redact inventory 01 outputs, archives, and Cloud Shell history containing the literal value.
-4. Evaluate replacing the static header with Scheduler OIDC authentication to Cloud Run as a follow-up; this is not required to unblock the rename if handled as a separate incident.
+The rename remains blocked by the directly relevant gates from these workstreams,
+but their detailed investigation, remediation, and reusable standards do not belong
+in this plan. Keep only the gate result and a link here.
 
-This plan tracks incident closure as a precondition for Phase 3, but the incident must be executed independently.
-
-Status: pending explicit operational approval.
-
-### Decision 2 — Runtime IAM
-
-**Proposal for the new `pf-svc-income` runtime identity:**
-
-- Secret Manager accessor only on `PF_DATABASE_URL`, `PF_RATES_API_KEY`, and the new `PF_INCOME_API_KEY`.
-- No Artifact Registry writer permission.
-- No Cloud Run Admin permission.
-- No project-wide Service Account User permission.
-- Cloud SQL Client only if later evidence proves the database is Cloud SQL; Phase 1 found no Cloud SQL instance in the project, so omit it initially.
-- Call `pf-rates` over HTTPS using `PF_RATES_API_KEY`; do not grant `run.invoker` unless read-only policy evidence proves that IAM invocation is required.
-- Define the new service's own invoker policy separately; the current exposure model is believed to be `allUsers` plus application API-key authentication, but this remains pending because the Cloud Run IAM query is blocked by VPC Service Controls.
-
-Status: pending IAM review and approval.
-
-### Decision 3 — `pf-rates` secret access
-
-**Proposal:** retain `pf-rates` access to `PF_RATES_API_KEY`; determine read-only whether the current `pf-rates` revision mounts `PF_DATABASE_URL`. If it does not, remove its accessor binding as a separate change before or after the rename, never inside the maintenance window. If it does, document the dependency and retain the binding.
-
-Follow-up, out of scope: both services appear to share one database credential. Per-service PostgreSQL roles would be the database-level least-privilege improvement.
-
-Status: pending dependency confirmation and approval.
-
-### Decision 4 — Runtime/deployer/administration identities
-
-**Proposal:** use three separate identities:
-
-- runtime: only the permissions in Decision 2;
-- deployer: `roles/artifactregistry.writer` on the target repository, `roles/run.developer` on the target service, and `iam.serviceAccountUser` only on the runtime identity;
-- setup/administration: temporary or administrator-operated resource and IAM setup, never reused as runtime.
-
-The workflow currently documents a long-lived JSON `GCP_SA_KEY`, so WIF should be the preferred deploy-authentication target. The WIF condition should use immutable GitHub repository identity rather than repository name, so the rename does not break it. If WIF is deferred, use a dedicated deployer identity; do not reuse the runtime account's key.
-
-Pending read-only evidence: deploy workflow authentication details and the account/key relationship must be reviewed without reading key material.
-
-Status: pending IAM matrix approval.
-
-### Decision 5 — Cloud Run configuration
-
-**Proposal:** preserve the cost-conscious baseline provisionally, but do not freeze sizing before classifying the existing failures:
-
-- region: `us-central1`;
-- CPU: `1`;
-- memory: `512Mi`, provisional until memory-limit evidence is reviewed;
-- concurrency: `80`, provisional until the database connection budget is confirmed;
-- timeout: `300s`, provisional until timeout evidence is reviewed;
-- `min-instances=0`;
-- immutable image digest/tag for each deployment;
-- replace the TCP startup probe with HTTP `GET /health` on port `8080` only if `/health` is confirmed independent of the database and `pf-rates`.
-
-The service currently exposes `maxScale=20` and the revision evidence previously showed `maxScale=2`. Resolve this to one explicit value at both service and revision level. Size the cap from the database connection budget, including both old/new services during blue/green, `pf-rates`, and migration headroom; `2` is a provisional default, not an approved final value.
-
-Status: pending error classification, connection-budget evidence, and operational approval.
-
-### Decision 6 — Schema maintenance window
+### Schema maintenance window
 
 **Proposal:** use a short maintenance boundary rather than a zero-downtime physical rename.
 
 Before the window:
 
-- backup and restore readiness from Decision 9 is confirmed;
-- the deterministic parity suite from Decision 8 is run against `pf-payroll`;
+- backup and restore readiness from `IMP-002` is confirmed;
+- the deterministic contract parity suite is run against `pf-payroll`;
 - Postman target variables are prepared without changing active consumers;
 - if startup does not validate schema, the new image may be deployed before the window with no traffic.
 
@@ -189,9 +128,9 @@ During the window:
 
 Maximum duration and abort criteria must be approved before execution. Do not use `--ingress=internal` as an automatic step until the invoker/ingress model and rollback procedure are confirmed; it is a candidate isolation mechanism, not an executed instruction.
 
-Status: pending backup/restore readiness and operational approval.
+Status: pending `IMP-002` backup/restore readiness and operational approval.
 
-### Decision 7 — Rollback window
+### Rollback window
 
 **Proposal:** retain rollback capability for **14 calendar days and until one representative monthly payroll flow completes**, whichever is longer. Define the flow as import, review/summary, and export using synthetic or explicitly approved operational data.
 
@@ -200,113 +139,58 @@ During the window:
 - retain the old service, image, account, and `PF_PAYROLL_API_KEY`;
 - retain the old account's access to the old secret until closure;
 - keep the old service at scale-to-zero and isolated from normal traffic;
-- freeze `pf-db` migrations touching `INC_*` objects and dependencies under Decision 11.
+- freeze `pf-db` migrations touching `INC_*` objects and dependencies;
 
 Rollback is not merely redirecting traffic: stop the new service, run the tested schema downgrade, verify the original `PAY_*` schema and `PAY_MV_SUMARY` columns, restore old-service access, and run the parity suite. New migrations during the window invalidate this downgrade path unless explicitly re-approved.
 
 Status: pending approval of observation period, flow definition, and freeze policy.
 
-### Decision 8 — Error classification and acceptance criteria
+### Contract parity and release acceptance
 
-#### 8a. Baseline classification
+The rename must compare the old and new service for health, authentication, reads,
+imports, PDF preview, exports, reference data, and approved error cases. The
+reusable HTTP error taxonomy and observability baseline are tracked as `IMP-006`.
+Cloud Run alerting, probes, capacity limits, and database connection-budget
+standards are tracked as `IMP-007`.
 
-Classify each `500`/`502` by authorized logs or application diagnostics as contract behavior, client error, application defect, downstream `pf-rates` failure, memory limit, or timeout. Record a disposition: fix before cutover, accept as known issue, or not reproducible. Confirm `400`, `403`, `404`, `409`, and `422` with deterministic synthetic cases, and correct the single plain-HTTP `302` consumer to HTTPS.
+For this rename, the acceptance gate is limited to:
 
-This classification is an input to Decision 5; the current request volume is too small for a rate-based regression threshold.
+- approved contract differences are documented;
+- generated OpenAPI, `docs/api.md`, Postman, and route definitions agree;
+- representative synthetic flows pass against the renamed service;
+- no unexplained regression is introduced by the cutover.
 
-#### 8b. Contract parity suite
-
-Run deterministic synthetic tests against `pf-payroll` before cutover and record expected status codes and response shapes for:
-
-- `/health`;
-- authentication failure;
-- reads;
-- JSON and spreadsheet import;
-- PDF preview;
-- export;
-- reference data;
-- deliberate `404`, `409`, and `422` cases.
-
-Run the same suite against `pf-svc-income`, allowing only approved contract renames such as `period_id → payroll_id`, payroll-oriented DTOs, and `accrual_year`/`accrual_month`.
-
-#### 8c. Go/No-Go and closure
-
-Go/No-Go requires the parity suite, catalog assertions, equal row counts, equal materialized-view aggregates, approved `INC_*` columns, and at least one successful `pf-rates` call. Rollback-window closure additionally requires all known consumers migrated, the representative flow completed, every new `5xx` explained/dispositioned, and a tested downgrade on representative synthetic data. “Rollback tested or excluded” is not sufficient for this plan.
-
-Status: pending classification and approval.
-
-### Decision 9 — Neon backup and restore
-
-**Proposal:** use Neon as the PostgreSQL provider behind `PF_DATABASE_URL`. Confirm the Neon project/branch and backup/PITR retention through the Neon console or approved Neon API without exposing the connection string. Independently take a restricted logical dump immediately before migration, restore it into an ephemeral PostgreSQL 16 instance, verify Alembic/schema state and row counts, and delete it after rollback closure. The dump contains sensitive payroll data and must never enter git or shareable inventory artifacts.
-
-The existing `pf-db` tooling reads `NEON_DATABASE_URL` from the gitignored `secrets/neon.env`; never copy that value into commands, logs, proposals, or chat. Because a production dump contains RUTs, salaries, health information, and other sensitive data, its storage, encryption, access, retention, and deletion must be explicitly approved.
-
-**Security finding:** the operator's response artifact contained a complete `NEON_DATABASE_URL` line from the gitignored local environment. The local response copy was redacted, but the Neon credential must be treated as exposed and rotated in the Neon control plane; deleting the response file alone is insufficient. The 2.1 MB logical dump is also sensitive payroll data and must remain restricted outside git/shareable inventory paths or be deleted according to the approved retention decision.
-
-**Control-plane evidence received:** Neon project `personal-finances` (`wild-hat-66882594`) is in `aws-us-east-1`, with default/primary branch `production` (`br-empty-glade-adv4sfa9`) in `ready` state. Its read/write endpoint is in `aws-us-east-1`, currently `idle`, with autoscaling `0.25–2` CU and suspend timeout `0`. Project history retention is only **6 hours**, so it cannot by itself cover the proposed 14-day rollback window. The approved logical dump must therefore be stored securely for the rollback window, with a tested restore and explicit deletion decision.
-
-**Role evidence received:** the application connection uses `neondb_owner`. This role is not a least-privilege runtime role: the inspected role metadata shows `rolcreaterole`, `rolcreatedb`, and `rolbypassrls` enabled. **Role evidence update:** the corrected grant query shows `neondb_owner` has all listed DML/DDL-related table privileges on every `PAY_*`/`RAT_*` object, all grantable. All objects are owned by `neondb_owner`. Role membership shows `neondb_owner` inherits `neon_superuser`; `neon_service` also inherits `neon_superuser`, which has broad `pg_read_all_data` and `pg_write_all_data` memberships. These roles are unsuitable as least-privilege application identities. A dedicated runtime role design is mandatory before deployment; do not improvise grants during the schema migration.
-
-**Privilege evidence update:** `neondb_owner` has database `CREATE`/`TEMPORARY`, public schema `CREATE`, and all grantable table privileges. All application objects and sequences are owned by `neondb_owner`. Default privileges from `cloud_admin` grant broad table/sequence access to `neon_superuser`. No row-level security policies were returned; the first RLS flag query was version-incompatible and requires the corrected catalog query. Public routines returned no security-definer application routine; most results were extension support functions.
-
-**Snapshot schedule evidence:** `neonctl snapshots schedule get` confirms that no automatic snapshot schedule is configured for the `production` branch. Since History Retention is only 6 hours, the approved logical dump and tested restore remain the required rollback evidence for the proposed 14-day window.
-
-The operator also created a 2.1 MB logical dump and restored it into the local PostgreSQL environment successfully. The dump contains real payroll data and must remain restricted, outside git/shareable inventory locations, until its approved deletion point. This is evidence of local restore tooling, not yet a production backup-retention or restore-rehearsal approval.
-
-The materialized-view column query returned zero rows because the chosen `information_schema.columns` query did not expose the materialized-view columns; use `pg_attribute`/catalog inspection before treating the result as an empty view. The local `migration-check`/`alembic current` command was initially inconclusive because it was run from the wrong path and the host environment lacked the required driver; the later `uv run alembic current` reached Neon and confirmed `0016 (head)`.
-
-**Updated proposal:** retain the Neon provider/backup decision, confirm Neon retention/PITR through the approved Neon control plane, inspect the materialized-view columns with a catalog query, and rehearse restore validation locally with the correct `pf-db` environment before approving the migration window.
-
-Status: Neon connection and local restore evidence received; provider retention/PITR approval and final restore rehearsal remain pending.
-
-### Decision 10 — GitHub deploy authentication
-
-**Proposal:** replace the documented long-lived JSON `GCP_SA_KEY` workflow authentication with Workload Identity Federation. Bind using immutable GitHub repository identity rather than repository name so the rename survives. Coordinate the change through `pf-common` without breaking `pf-rates`. If WIF is deferred, use a dedicated deployer identity and explicit rotation date; never reuse the runtime identity's key.
-
-The current workflow documentation proves the JSON-key pattern, but not which account's key is stored in the secret. That relationship requires read-only operational evidence without reading key material. Review `GH_PAT` scope separately.
-
-Status: pending approval with Decision 4.
-
-### Decision 11 — `pf-db` change freeze
+### Database change freeze
 
 **Proposal:** from cutover until rollback closure, do not merge migrations touching `INC_*` objects or dependencies. An emergency exception must explicitly restate or invalidate the downgrade path.
 
 Status: pending approval.
 
-### Decision 12 — Invocation, ingress, and URLs
+### Decision 12 — Invocation and URL compatibility
 
-**Proposal:** preserve the current exposure model only after it is verified: Cloud Run currently advertises `ingress=all` and both URL formats, while the service IAM policy remains blocked by VPC Service Controls. Verify whether `allUsers` invoker plus application API-key authentication is the intended model for the new service. Verify `pf-rates` invoker policy separately.
+Verify the target service's invocation policy and preserve the approved URL and
+API-key cutover behavior. Do not assume either currently advertised URL is stale;
+reconcile it with consumers and Postman before cutover. Broader IAM and ingress
+standards are tracked through `IMP-005` and `IMP-007`.
 
-The current service advertises both:
+Status: pending URL evidence and approval.
 
-```text
-https://pf-payroll-646185261155.us-central1.run.app
-https://pf-payroll-yqd4p7fzaa-uc.a.run.app
-```
+### Related database security work
 
-Therefore the deterministic URL is not automatically “stale”. Prepare the target Postman URL only after the new service exists or after the URL behavior is confirmed for the target service; do not assume a URL before creation.
-
-Status: pending IAM/URL evidence and approval.
-
-### Decision 13 — Neon runtime roles
-
-**Proposal:** do not use Neon owner-level `neondb_owner` as the runtime identity for `pf-svc-income`. Create or select a dedicated application role with only the privileges required by the service, and separate roles for `pf-rates` and the renamed service if the provider and migration strategy permit it. Map exact table, sequence, schema, and materialized-view privileges before migration; do not grant `CREATEROLE`, `CREATEDB`, `BYPASSRLS`, or owner privileges to runtime roles.
-
-The corrected response includes `table_name` and confirms the broad privilege pattern; the exact least-privilege target matrix still needs to be designed from application DML. This decision is database-level least privilege and must be coordinated with `pf-db`; it must not be improvised inside the production migration window.
-
-Status: exact privilege evidence received; dedicated role design and approval remain pending.
+The rename must not broaden database privileges or bypass the current `pf-db`
+identifier policy. Runtime-role hardening is tracked as `IMP-003`; Neon credential,
+backup, and restore hardening is tracked as `IMP-002`; and the identifier-length
+policy is tracked as `IMP-008`. Those entries remain prerequisites or explicit
+approval gates where the cutover requires them, but their detailed designs belong
+in their own proposals.
 
 ### Phase 2 gate
 
-Resolution order:
-
-1. Handle Decision 1 independently as a security incident.
-2. Obtain read-only evidence for Decisions 2–5, 9, 10, and 12; complete Decision 8a.
-3. Approve Decisions 2, 3, 4, 5, 10, and 12.
-4. Approve Decisions 6, 7, 9, 11, and 13.
-5. Approve Decision 8b–8c.
-
-Phase 3 remains blocked until Decision 1 is closed and Decisions 2–13 are approved with named approver, date, and evidence link. Preparing this package does not rotate credentials, change IAM, create GCP resources, alter the database, update Postman, or deploy a service.
+Phase 3 remains blocked until the rename-specific decisions are approved and the
+registered external gates that affect cutover (`IMP-001` through `IMP-007`) are
+resolved or explicitly accepted. Preparing this package does not rotate
+credentials, change IAM, create GCP resources, alter the database, update Postman,
+or deploy a service.
 
 ## 2. Decisions to record before implementation
 
@@ -523,13 +407,11 @@ Commands are examples and must be run from the correct repository after reading 
 
 | Date | Status | Change | Reason/evidence |
 |---|---|---|---|
-| 2026-10-05 | investigating | Retried Artifact Registry, Cloud Logging, and Secret Manager after `unset_proxies` plus clearing `SSL_CERT_FILE`/`_SSL_CERT_FILE`; all remained blocked by VPC Service Controls. Cloud Run remained readable. | Proxy/certificate environment is not the blocker; requires approved VPC-SC context or GCP administrator assistance. |
-| 2026-10-05 | planned | Created Level L investigation, brief, recommendation, and living plan. No code or infrastructure changed. | User requested investigation and workflow-compliant planning. |
-| 2026-10-07 | investigating | Read-only GCP inventory completed and analyzed. Confirmed current Cloud Run, Artifact Registry, Secret Manager, IAM, Scheduler, Logging, monitoring, and networking baseline; target resources do not exist. | Dated operator-provided GCP inventory evidence; no GCP mutation. |
-| 2026-10-07 | blocked | Earlier inventory exposed a literal Scheduler credential. Rotation and artifact redaction are required before sharing or closure. | Inventory 01 security finding; inventory 03 deliberately excludes headers and bodies. |
-| 2026-10-07 | investigating | Compared 27 route definitions, `docs/api.md`, and 28 Postman requests. Functional coverage is present; parameterized contract rename remains synchronized-change work (`period_id` → `payroll_id`). | Static route extraction and JSON collection comparison. |
-| 2026-10-07 | validating | Fresh local PostgreSQL 16 reached Alembic `0016`; synthetic full rename probe preserved IDs/FKs/materialized-view columns and rolled back with zero synthetic rows remaining. | Local `pf-db` Docker database; no production connection or mutation. |
-| 2026-10-07 | blocked | GitHub secret-list endpoints returned HTTP 500. Environments/workflows/history are visible, but secret-name preservation remains unverified. | Read-only `gh api`/`gh secret list`; no secret values requested. |
+| 2026-10-05 | planned | Created the Level L investigation, brief, recommendation, and living plan. | Workflow-compliant planning; no code or infrastructure mutation. |
+| 2026-10-07 | investigating | Completed rename-relevant route, consumer, Postman, schema, and deployment-identity inventory. | Read-only evidence; target identity does not yet exist. |
+| 2026-10-07 | validating | Completed the local synthetic schema-rename and rollback probe. | `pf-db` migration shape remains implementation work. |
+| 2026-10-10 | blocked | Moved unrelated security, IAM, backup, error-baseline, and observability findings to `IMP-001` through `IMP-007`. | Scope control; detailed follow-ups belong in the ecosystem register. |
+
 
 ## 6. Release record
 

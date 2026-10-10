@@ -24,19 +24,24 @@ This is an identity rename plus a physical schema rename and package-boundary ch
 
 ### Evidence update from GCP inventory 03 (2026-10-07)
 
-The recommendation remains valid, but execution is not yet authorized. The current service is healthy at 100% traffic on `pf-payroll-00056-lgk`, using the existing `pf-payroll` Artifact Registry repository and old secrets. None of the target resources exist yet: Artifact Registry `pf-svc-income`, the target service account, and `PF_INCOME_API_KEY` are absent.
+The current `pf-payroll` service remains active and the target resources do not
+exist. The rename still requires consumer inventory, URL reconciliation, schema
+migration validation, least-privilege deployment approval, and explicit
+authorization before execution.
 
-The inventory confirms real Postman/curl consumers, requests to both current and historical Cloud Run URLs, and a baseline containing successful calls plus `500`, `502`, `403`, `404`, `409`, and `422` responses. These must be classified before rollout. The current service account has broad project roles (`artifactregistry.writer`, `cloudsql.client`, `iam.serviceAccountUser`, `run.admin`, and `secretmanager.secretAccessor`); least-privilege design must separate runtime and deployer responsibilities instead of copying this set.
-
-The current service has no VPC connector and the collected outputs contain no alert policies, dashboards, log metrics, uptime checks, forwarding rules, or DNS zones. Scheduler does not call `pf-payroll` directly. A literal Scheduler credential was exposed in inventory 01 and must be rotated and removed from shareable artifacts before the investigation is closed. Inventory 03 avoids repeating that credential.
+Detailed security, IAM, backup, error-baseline, and observability findings are
+registered separately as `IMP-001` through `IMP-007` in the ecosystem improvement
+register. They are not repeated here; this recommendation records only the gates
+that directly affect the rename cutover.
 
 ### Complementary validation decisions
 
-- Use a proposed rollback window of **14 calendar days and at least one representative payroll flow, whichever is longer**. Keep the old service, image, account, and secret only for that bounded evidence window, with scale-to-zero retained.
-- Treat the current IAM as a baseline to reduce, not a target template. Runtime should receive only secret-level access and database connectivity actually required; deployer permissions belong to a separate identity.
-- Treat the local PostgreSQL 16 synthetic rename probe as evidence that the transactional rename shape is viable, not as a replacement for a hand-written Alembic migration and existing-data validation.
-- Treat `500`/`502` classification and GitHub secret inventory as open gates: GitHub environment/workflow metadata was visible, but GitHub secret-list endpoints returned HTTP 500.
-- Keep `/payroll/*` paths and synchronize `period_id → payroll_id` across route metadata, OpenAPI, DTOs, `docs/api.md`, Postman and tests. Static examples such as `/payroll/481` remain valid concrete URLs.
+- Use a bounded rollback window of 14 calendar days and at least one representative
+  payroll flow, whichever is longer.
+- Keep `/payroll/*` paths and synchronize `period_id → payroll_id` across route
+  metadata, OpenAPI, DTOs, `docs/api.md`, Postman, and tests.
+- Treat the current database and deployment identities as inputs to the separately
+  tracked least-privilege work; do not copy broad permissions automatically.
 
 
 
@@ -180,28 +185,26 @@ periods[]                    → payrolls[] when the collection contains payroll
 
 ### Before implementation
 
-1. Inventory the actual GCP project and resources using read-only commands.
-2. Record Cloud Run service URL, revision, traffic, environment variables, service account, custom domains, IAM, logs, alerts, Artifact Registry images, and Secret Manager versions.
-3. Identify external callers from logs, Postman workspaces, deployment config, and repository search.
-4. Confirm GitHub Actions secrets/environments/webhooks/branch protections and whether repository rename preserves them.
-5. Choose the old-service rollback window.
+1. Inventory consumers, current URLs, repository configuration, and the existing
+   deployment contract.
+2. Confirm the approved package, schema, API, Postman, and rollback decisions.
+3. Ensure the registered external gates required for cutover have an owner and
+   an explicit decision.
 
 ### Migration sequence
 
-1. Create/prepare `pf-svc-income` Artifact Registry repository with vulnerability scanning disabled as today; use Trivy in CI.
-2. Create `pf-svc-income` service account and grant only the roles currently needed by the service.
-3. Create or populate `PF_INCOME_API_KEY`; do not print or commit its value.
-4. Grant the new account access to `PF_DATABASE_URL`, `PF_RATES_API_KEY`, and the new API key.
-5. Rename/prepare repository and update workflow inputs only after the repository transition plan is confirmed.
-6. Deploy `pf-svc-income` with `min-instances=0`, the existing maximum and region policy, and the shared database.
-7. Run `/health` and representative authenticated read/import-preview checks using synthetic data.
-8. Compare OpenAPI, environment configuration, logs, latency, and database behavior with the old service.
-9. Update Postman and known clients to the new base URL/variables while preserving `/payroll/*`.
-10. Move traffic or client configuration according to the chosen cutover strategy.
-11. Monitor both services through the rollback window.
-12. Only after explicit approval and successful evidence, remove old traffic and later clean up old resources/secrets according to retention policy.
+1. Prepare the target repository, package, schema migration, and immutable build.
+2. Create the target service resources only after explicit authorization.
+3. Deploy the new service with the approved identity and cost-conscious scaling.
+4. Run health, authentication, database, API, OpenAPI, and representative synthetic
+   smoke tests.
+5. Update Postman and known consumers while preserving `/payroll/*` routes.
+6. Monitor the approved rollback window and remove old resources only after explicit
+   authorization.
 
-Do not point both service deployments at the same mutable “latest” image tag during cutover; use immutable commit/image tags.
+Security, IAM, backup, error-baseline, and observability designs are tracked by
+`IMP-001` through `IMP-007`; this recommendation consumes their approved outcomes
+instead of reproducing their detailed designs.
 
 ## 6. Secret cutover strategy
 
@@ -280,14 +283,17 @@ The rollback window ends only after the following evidence is collected:
 
 ## 11. Decision gate
 
-Before any resource creation or deployment, require:
+Before implementation or resource creation, require:
 
-- rotation/revocation of the Scheduler credential exposed in the first inventory;
-- a reviewed, redacted inventory package with no raw logs or secret values;
-- least-privilege IAM matrix for runtime, deployer, Artifact Registry, Cloud Run, database, and each Secret Manager secret;
-- justification for `pf-rates` access to `PF_DATABASE_URL`, or its removal;
-- classification of the observed `500`/`502` baseline;
-- reconciliation of both active Cloud Run URLs and the stale Postman environment;
-- approval of schema maintenance boundary and tested rollback;
-- explicit authorization for creating target GCP resources, repository rename, secret rotation, push, and deployment;
-- explicit approval of rename depth, target names, API key strategy, rollback authority, target `INC_*` map, and retained `/payroll/*` routes.
+- approval of the rename depth, target identity, package split, `INC_*` map, and
+  retained `/payroll/*` routes;
+- validation of the hand-written `pf-db` migration and rollback strategy;
+- consumer, URL, OpenAPI, API documentation, and Postman reconciliation;
+- explicit authorization for repository changes, resource creation, secret changes,
+  commits, pushes, and deployment;
+- resolution or explicit acceptance of the registered external gates that affect
+  cutover (`IMP-001` through `IMP-007`).
+
+The current `pf-db` 14-character naming policy remains in force until the separate
+`IMP-008` identifier-length work is completed. The rename recommendation does not
+activate the proposed 30-character convention.

@@ -50,17 +50,28 @@ shared/          # Cross-cutting utilities (dates, constants)
   [`docs/deployment.md`](docs/deployment.md#pipeline-invariants) for the concrete rules
   this drives (`--min-instances=0`, Trivy instead of paid AR scanning, external DB option).
 
+## Test-driven development
+
+Use TDD for all behavioral changes. For new HTTP or application features, use Outside-In TDD: start with an observable API or application behavior test, drive the implementation through ports and use cases, then add focused domain and adapter tests.
+
+Use ATDD for functional requirements and API contracts. Use BDD Given/When/Then scenarios when they clarify business behavior; BDD is complementary to TDD, not a required format for every unit test.
+
+Keep unit tests isolated with typed hand-written stubs and use integration tests for real PostgreSQL and adapter boundaries. Tests must verify meaningful outputs, state, errors, and contracts. Documentation-only, formatting-only, and mechanical refactor changes are exempt from adding tests but must run applicable validation.
+
 ## Documentation and Postman collection must track reality
 
 - [`docs/api.md`](docs/api.md) must describe every HTTP endpoint this service actually
-  exposes. Adding, removing, or changing an endpoint (path, request/response shape,
-  auth, error codes) requires updating `docs/api.md` in the **same change**, not
-  "later" — letting it drift is an incomplete change. This isn't hypothetical: a
-  2026-09-25 documentation audit found three HTTP/API surfaces (`POST
+  exposes. In this ecosystem, HTTP documentation covers both FastAPI service endpoints
+  and the separate Apps Script Web App endpoints exposed by `pf-sheets`; this service's
+  own `docs/api.md` documents only its FastAPI surface. Adding, removing, or changing
+  an endpoint (path, request/response shape, auth, error codes) requires updating
+  `docs/api.md` in the **same change**, not "later" — letting it drift is an incomplete
+  change. This isn't hypothetical: a 2026-09-25 documentation audit found three
+  HTTP/API surfaces (`POST
   /payroll/import/pdf-preview`, `POST /payroll/import/rows`, and the former
   `template-test` CLI command) that had already shipped, been tested, and been used for
-  multiple sessions before being documented. The CLI command has since been removed. If
-  ever unsure whether `docs/api.md` is stale, check it against the live
+  multiple sessions before being documented. The CLI command has since been removed.
+  If ever unsure whether `docs/api.md` is stale, check it against the live
   `GET /openapi.json`/route definitions before assuming it's correct.
 - This service's endpoints are also mirrored in the shared Postman collection at the
   ecosystem root: `pf-base/postman/pf-ecosystem.postman_collection.json`, plus the
@@ -87,9 +98,7 @@ make check                 # lint → dead-code → typecheck → dup-check → 
 
 ## CLI policy
 
-Do not implement, add, restore, or expand any CLI command in `pf-payroll`. Use the
-supported HTTP API and existing automation instead. Any exception requires explicit
-user approval first.
+Do not implement, add, restore, or expand any product-facing CLI command in `pf-payroll`. Existing development, deployment, and automation commands such as `make` and repository scripts may still be used unless explicitly prohibited. Use the supported HTTP API and existing automation instead. Any exception requires explicit user approval first.
 
 
 Before any interaction with GitHub using `gh`, including read-only commands, execute

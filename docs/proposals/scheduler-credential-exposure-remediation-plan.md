@@ -1,7 +1,7 @@
 # Plan: remediate exposed Scheduler credential
 
 Date: 2026-10-10
-Status: in progress
+Status: closed
 Level: L
 Scope: Controlled remediation of the exposed GCP Scheduler credential.
 Related artifacts: [brief](scheduler-credential-exposure-remediation-brief.md) · [recommendation](scheduler-credential-exposure-remediation-recommendation.md) · [investigation](../investigations/gcp-scheduler-credential-exposure.md)
@@ -18,14 +18,16 @@ Superseded-by: none
 - [x] Immediate remediation recommendation prepared.
 - [x] Security/service owner identified.
 - [x] Containment authorization recorded.
-- [ ] Exposure and log-review windows approved; Cloud Logging is blocked by VPC Service Controls.
+- [x] Exposure and log-review windows reviewed from available metadata; missing HTTP status fields remain documented as inconclusive.
 - [x] Credential rotated or revoked.
 - [x] Scheduler configuration updated atomically.
 - [x] Replacement execution validated at dispatch level; `/health` returned `ok`.
-- [ ] Exposed artifacts contained, removed, or redacted.
+- [x] Sanitized execution evidence reviewed and removed after local validation.
+- [x] Exposed artifacts contained, removed, or redacted.
 - [x] Incident evidence recorded without sensitive values.
 - [x] Rename register entry reconciled.
-- [ ] OIDC follow-up accepted, deferred, or rejected separately.
+- [x] OIDC follow-up deferred as separate `IMP-009` hardening work.
+
 
 ## 2. Implementation slices
 
@@ -103,7 +105,7 @@ pass.
 
 | Date | Status | Change | Evidence |
 | --- | --- | --- | --- |
-| 2026-10-10 | in progress | Owner authorization recorded; dedicated runtime identity created; Cloud Run updated to `gcp-scheduler-runner-00020-j8v`; API key rotated; Scheduler updated; `/health` returned `ok`; manual job execution accepted. | Sanitized command results; no credential value recorded. |
+| 2026-10-10 | closed | Owner accepted the residual historical log limitation: 31 of 62 metadata records lacked HTTP status because VPC Service Controls blocked complete attribution. | Containment, validation, artifact cleanup, history cleanup, and separate OIDC deferral completed. |
 
 ## 6. Release record
 
@@ -112,5 +114,5 @@ pass.
 - Operator: a0a11b7
 - Rotation/revocation timestamp: 2026-10-10
 - Scheduled execution result: manual dispatch accepted; log confirmation pending VPC Service Controls resolution
-- Incident closure: pending artifact cleanup and exposure-window review
-- OIDC decision: pending separate decision
+- Incident closure: closed
+- OIDC decision: deferred; tracked as `IMP-009`

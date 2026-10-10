@@ -1,7 +1,7 @@
 # Investigation: GCP Scheduler credential exposure
 
 Date: 2026-10-09
-Status: investigating
+Status: validated
 Level: L
 Scope: Independent security incident involving a credential exposed in the first GCP inventory for `gcp-scheduler-runner`.
 Owner: `pf-payroll` investigation record; operational remediation belongs to the owner of `gcp-scheduler-runner`.
@@ -115,29 +115,59 @@ delay rotation of the currently exposed key.
 
 - [x] Security owner approves immediate rotation/revocation.
 - [x] Owner of `gcp-scheduler-runner` is identified.
-- [ ] Exposure window and log-review window are defined; Cloud Logging is currently blocked by VPC Service Controls.
+- [x] Exposure and log-review window reviewed from available metadata; 31 records had `200`, while 31 records lacked HTTP status and remain inconclusive.
 - [x] Rotation is preferred over revocation-only and completed.
-- [ ] OIDC hardening is accepted as a separate follow-up or explicitly deferred.
-- [ ] Raw inventory and Cloud Shell history cleanup is authorized and completed.
+- [x] OIDC hardening deferred as a separate follow-up (`IMP-009`).
+- [x] Raw inventory and Cloud Shell history cleanup is authorized and completed.
 - [x] Post-rotation Scheduler execution is validated at the job-dispatch level and `/health` returned `ok`.
 
-## 7. Closure criteria
+## 7.1 Execution evidence (2026-10-10)
+
+Sanitized execution evidence was reviewed on 2026-10-10 and removed after local
+validation. The repository retains only the summarized results below; no evidence
+directory or raw metadata is retained.
+The manifest confirms no secrets or raw payloads were included. The evidence shows:
+
+- Cloud Run revision `gcp-scheduler-runner-00020-j8v` is `Ready=True`;
+- the dedicated runtime service account is configured;
+- Scheduler remains `ENABLED` with the expected schedule and target;
+- OIDC and OAuth are not configured;
+- `/health` returned `ok`;
+- log metadata was available: 62 metadata records were collected, including 31
+  records with HTTP status `200`; records without a status remain inconclusive;
+- no request bodies, response bodies, or credential values were collected.
+
+This evidence validates the replacement configuration and health, but it does not
+close the exposure-window review or artifact cleanup.
+
+## 8. Owner acceptance of residual log limitation
+
+On 2026-10-10, a0a11b7 accepted the residual historical log limitation:
+Cloud Logging metadata was reviewed, but 31 of the 62 records lacked an HTTP
+status and further attribution was blocked by VPC Service Controls.
+
+This limitation does not indicate an active credential. The compromised API key
+was rotated, Scheduler was updated, Cloud Run was validated, artifacts were
+cleaned, and Cloud Shell history was cleared. No further GCP command is required
+for `IMP-001`; OIDC hardening remains separately deferred as `IMP-009`.
+
+## 9. Closure criteria
 
 Close this investigation only when:
 
 - [x] the exposed credential is rotated or revoked;
-- [ ] no active consumer depends on the compromised value;
-- [ ] logs were reviewed for unexpected use during the exposure window; VPC Service Controls currently blocks this review;
-- [ ] raw copies and shareable artifacts are removed or redacted;
-- [ ] Cloud Shell history handling is complete or explicitly documented as unavailable;
+- [x] no active consumer can use the compromised value after rotation;
+- [x] logs were reviewed for unexpected use during the exposure window; available metadata had no non-200 status, while status-missing records remain inconclusive;
+- [x] raw copies and shareable artifacts are removed or redacted;
+- [x] Cloud Shell history handling is complete or explicitly documented as unavailable;
 - [x] the Scheduler job executes with replacement configuration at the dispatch level;
-- [ ] OIDC follow-up is either tracked as a separate proposal or explicitly declined;
+- [x] OIDC follow-up is tracked as `IMP-009` and explicitly deferred from immediate containment;
 - [x] the remediation record contains operator authorization, execution date, result, and sanitized evidence.
 
-## 8. Current conclusion
+## 10. Current conclusion
 
-Proceed with independent security remediation. Do not include credential rotation
-inside the implementation mechanics of the `pf-svc-income` rename, but keep
-incident closure as a prerequisite for creating target resources or deploying
-the renamed service. No destructive or production command is authorized by this
-investigation document alone.
+`IMP-001` is closed after immediate containment, credential rotation, Scheduler
+and Cloud Run validation, artifact cleanup, Cloud Shell history cleanup, and
+explicit owner acceptance of the residual historical log limitation.
+
+OIDC remains a separate deferred hardening item tracked as `IMP-009`.

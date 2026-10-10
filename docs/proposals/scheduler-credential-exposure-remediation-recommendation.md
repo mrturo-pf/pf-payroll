@@ -1,7 +1,7 @@
 # Recommendation: remediate exposed Scheduler credential
 
 Date: 2026-10-10
-Status: approved
+Status: closed
 Level: L
 Scope: Immediate containment and remediation of the credential exposed in GCP Scheduler inventory 01.
 Related artifacts: [brief](scheduler-credential-exposure-remediation-brief.md) · [investigation](../investigations/gcp-scheduler-credential-exposure.md) · [register](../../../../docs/proposals/ECOSYSTEM-IMPROVEMENT-REGISTER.md)
@@ -72,7 +72,9 @@ Evaluate Scheduler OIDC separately:
 - scheduled execution and rollback are tested;
 - static API-key authentication is removed only after successful validation.
 
-The OIDC work must receive its own register entry or proposal if authorized.
+Evaluate Scheduler OIDC separately as `IMP-009`. It is explicitly deferred from
+immediate containment because the API key has already been rotated and the OIDC
+migration requires its own design, IAM validation, execution test, and rollback.
 
 ## 4. Ownership and sequencing
 
@@ -106,8 +108,11 @@ The OIDC work must receive its own register entry or proposal if authorized.
 
 ## 7. Execution status
 
-Immediate containment was executed on 2026-10-10: the runtime identity was replaced
-with a dedicated service account, the API key was rotated, Scheduler was updated,
-Cloud Run health returned `ok`, and a manual Scheduler dispatch was accepted.
-Exposure-window log review remains blocked by VPC Service Controls; artifact cleanup
-and the OIDC decision remain open.
+Immediate containment and validation completed on 2026-10-10: the runtime identity
+was replaced with a dedicated service account, the API key was rotated, Scheduler
+was updated, Cloud Run health returned `ok`, a manual Scheduler dispatch was
+accepted, sanitized metadata was reviewed, remote artifacts were deleted after
+local-copy validation, and Cloud Shell history was cleared. The owner accepted the
+residual historical log limitation: 31 records lacked HTTP status because VPC
+Service Controls blocked complete attribution. OIDC hardening is tracked as
+`IMP-009` and remains explicitly deferred.

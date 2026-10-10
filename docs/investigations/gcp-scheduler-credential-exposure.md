@@ -57,7 +57,12 @@ must not be used as a reason to delay security remediation.
 - The Scheduler job does not directly target `pf-payroll`.
 - The inventory package and Cloud Shell history require separate handling; deleting a local archive does not revoke a credential.
 - No credential value is stored in this investigation or in the repository.
-- No rotation, revocation, IAM change, Scheduler update, or production mutation has been performed as part of this investigation.
+- The owner explicitly authorized remediation on 2026-10-10.
+- A dedicated runtime service account was created for `gcp-scheduler-runner` and the owner received scoped `roles/iam.serviceAccountUser` access.
+- Cloud Run now serves revision `gcp-scheduler-runner-00020-j8v` with the dedicated runtime identity.
+- The API key was rotated without recording its value; the enabled Scheduler job was updated atomically with replacement headers.
+- `/health` returned `ok` and a manual Scheduler execution was accepted.
+- Cloud Logging review is blocked by VPC Service Controls; an empty log result must not be interpreted as absence of use.
 
 ## 4. Required evidence
 
@@ -86,6 +91,13 @@ Required minimum remediation:
 5. Redact/remove raw inventory artifacts and Cloud Shell history containing the literal value.
 6. Record timestamps, operator, result, and evidence without recording the new key.
 
+**Execution record 2026-10-10:** owner authorization was received; a dedicated
+runtime identity was created; Cloud Run was updated to revision
+`gcp-scheduler-runner-00020-j8v`; the API key was rotated without recording its
+value; Scheduler was updated using `--update-headers`; `/health` returned `ok`;
+and a manual Scheduler execution was accepted. Cloud Logging review remains
+blocked by VPC Service Controls.
+
 ### Option B — Replace static API-key authentication with Scheduler OIDC
 
 Evaluate as a follow-up hardening change:
@@ -101,26 +113,26 @@ delay rotation of the currently exposed key.
 
 ## 6. Decisions required
 
-- [ ] Security owner approves immediate rotation/revocation.
-- [ ] Owner of `gcp-scheduler-runner` is identified.
-- [ ] Exposure window and log-review window are defined.
-- [ ] Rotation is preferred over revocation-only, unless the credential is no longer needed.
+- [x] Security owner approves immediate rotation/revocation.
+- [x] Owner of `gcp-scheduler-runner` is identified.
+- [ ] Exposure window and log-review window are defined; Cloud Logging is currently blocked by VPC Service Controls.
+- [x] Rotation is preferred over revocation-only and completed.
 - [ ] OIDC hardening is accepted as a separate follow-up or explicitly deferred.
 - [ ] Raw inventory and Cloud Shell history cleanup is authorized and completed.
-- [ ] Post-rotation Scheduler execution is validated.
+- [x] Post-rotation Scheduler execution is validated at the job-dispatch level and `/health` returned `ok`.
 
 ## 7. Closure criteria
 
 Close this investigation only when:
 
-- the exposed credential is rotated or revoked;
-- no active consumer depends on the compromised value;
-- logs were reviewed for unexpected use during the exposure window;
-- raw copies and shareable artifacts are removed or redacted;
-- Cloud Shell history handling is complete or explicitly documented as unavailable;
-- the Scheduler job executes successfully with the replacement authentication;
-- OIDC follow-up is either tracked as a separate proposal or explicitly declined;
-- the remediation record contains operator, timestamp, result, and sanitized evidence.
+- [x] the exposed credential is rotated or revoked;
+- [ ] no active consumer depends on the compromised value;
+- [ ] logs were reviewed for unexpected use during the exposure window; VPC Service Controls currently blocks this review;
+- [ ] raw copies and shareable artifacts are removed or redacted;
+- [ ] Cloud Shell history handling is complete or explicitly documented as unavailable;
+- [x] the Scheduler job executes with replacement configuration at the dispatch level;
+- [ ] OIDC follow-up is either tracked as a separate proposal or explicitly declined;
+- [x] the remediation record contains operator authorization, execution date, result, and sanitized evidence.
 
 ## 8. Current conclusion
 

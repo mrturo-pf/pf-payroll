@@ -1,7 +1,7 @@
 # Brief: remediate exposed Scheduler credential
 
 Date: 2026-10-10
-Status: approved
+Status: closed
 Level: L
 Scope: Security remediation for the credential exposed in GCP Scheduler inventory 01.
 Related artifacts: [investigation](../investigations/gcp-scheduler-credential-exposure.md) · [register](../../../../docs/proposals/ECOSYSTEM-IMPROVEMENT-REGISTER.md)

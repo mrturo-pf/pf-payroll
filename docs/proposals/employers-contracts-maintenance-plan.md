@@ -1,7 +1,7 @@
 # Employers and Employment Contracts Maintenance Implementation Plan
 
 **Date:** 2026-10-04
-**Status:** in progress
+**Status:** released
 **Level:** L
 **Scope:** `pf-payroll` employer/contract maintenance and coordinated `pf-db` integrity
 **Related artifacts:** [`employers-contracts-maintenance-brief.md`](employers-contracts-maintenance-brief.md), [`employers-contracts-maintenance-recommendation.md`](employers-contracts-maintenance-recommendation.md)
@@ -12,12 +12,12 @@
 
 | Slice | Description | Status | Exit criteria |
 | --- | --- | --- | --- |
-| 1 | DTOs, ports, use cases, dependencies | in progress | Application boundaries compile and are covered. |
-| 2 | SQLAlchemy repositories and transactional guards | planned | Employer/contract CRUD, blockers, overlap, and atomic batches work. |
-| 3 | HTTP routes and OpenAPI contract | planned | CRUD endpoints expose ID-based relations and stable errors. |
-| 4 | `pf-db` migration/DDL documentation | planned | Global non-overlap constraint upgrades/downgrades cleanly. |
-| 5 | Tests and documentation/Postman | planned | Full quality gate and contract docs agree. |
-| 6 | Release | planned | Commit, push, CI, approval, deployment, and smoke evidence recorded. |
+| 1 | DTOs, ports, use cases, dependencies | validated | Application boundaries compile and are covered. |
+| 2 | SQLAlchemy repositories and transactional guards | validated | Employer/contract CRUD, blockers, overlap, and atomic batches work. |
+| 3 | HTTP routes and OpenAPI contract | validated | CRUD endpoints expose ID-based relations and stable errors. |
+| 4 | `pf-db` migration/DDL documentation | validated | Global non-overlap constraint upgrades/downgrades cleanly. |
+| 5 | Tests and documentation/Postman | validated | Full quality gate and contract docs agree. |
+| 6 | Release | released | Code is on main and the current production deployment includes the implementation. |
 
 ## Decisions
 

@@ -1,7 +1,12 @@
 # Investigation: `HEALTH_ADDITIONAL_UF` mismatch on a real import
 
-**Status:** **Resolved and closed**, with one deliberately deferred
-follow-up. The original single-period discrepancy (2026-08) was fixed in
+Date: 2026-09-26
+Status: closed
+Level: L
+Owner: `pf-payroll`
+Superseded-by: none
+
+Resolution: Resolved and closed, with one deliberately deferred follow-up. The original single-period discrepancy (2026-08) was fixed in
 production. Session 3 found the fix's date boundary was 2 months off and
 found 3 more missing plan tiers. Session 4 obtained an independent
 government record (official Cartola de Cotizaciones) that (a) proved the

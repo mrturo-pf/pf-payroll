@@ -1,7 +1,7 @@
 # Investigation: GCP Scheduler credential exposure
 
 Date: 2026-10-09
-Status: validated
+Status: closed
 Level: L
 Scope: Independent security incident involving a credential exposed in the first GCP inventory for `gcp-scheduler-runner`.
 Owner: `pf-payroll` investigation record; operational remediation belongs to the owner of `gcp-scheduler-runner`.

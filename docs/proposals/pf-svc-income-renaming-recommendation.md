@@ -29,10 +29,11 @@ exist. The rename still requires consumer inventory, URL reconciliation, schema
 migration validation, least-privilege deployment approval, and explicit
 authorization before execution.
 
-Detailed security, IAM, backup, error-baseline, and observability findings are
-registered separately as `IMP-001` through `IMP-007` in the ecosystem improvement
-register. They are not repeated here; this recommendation records only the gates
-that directly affect the rename cutover.
+The external outcomes are now differentiated: `IMP-001`, `IMP-002`, and `IMP-005`
+are released; `IMP-003` is superseded by `IMP-002`; and `IMP-008` is validated
+locally. `IMP-004` remains an independent `pf-rates` secret-access review, while
+`IMP-006` and `IMP-007` remain release-validation workstreams. This recommendation
+uses those outcomes and does not treat the resolved entries as active blockers.
 
 ### Complementary validation decisions
 
@@ -203,8 +204,10 @@ periods[]                    → payrolls[] when the collection contains payroll
    authorization.
 
 Security, IAM, backup, error-baseline, and observability designs are tracked by
-`IMP-001` through `IMP-007`; this recommendation consumes their approved outcomes
-instead of reproducing their detailed designs.
+`IMP-001` through `IMP-007`; this recommendation consumes their current outcomes
+instead of reproducing their detailed designs. Released outcomes are evidence for
+cutover, while still-open entries are gates only at the release stage where they
+apply.
 
 ## 6. Secret cutover strategy
 
@@ -291,9 +294,9 @@ Before implementation or resource creation, require:
 - consumer, URL, OpenAPI, API documentation, and Postman reconciliation;
 - explicit authorization for repository changes, resource creation, secret changes,
   commits, pushes, and deployment;
-- resolution or explicit acceptance of the registered external gates that affect
-  cutover (`IMP-001` through `IMP-007`).
+- resolution or explicit acceptance of the still-open registered gates that affect
+  cutover (`IMP-004`, `IMP-006`, and `IMP-007`);
 
-The current `pf-db` 14-character naming policy remains in force until the separate
-`IMP-008` identifier-length work is completed. The rename recommendation does not
-activate the proposed 30-character convention.
+`IMP-008` identifier policy is validated locally and must be applied to the
+physical migration; only release evidence remains pending. The rename recommendation
+does not authorize the migration or activate any deployment.

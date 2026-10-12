@@ -399,24 +399,26 @@ The local probe confirmed the approved rename shape for synthetic data:
 - rows, IDs, foreign keys, materialized-view columns, and rollback were checked.
 
 This probe does not replace a hand-written `pf-db` migration or validation against
-representative existing data. The 30-character identifier convention remains a
-pending prerequisite and is not active until `pf-db` documentation and validators
-are updated; see `IMP-008` in the ecosystem register.
+representative existing data. The validated `IMP-008` identifier policy now governs
+that migration; only release evidence remains pending. See `IMP-008` in the
+ecosystem register.
 
 The following findings are intentionally outside this rename investigation and are
-tracked in the register:
+tracked in the register. Their current states are included so this investigation
+does not present resolved work as an active blocker:
 
-- `IMP-001`: Scheduler credential exposure and incident response;
-- `IMP-002`: Neon credential, backup, restore, and sensitive-dump hardening;
-- `IMP-003`: database runtime-role hardening;
-- `IMP-004`: `pf-rates` database-secret access review;
-- `IMP-005`: deployer/runtime identity hardening and WIF;
-- `IMP-006`: reusable HTTP error baseline;
-- `IMP-007`: Cloud Run observability and capacity standards.
+- `IMP-001`: `released`; Scheduler credential remediation and cleanup complete;
+- `IMP-002`: `released`; Neon backup/restore, runtime-role, sensitive-artifact, and ownership hardening complete, with provider-managed role residual risk accepted;
+- `IMP-003`: `superseded` by `IMP-002`; no duplicate runtime-role implementation;
+- `IMP-004`: `investigating`; independent `pf-rates` shared-secret access review;
+- `IMP-005`: `released`; deployer/runtime identity hardening and WIF complete;
+- `IMP-006`: `investigating`; reusable HTTP error baseline remains open;
+- `IMP-007`: `planned`; Cloud Run observability and capacity baseline remains open;
+- `IMP-008`: `validated`; identifier policy is ready to govern the physical migration, with release evidence pending.
 
-The rename uses only the resulting gate decisions from those workstreams. Their
-raw inventories, credentials, IAM matrices, backup details, error taxonomy, and
-operational standards do not belong here.
+The rename uses the resulting gate decisions from these workstreams. The resolved
+entries are evidence, not pending remediation; the still-open entries apply only to
+the release stage or resource topology affected by their scope.
 
 ## 11. Execution order
 
@@ -444,9 +446,9 @@ rollback window.
 ## 11.1 Phase 1 execution record (2026-10-08)
 
 Phase 1 read-only work completed the rename-relevant inventory and confirmed the
-remaining gates. Sensitive evidence, security remediation, IAM design, backup and
-restore hardening, error classification, and observability work are tracked in
-`IMP-001` through `IMP-007` and are not reproduced in this record.
+remaining gates. Resolved security, IAM, backup/restore, and identifier-policy
+outcomes are consumed from the register; sensitive evidence, error classification,
+and observability work remain in their own artifacts and are not reproduced here.
 
 The rename-specific result is:
 
@@ -458,9 +460,9 @@ The rename-specific result is:
 
 ## 12. Investigation status after complementary validation
 
-The documentation and contract investigation is sufficiently advanced to prepare local code, migration, documentation, and test changes. Before any GCP mutation or cutover, the remaining gates are rotation of the exposed Scheduler credential, a valid GitHub secret inventory, approval of the IAM matrix, final `500/502` classification, URL reconciliation, and approval of the 14-day rollback window.
+The documentation and contract investigation is sufficiently advanced to prepare local code, migration, documentation, and test changes. The resolved `IMP-001`, `IMP-002`, `IMP-003`, and `IMP-005` outcomes no longer block that preparation. Before any GCP mutation or cutover, the remaining gates are URL reconciliation, schema migration validation, package-boundary review, release-stage HTTP error classification/observability evidence, and approval of the 14-day rollback window. `IMP-004` must be resolved or explicitly accepted only if the cutover changes the current `pf-rates` shared-secret topology.
 
-The recommendation remains to proceed only with local/PR preparation until those gates close. The most economical and safe path remains a short schema maintenance window, a temporary parallel Cloud Run service at scale-to-zero, least-privilege IAM, and a 14-day rollback window extended until representative payroll behavior is proven.
+The recommendation remains to proceed only with local/PR preparation until those rename-specific gates close. The most economical and safe path remains a short schema maintenance window, a temporary parallel Cloud Run service at scale-to-zero, least-privilege IAM, and a 14-day rollback window extended until representative payroll behavior is proven.
 
 ## 12. Conclusion
 

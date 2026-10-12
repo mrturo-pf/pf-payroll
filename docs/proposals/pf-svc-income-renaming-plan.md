@@ -20,8 +20,11 @@ Superseded-by: none
 - [x] Local synthetic `pf-db` rename probe completed with transactional rollback and no persisted synthetic rows.
 - [x] GitHub workflow/environment/history inventory completed read-only; repository and environment secret names were reviewed without reading values.
 - [x] Environment-scoped secret inventory completed.
-- [ ] External register gates `IMP-001` through `IMP-007` are resolved or explicitly
-  accepted for cutover.
+- [x] Cutover-relevant outcomes from `IMP-001` through `IMP-003` and `IMP-005` are resolved or explicitly accepted.
+- [ ] `IMP-004` shared-secret access review is resolved or explicitly accepted if the cutover changes the current `pf-rates` secret topology.
+- [ ] `IMP-006` HTTP error baseline is available for release validation.
+- [ ] `IMP-007` Cloud Run observability/capacity baseline is available for release validation.
+- [x] `IMP-008` identifier policy is validated; its release evidence is tracked separately and the policy applies to the physical migration.
 - [ ] Cloud Run URL policy and Postman target choice approved; neither advertised
   URL is assumed stale without a decision.
 - [ ] Repository rename authorization received.
@@ -34,20 +37,40 @@ Superseded-by: none
 The lifecycle states intentionally describe different artifacts: the ecosystem
 index tracks the overall investigation as `investigating`; the brief and
 recommendation record an approved design; and this plan remains `planned` because
-implementation is blocked and not authorized. These statuses are compatible: the
-recommendation is approved while execution remains pending explicit gates.
+implementation is not authorized and several cutover/release gates remain open.
+The resolved outcomes of `IMP-001`, `IMP-002`, `IMP-003`, and `IMP-005` are now
+consumed here as evidence rather than treated as active blockers. `IMP-004`,
+`IMP-006`, and `IMP-007` remain separately owned workstreams with limited gate
+impact described below.
 
-## 1.1 Latest evidence and blockers (2026-10-07)
+## 1.1 Latest evidence and blockers (2026-10-12)
 
 Inventory confirms that the current `pf-payroll` service remains active and the
-`pf-svc-income` target resources do not exist. Rename-specific blockers are
+`pf-svc-income` target resources do not exist. Rename-specific blockers remain
 consumer inventory, URL cutover, schema migration validation, package-boundary
 review, and explicit authorization.
 
-Unrelated security, IAM, backup, error-baseline, and observability findings are
-registered as `IMP-001` through `IMP-007` in the ecosystem improvement register.
-They may provide release gates, but their detailed remediation does not belong in
-this rename plan.
+The following external outcomes are now available and must be reused rather than
+reopened:
+
+- `IMP-001` is released; Scheduler credential remediation and cleanup are complete.
+- `IMP-002` is released; backup/restore, runtime cutover, sensitive-artifact cleanup,
+  and ownership migration are complete, with the documented Neon provider-role
+  residual risk accepted.
+- `IMP-003` is superseded by `IMP-002`; no duplicate role-hardening work is needed.
+- `IMP-005` is released; WIF deployments succeeded and legacy deploy keys/grants were
+  removed.
+- `IMP-008` is validated locally; its identifier policy applies to the new `pf-db`
+  migration, while final release evidence remains separate.
+
+Still-open register work is narrower: `IMP-004` concerns the independent `pf-rates`
+shared-secret cleanup; `IMP-006` defines the reusable HTTP error baseline; and
+`IMP-007` defines the Cloud Run observability/capacity baseline. They must be
+resolved or explicitly accepted at the relevant release gates, but they no longer
+justify describing all `IMP-001`–`IMP-007` work as an undifferentiated blocker.
+
+Rename-specific blockers are consumer inventory, URL cutover, schema migration
+validation, package-boundary review, and explicit authorization.
 
 ## 1.2 Required execution order
 
@@ -180,15 +203,17 @@ Status: pending URL evidence and approval.
 The rename must not broaden database privileges or bypass the current `pf-db`
 identifier policy. Runtime-role hardening is tracked as `IMP-003`; Neon credential,
 backup, and restore hardening is tracked as `IMP-002`; and the identifier-length
-policy is tracked as `IMP-008`. Those entries remain prerequisites or explicit
-approval gates where the cutover requires them, but their detailed designs belong
-in their own proposals.
+policy is tracked as `IMP-008`. The policy is validated and applies to the
+physical migration; only release evidence remains pending. Their detailed designs
+belong in their own proposals.
 
 ### Phase 2 gate
 
 Phase 3 remains blocked until the rename-specific decisions are approved and the
-registered external gates that affect cutover (`IMP-001` through `IMP-007`) are
-resolved or explicitly accepted. Preparing this package does not rotate
+still-open gates that affect the selected release stage are resolved or explicitly
+accepted. The released outcomes of `IMP-001`, `IMP-002`, and `IMP-005`, the
+supersession of `IMP-003`, and the validated `IMP-008` policy are already accepted
+inputs; they are not pending remediation. Preparing this package does not rotate
 credentials, change IAM, create GCP resources, alter the database, update Postman,
 or deploy a service.
 
@@ -202,7 +227,7 @@ or deploy a service.
 - [x] Existing `PAY_*` objects are renamed through `pf-db`; `PAY_PERIOD → INC_PAYROLL`.
 - [x] Exact `INC_*` target map is approved, subject to migration implementation validation.
 - [x] `PAY_MV_SUMARY` target is explicitly `INC_MV_PAY_SUMMARY` (18 ASCII characters), correcting `SUMARY` to `SUMMARY` and making the payroll domain explicit.
-- [ ] Update `pf-db` naming documentation/validators from 14 to 30 characters before implementing the migration.
+- [x] `IMP-008` identifier policy is validated; apply it to the physical migration and retain release evidence separately.
 - [ ] Review all generated and explicit index/constraint names for uniqueness and a maximum of 63 bytes; no automatic truncation.
 - [x] No custom domain/DNS behavior is involved.
 - [x] API key migration is atomic: target `PF_INCOME_API_KEY`; no application fallback to `PF_PAYROLL_API_KEY`.

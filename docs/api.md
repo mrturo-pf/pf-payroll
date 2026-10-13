@@ -2,6 +2,10 @@
 
 Complete reference for all HTTP interfaces exposed by pf-payroll.
 
+## Error classification baseline
+
+Use the [IMP-006 error baseline and adoption checklist](https://github.com/mrturo-pf/pf-improvements/blob/main/improvements/IMP-006-ecosystem-http-error-baseline/adoption-release-checklist.md) when classifying sanitized contract, dependency, application, and infrastructure evidence.
+
 ## HTTP API
 
 This section is the **complete inventory of HTTP endpoints** currently exposed by the application.

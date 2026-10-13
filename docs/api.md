@@ -97,7 +97,7 @@ Example natural-key conflict detail:
 Manages the versioned employer-specific label-to-concept mapping templates `POST
 /payroll/pdf-preview` matches PDFs against. Persisted in pf-db's `PAY_PDF_TEMPLATE` /
 `PAY_PDF_TEMPLATE_FIELD` tables, not a git-tracked file -- see
-[`docs/proposals/pdf-template-management-recommendation.md`](proposals/pdf-template-management-recommendation.md)
+[`https://github.com/mrturo-pf/pf-improvements/blob/main/improvements/HIST-019-pdf-template-management/recommendation.md`](https://github.com/mrturo-pf/pf-improvements/blob/main/improvements/HIST-019-pdf-template-management/recommendation.md)
 for why. Registered *before* the `/payroll/{period_id}` route in `interfaces/api/main.py`
 (same reason as `/payroll/spreadsheet` above): a single-segment path param with no type
 converter would otherwise swallow `GET /payroll/templates` as `period_id="templates"`.

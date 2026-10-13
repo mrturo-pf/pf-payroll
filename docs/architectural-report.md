@@ -335,8 +335,8 @@ that's the architectural guarantee that the preview can never *write* to the dat
 (it does read from it now, via a required `TemplateReader` and an optional
 `EmployerPaymentRuleReader` -- "no persistence" only ever meant "no writes"). Full
 design and implementation detail in
-[`docs/proposals/pdf-import-action-plan.md`](proposals/pdf-import-action-plan.md) and
-[`docs/proposals/pdf-template-management-plan.md`](proposals/pdf-template-management-plan.md).
+[`https://github.com/mrturo-pf/pf-improvements/blob/main/improvements/HIST-018-pdf-import/plan.md`](https://github.com/mrturo-pf/pf-improvements/blob/main/improvements/HIST-018-pdf-import/plan.md) and
+[`https://github.com/mrturo-pf/pf-improvements/blob/main/improvements/HIST-019-pdf-template-management/plan.md`](https://github.com/mrturo-pf/pf-improvements/blob/main/improvements/HIST-019-pdf-template-management/plan.md).
 
 ```python
 # src/payroll/infrastructure/pdf_import/extractor.py

@@ -12,7 +12,7 @@ DEFAULT_CURRENCY = "CLP"
 # to 150 on 2026-09-27 to also cover 2025-02's HEALTH_ADDITIONAL_UF residual
 # (declared $2,860 vs. computed $2,727 -- a $133 gap from not knowing the
 # exact mid-month health plan enrollment date/time-of-day, not from
-# rounding) -- see docs/investigations/health-additional-uf-mismatch.md,
+# rounding) -- see https://github.com/mrturo-pf/pf-improvements/blob/main/improvements/HIST-010-health-additional-uf-mismatch/investigation.md,
 # Session 11, for the full analysis and the explicit trade-off this widening
 # accepts: every reconciliation check sharing this constant is now less
 # sensitive to genuine $100-150 CLP discrepancies, ecosystem-wide, going

@@ -113,8 +113,9 @@ def build_net_pay_warning(
     accounting check summing every income/discount concept on the payslip,
     so any residual already absorbed upstream by that tolerance would
     otherwise resurface here as a leftover difference of the same size and
-    block validation anyway. See docs/investigations/health-additional-uf-
-    mismatch.md, Session 12, for the case that surfaced this.
+    block validation anyway. See the health-contribution investigation:
+    https://github.com/mrturo-pf/pf-improvements/blob/main/improvements/
+    HIST-010-health-additional-uf-mismatch/investigation.md (Session 12).
     """
     if declared_net_pay_clp is None:
         return None

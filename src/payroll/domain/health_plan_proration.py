@@ -34,7 +34,9 @@ def prorated_contracted_uf(
     effect on day 2, and a plan that expired mid-month either contributed
     its full UF value or none depending on which single day was checked.
     Neither extreme can reproduce a genuine partial-month declared amount
-    (see docs/investigations/health-additional-uf-mismatch.md) -- this can.
+    (see health-contribution investigation:
+    https://github.com/mrturo-pf/pf-improvements/blob/main/improvements/
+    HIST-010-health-additional-uf-mismatch/investigation.md) -- this can.
 
     A plan with zero day-overlap with the period contributes nothing (not
     an error): callers are expected to have already filtered the assigned

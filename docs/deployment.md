@@ -160,13 +160,19 @@ The pipeline supports two database configurations:
 | **Region** | `us-central1` | Must match Artifact Registry region |
 | **Min instances** | `0` | Scale to zero when idle |
 | **Max instances** | `2` | Prevent runaway scaling |
+| **Concurrency** | `80` | Explicitly preserves the current Cloud Run effective setting |
+| **Request timeout** | `300s` | Explicitly preserves the current Cloud Run effective setting |
 | **Memory** | `512 MiB` | Sufficient for payroll workloads |
 | **CPU** | `1` | Single vCPU |
 | **Port** | `8000` | FastAPI default (Cloud Run injects `PORT` env var) |
 | **Service account** | `pf-payroll@<PROJECT>.iam.gserviceaccount.com` | Needs `roles/secretmanager.secretAccessor` |
 | **Secrets** | `PF_DATABASE_URL` from Secret Manager | Never use `--set-env-vars` |
 
-### Service account permissions
+The application database engine uses the approved `pf-db` connection contract:
+`pool_size=5`, `max_overflow=0`, `pool_pre_ping=True`, and
+`pool_recycle=300`. With the Cloud Run maximum of two instances, the service
+has an upper bound of ten database connections per revision.
+
 
 The Cloud Run service account needs:
 

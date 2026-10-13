@@ -11,7 +11,7 @@ The service is deployed to **Google Cloud Run** via **GitHub Actions** (`.github
 - Trivy security scanning (blocks on CRITICAL/HIGH vulnerabilities)
 - Multi-stage Docker build with non-root final image
 - Scale-to-zero configuration (min 0 instances)
-- Shared database managed by [pf-db](../pf-db)
+- Shared database managed by [pf-db](https://github.com/mrturo-pf/pf-db)
 
 ## Pipeline jobs
 

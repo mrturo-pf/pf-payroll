@@ -4,7 +4,7 @@ Database connection, schema ownership, and local development workflow for pf-pay
 
 ## Overview
 
-pf-payroll **does not manage its own database**. Schema and migrations are owned by **[pf-db](../../pf-db)** — a separate repository that serves as the single source of truth for all PostgreSQL objects shared across the PF ecosystem.
+pf-payroll **does not manage its own database**. Schema and migrations are owned by **[pf-db](https://github.com/mrturo-pf/pf-db)** — a separate repository that serves as the single source of truth for all PostgreSQL objects shared across the PF ecosystem.
 
 **Key facts:**
 - pf-payroll only holds **SQLAlchemy ORM models** and **repositories**
@@ -108,7 +108,7 @@ pf-payroll **owns** the following tables (writes allowed):
 
 ## Tables accessed (read-only)
 
-pf-payroll **reads** these tables owned by [pf-rates](../../pf-rates):
+pf-payroll **reads** these tables owned by [pf-rates](https://github.com/mrturo-pf/pf-rates):
 
 | Table | Owner | Access method |
 |---|---|---|
@@ -303,7 +303,7 @@ In production, pf-payroll connects to the same shared database instance as pf-ra
 
 ## See also
 
-- [pf-db README](../../pf-db/README.md) — Database repository overview
-- [pf-db AGENTS.md](../../pf-db/AGENTS.md) — Migration workflow and invariants
+- [pf-db README](https://github.com/mrturo-pf/pf-db/blob/main/README.md) — Database repository overview
+- [pf-db AGENTS.md](https://github.com/mrturo-pf/pf-db/blob/main/AGENTS.md) — Migration workflow and invariants
 - [Development Guide](development.md#database-setup) — Local database setup
 - [Deployment Guide](deployment.md#github-secrets) — Production database configuration

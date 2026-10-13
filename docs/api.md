@@ -23,7 +23,7 @@ through `MarketDataRepository` (configured via `PF_RATES_URL` / `PF_RATES_API_KE
 see [Getting Started](getting-started.md)). pf-rates itself owns the default-provider
 behavior (SII lookups for `UTM`/`IPC_CL`, `mindicador` fallback for `UF`/`USD`/`EUR`,
 optional BCCh credentials) and the startup background sync — see
-[pf-rates' API Reference](../../pf-rates/docs/api.md) for `GET /exchange-rates`,
+[pf-rates' API Reference](https://github.com/mrturo-pf/pf-rates/blob/main/docs/api.md) for `GET /exchange-rates`,
 `GET /economic-indices`, `GET /income-tax-brackets`, and `POST /sync`.
 
 ### Payroll
@@ -138,6 +138,6 @@ non-overlap is enforced by the coordinated `pf-db` schema constraint.
 
 Currencies and income tax brackets are **not** served by pf-payroll; fetch them from
 pf-rates' `GET /monetary-units` and `GET /income-tax-brackets` (see
-[pf-rates' API Reference](../../pf-rates/docs/api.md)).
+[pf-rates' API Reference](https://github.com/mrturo-pf/pf-rates/blob/main/docs/api.md)).
 
 All supported `pf-payroll` interfaces are HTTP endpoints documented above. Payroll import, PDF preview, payroll queries, and reference-data queries are available through the HTTP API; no CLI is provided.

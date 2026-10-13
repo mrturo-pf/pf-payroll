@@ -104,9 +104,8 @@ def prorated_additional_amount_clp(
     threshold partway through: since the threshold itself is never
     prorated, a single day's difference in `valid_from` can swing the
     result by a full day's worth of UF instead of scaling smoothly with the
-    days actually enrolled (see "Session 11" in
-    docs/investigations/health-additional-uf-mismatch.md for the concrete
-    case that exposed this).
+    days actually enrolled (see Session 11 in the centralized investigation:
+    https://github.com/mrturo-pf/pf-improvements/blob/main/improvements/HIST-010-health-additional-uf-mismatch/investigation.md).
 
     This prices the top-up separately for every distinct sub-period of
     constant plan composition within the month, prorating *both* the plan

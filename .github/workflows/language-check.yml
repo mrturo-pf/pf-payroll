@@ -19,6 +19,7 @@ permissions:
 
 jobs:
   language:
+    name: Documentation language
     runs-on: ubuntu-latest
     steps:
       - name: Checkout service repository

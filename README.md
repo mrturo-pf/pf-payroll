@@ -19,7 +19,13 @@ This repository implements a microservice for Chilean payroll operations with:
 - FastAPI HTTP API
 - PostgreSQL persistence (schema managed by pf-db)
 
-## Quick start
+## Contribution workflow
+
+Create a dedicated branch, run the documented quality checks, and open a pull
+request targeting `main`. The protected `main` branch blocks direct pushes,
+force-pushes, and deletion. Merging to `main` is the release input for the
+Cloud Run deployment workflow.
+
 
 See [`docs/getting-started.md`](docs/getting-started.md) to install, set up the database, and run the API.
 

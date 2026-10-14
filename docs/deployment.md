@@ -7,7 +7,7 @@ CI/CD pipeline, Google Cloud Run deployment, and production configuration for pf
 The service is deployed to **Google Cloud Run** via **GitHub Actions** (`.github/workflows/deploy.yml`).
 
 **Key characteristics:**
-- Automatic deployment on push to `main` (after manual approval)
+- Automatic deployment on push to `main` after the pull request is merged
 - Trivy security scanning (blocks on CRITICAL/HIGH vulnerabilities)
 - Multi-stage Docker build with non-root final image
 - Scale-to-zero configuration (min 0 instances)
@@ -24,26 +24,21 @@ jobs:
     uses: mrturo-pf/pf-common/.github/workflows/deploy-reusable.yml@main
     with:
       repo_name: pf-payroll
-      require_approval: true
     secrets: inherit
 ```
 
 The real pipeline lives in `pf-common/.github/workflows/deploy-reusable.yml` and runs
-**seven jobs** (shared across pf-payroll and pf-rates — change it once, both services
-pick it up):
+six jobs. The merge to the protected `main` branch is the release approval; no
+additional production approval gate is used.
 
 | Job | Trigger | Action |
 |---|---|---|
 | `test` | PR + push `main` | lint, vulture, mypy, jscpd, pytest+coverage |
 | `build` | PR + push `main` | Docker build, Trivy scan (SARIF + blocking gate on CRITICAL/HIGH) |
-| `gate-with-approval` | push `main`, `require_approval: true` | manual approval via `production` environment |
-| `gate-without-approval` | push `main`, `require_approval: false` | passthrough, no manual approval |
-| `deploy` | push `main`, after the gate that ran | push image to AR, deploy Cloud Run (`GCP` environment) |
+| `deploy` | push `main` after merge | push image to AR, deploy Cloud Run (`GCP` environment) |
+| `smoke-test` | successful deploy | verify the fresh public health endpoint |
 | `notify-failure` | any job failure on `main` | SMTP failure email |
 | `notify-success` | successful deploy | SMTP success email |
-
-pf-payroll sets `require_approval: true`, so in practice `gate-with-approval` is the
-one that runs and `gate-without-approval` is skipped.
 
 ### Workflow
 
@@ -52,13 +47,13 @@ PR opened/updated
   └─> test job
         └─> build job (scan only, no push)
 
-Push to main
+Push to main after merge
   └─> test job
         └─> build job (scan + upload artifact)
-              └─> gate-with-approval job (manual approval; require_approval: true)
-                    └─> deploy job (push to AR, deploy to Cloud Run)
-                          ├─> notify-failure (on error)
-                          └─> notify-success (on success)
+              └─> deploy job (push to AR, deploy to Cloud Run)
+                    ├─> smoke-test
+                    ├─> notify-failure (on error)
+                    └─> notify-success (on success)
 ```
 
 ## Pipeline invariants

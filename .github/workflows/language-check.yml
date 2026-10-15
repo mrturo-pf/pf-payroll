@@ -28,6 +28,6 @@ jobs:
           path: ecosystem-root
       - name: Validate Markdown language
         run: |
-          python3 ecosystem-root/scripts/check-language.py --all --mode markdown
-          python3 ecosystem-root/scripts/check-language.py --all --mode comments
-          python3 ecosystem-root/scripts/check-language.py --all --mode user-facing --report
+          python3 ecosystem-root/scripts/quality/check-language.py --all --mode markdown
+          python3 ecosystem-root/scripts/quality/check-language.py --all --mode comments
+          python3 ecosystem-root/scripts/quality/check-language.py --all --mode user-facing --report

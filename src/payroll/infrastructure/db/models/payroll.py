@@ -164,7 +164,7 @@ class PayrollItemModel(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     period_id: Mapped[int] = mapped_column(
-        ForeignKey("INC_PAYROLL.id", ondelete="CASCADE")
+        "payroll_id", ForeignKey("INC_PAYROLL.id", ondelete="CASCADE")
     )
     concept_id: Mapped[int] = mapped_column(ForeignKey("INC_PAY_CONCEPT.id"))
     amount_clp: Mapped[Decimal] = mapped_column(Numeric(18, 2))

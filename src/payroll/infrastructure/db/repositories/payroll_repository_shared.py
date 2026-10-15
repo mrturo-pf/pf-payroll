@@ -693,7 +693,9 @@ class SqlAlchemyPayrollRepositoryBase:
     async def _refresh_summary_view(self) -> None:
         """Handle refresh summary view."""
         await self._session.commit()
-        await self._session.execute(text('REFRESH MATERIALIZED VIEW "PAY_MV_SUMARY"'))
+        await self._session.execute(
+            text('REFRESH MATERIALIZED VIEW "INC_MV_PAY_SUMMARY"')
+        )
         await self._session.commit()
 
     async def _reconcile_period_net_pay(

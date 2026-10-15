@@ -1,17 +1,5 @@
-"""Domain service for nominal-to-real amount deflation."""
+"""Backward-compatible export for the shared income deflation service."""
 
-from dataclasses import dataclass
-from decimal import Decimal
+from income.domain.deflation import DeflationCalculator
 
-from payroll.domain.quantizers import quantize_clp
-
-
-@dataclass(frozen=True, slots=True)
-class DeflationCalculator:
-    """Provide deflation calculator."""
-
-    def deflate_amount(
-        self, nominal_clp: Decimal, source_index: Decimal, target_index: Decimal
-    ) -> Decimal:
-        """Deflate amount."""
-        return quantize_clp(nominal_clp * target_index / source_index)
+__all__ = ["DeflationCalculator"]

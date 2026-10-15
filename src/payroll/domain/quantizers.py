@@ -1,6 +1,11 @@
-"""Quantization helpers for Chilean financial amounts."""
+"""Backward-compatible exports for shared income quantizers."""
 
-from decimal import Decimal
+from income.domain.quantizers import (
+    quantize_clp,
+    quantize_currency_amount,
+    quantize_percent,
+    quantize_utm,
+)
 
 __all__ = [
     "quantize_clp",
@@ -8,28 +13,3 @@ __all__ = [
     "quantize_percent",
     "quantize_utm",
 ]
-
-_CLP_QUANT = Decimal("1")
-_UTM_QUANT = Decimal("0.000001")
-_PERCENT_QUANT = Decimal("0.01")
-_CURRENCY_QUANT = Decimal("0.01")
-
-
-def quantize_clp(value: Decimal) -> Decimal:
-    """Quantize a CLP monetary amount to the nearest peso (0 decimal places)."""
-    return value.quantize(_CLP_QUANT)
-
-
-def quantize_utm(value: Decimal) -> Decimal:
-    """Quantize a UTM value to six decimal places."""
-    return value.quantize(_UTM_QUANT)
-
-
-def quantize_percent(value: Decimal) -> Decimal:
-    """Quantize a percentage value to two decimal places."""
-    return value.quantize(_PERCENT_QUANT)
-
-
-def quantize_currency_amount(value: Decimal) -> Decimal:
-    """Quantize a non-CLP currency/index amount (USD, EUR, UF) to 2 decimals."""
-    return value.quantize(_CURRENCY_QUANT)

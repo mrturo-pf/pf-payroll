@@ -277,11 +277,11 @@ async def test_get_employer_payment_rule_maps_configured_employer() -> None:
 
 def test_reference_data_models_and_enums_are_declared() -> None:
     """Test reference data models and enums are declared."""
-    assert PensionInstitutionModel.__tablename__ == "PAY_PENS_INST"
-    assert HealthInstitutionModel.__tablename__ == "PAY_HLTH_INST"
-    assert PensionPlanModel.__tablename__ == "PAY_PENS_PLAN"
-    assert HealthPlanModel.__tablename__ == "PAY_HLTH_PLAN"
-    assert ContributionCapModel.__tablename__ == "PAY_CNTRB_CAP"
-    assert PayrollConceptModel.__tablename__ == "PAY_CONCEPT"
+    assert PensionInstitutionModel.__tablename__ == "INC_PENS_INST"
+    assert HealthInstitutionModel.__tablename__ == "INC_HLTH_INST"
+    assert PensionPlanModel.__tablename__ == "INC_PENS_PLAN"
+    assert HealthPlanModel.__tablename__ == "INC_HLTH_PLAN"
+    assert ContributionCapModel.__tablename__ == "INC_CNTRB_CAP"
+    assert PayrollConceptModel.__tablename__ == "INC_PAY_CONCEPT"
     assert ContributionCapType.PENSION_HEALTH.value == "pension_health"
     assert PayrollConceptKind.INCOME.value == "income"

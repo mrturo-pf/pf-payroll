@@ -1,4 +1,4 @@
-"""PDF template SQLAlchemy models (PAY_PDF_TEMPLATE / PAY_PDF_TEMPLATE_FIELD).
+"""PDF template SQLAlchemy models (INC_PAY_PDF_TEMPLATE / INC_PAY_PDF_TEMPLATE_FIELD).
 
 See `pf-db/alembic/versions/0009_pdf_template_tables.py` for the schema this
 mirrors, and
@@ -26,18 +26,18 @@ from payroll.infrastructure.db.base import Base
 class PdfTemplateModel(Base):
     """Represent a single versioned payroll PDF template."""
 
-    __tablename__ = "PAY_PDF_TEMPLATE"
+    __tablename__ = "INC_PAY_PDF_TEMPLATE"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     template_id: Mapped[str] = mapped_column(String(80), unique=True)
     # Required: a template may only be created for an employer that already
-    # has a PAY_EMPLOYER row (i.e. after its first payroll import has run at
+    # has a INC_EMPLOYER row (i.e. after its first payroll import has run at
     # least once). There is deliberately no employer_name column -- it used
     # to be a literal-override fallback for when employer_id was nullable
     # (see pf-db migration 0010), but that case can no longer happen. The
-    # repository always resolves the display name fresh from PAY_EMPLOYER via
+    # repository always resolves the display name fresh from INC_EMPLOYER via
     # employer_id on every read. See pf-db migration 0012.
-    employer_id: Mapped[int] = mapped_column(ForeignKey("PAY_EMPLOYER.id"))
+    employer_id: Mapped[int] = mapped_column(ForeignKey("INC_EMPLOYER.id"))
     employer_match_pattern: Mapped[str] = mapped_column(String(500))
     version: Mapped[int] = mapped_column(Integer, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -58,25 +58,25 @@ class PdfTemplateModel(Base):
 class PdfTemplateFieldModel(Base):
     """Represent one label-to-concept mapping rule within a PdfTemplateModel."""
 
-    __tablename__ = "PAY_PDF_TEMPLATE_FIELD"
+    __tablename__ = "INC_PAY_PDF_TEMPLATE_FIELD"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     template_id: Mapped[int] = mapped_column(
-        ForeignKey("PAY_PDF_TEMPLATE.id", ondelete="CASCADE")
+        ForeignKey("INC_PAY_PDF_TEMPLATE.id", ondelete="CASCADE")
     )
     pdf_label_pattern: Mapped[str] = mapped_column(String(500))
-    # No `kind` column -- it would duplicate PAY_CONCEPT.kind with no
+    # No `kind` column -- it would duplicate INC_PAY_CONCEPT.kind with no
     # referential integrity tying the two copies together. The repository
-    # always resolves kind from PAY_CONCEPT via concept_id at read time. See
+    # always resolves kind from INC_PAY_CONCEPT via concept_id at read time. See
     # pf-db migration 0010.
-    # concept_id, not concept_code: every other table referencing PAY_CONCEPT
+    # concept_id, not concept_code: every other table referencing INC_PAY_CONCEPT
     # does so by its surrogate id (PAY_ITEM.concept_id) -- a VARCHAR FK to
-    # PAY_CONCEPT(code) was an unintentional inconsistency, fixed in pf-db
+    # INC_PAY_CONCEPT(code) was an unintentional inconsistency, fixed in pf-db
     # migration 0011. concept_code remains the business-facing identifier at
     # every application layer above this model (DTOs, requests/responses,
     # the PDF-matching engine); only this storage column changed, resolved
     # at the repository boundary exactly like kind already is.
-    concept_id: Mapped[int] = mapped_column(ForeignKey("PAY_CONCEPT.id"))
+    concept_id: Mapped[int] = mapped_column(ForeignKey("INC_PAY_CONCEPT.id"))
     confidence: Mapped[Decimal] = mapped_column(Numeric(3, 2), default=Decimal("0.90"))
 
     template: Mapped[PdfTemplateModel] = relationship(back_populates="fields")

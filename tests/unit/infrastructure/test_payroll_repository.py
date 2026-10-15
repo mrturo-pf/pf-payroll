@@ -149,7 +149,7 @@ class FakeSession(FakeResultsQueueBase):
     async def execute(self, statement: object) -> FakeResult:
         """Handle execute."""
         self.executed.append(statement)
-        if "PAY_EMP_CONT" in str(statement):
+        if "INC_EMP_CONT" in str(statement):
             queued_rows = (
                 getattr(self._results[0], "_scalar_rows", []) if self._results else []
             )
@@ -1503,7 +1503,7 @@ async def test_sqlalchemy_payroll_repository_saves_computed_contributions() -> N
     assert sum(isinstance(item, PayrollItemModel) for item in session.added) == 5
     assert session.commit_count == 3
     assert any(
-        'DELETE FROM "PAY_ITEM"' in str(statement) for statement in session.executed
+        'DELETE FROM "INC_PAY_ITEM"' in str(statement) for statement in session.executed
     )
 
 
@@ -2807,10 +2807,10 @@ async def test_api_dependencies_build_payroll_repository_and_use_case(
 
 def test_payroll_models_are_declared() -> None:
     """Test payroll models are declared."""
-    assert EmployerModel.__tablename__ == "PAY_EMPLOYER"
-    assert PayrollPeriodModel.__tablename__ == "PAY_PERIOD"
-    assert PayrollItemModel.__tablename__ == "PAY_ITEM"
-    assert PayrollSummaryModel.__tablename__ == "PAY_MV_SUMARY"
+    assert EmployerModel.__tablename__ == "INC_EMPLOYER"
+    assert PayrollPeriodModel.__tablename__ == "INC_PAYROLL"
+    assert PayrollItemModel.__tablename__ == "INC_PAY_ITEM"
+    assert PayrollSummaryModel.__tablename__ == "INC_MV_PAY_SUMMARY"
     assert EmploymentContractKind.INDEFINITE.value == "indefinite"
 
 

@@ -123,7 +123,6 @@ permissions:
 jobs:
   deploy:
     name: Validation
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     uses: mrturo-pf/pf-common/.github/workflows/deploy-reusable.yml@main
     with:
       repo_name: pf-payroll

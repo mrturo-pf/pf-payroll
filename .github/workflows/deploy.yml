@@ -131,4 +131,8 @@ jobs:
       database_secret_name: PF_PAYROLL_DATABASE_URL
       workload_identity_provider: projects/646185261155/locations/global/workloadIdentityPools/github-actions/providers/github-actions-oidc
       deployer_service_account: pf-payroll-deployer@coreassistant-474022.iam.gserviceaccount.com
+      dependency_service_name: pf-rates
+      dependency_env_name: PF_RATES_URL
+      protected_smoke_path: /payroll/employers
+      protected_smoke_secret_name: PF_PAYROLL_API_KEY
     secrets: inherit

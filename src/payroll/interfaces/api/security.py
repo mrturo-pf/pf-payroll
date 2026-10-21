@@ -19,7 +19,7 @@ def verify_api_key(
     Raises HTTP 403 if the header is absent or does not match.
     Uses a timing-safe comparison to prevent timing-based key enumeration.
     """
-    if key is None or not secrets.compare_digest(key, settings.pf_payroll_api_key):
+    if key is None or not secrets.compare_digest(key, settings.pf_income_api_key):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid or missing API key.",

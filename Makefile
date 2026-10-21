@@ -16,7 +16,7 @@ include ../pf-common/make/common.mk
 DB_CONTAINER ?= pf-db-db-1
 PF_DATABASE_URL ?= postgresql+asyncpg://pf_db:pf_db@localhost:5432/pf_db
 PF_RATES_URL ?= http://localhost:8001
-PF_PAYROLL_API_KEY ?= change-me-before-use
+PF_INCOME_API_KEY ?= change-me-before-use
 
 # ============================================================================
 # Service-specific targets
@@ -26,7 +26,7 @@ PF_PAYROLL_API_KEY ?= change-me-before-use
 env-write: ## Write .env file with service-specific defaults (delegates to scripts/write_env.sh)
 	@PF_DATABASE_URL="$(PF_DATABASE_URL)" \
 		PF_RATES_URL="$(PF_RATES_URL)" \
-		PF_PAYROLL_API_KEY="$(PF_PAYROLL_API_KEY)" \
+		PF_INCOME_API_KEY="$(PF_INCOME_API_KEY)" \
 		CORPORATIVE_PIP_INDEX="$(CORPORATIVE_PIP_INDEX)" \
 		CORPORATIVE_NPM_REGISTRY="$(CORPORATIVE_NPM_REGISTRY)" \
 		CORPORATIVE_PROXY="$(CORPORATIVE_PROXY)" \
@@ -41,7 +41,7 @@ local-up: ## Start full local stack (DB verification, env, deps, API)
 		DB_CONTAINER="$(DB_CONTAINER)" \
 		PF_DATABASE_URL="$(PF_DATABASE_URL)" \
 		PF_RATES_URL="$(PF_RATES_URL)" \
-		PF_PAYROLL_API_KEY="$(PF_PAYROLL_API_KEY)" \
+		PF_INCOME_API_KEY="$(PF_INCOME_API_KEY)" \
 		CORPORATIVE_PIP_INDEX="$(CORPORATIVE_PIP_INDEX)" \
 		CORPORATIVE_NPM_REGISTRY="$(CORPORATIVE_NPM_REGISTRY)" \
 		CORPORATIVE_PROXY="$(CORPORATIVE_PROXY)" \

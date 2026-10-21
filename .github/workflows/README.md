@@ -1,6 +1,6 @@
 # GitHub Actions Workflows
 
-This directory contains CI/CD workflows for pf-payroll. All three workflows are thin
+This directory contains CI/CD workflows for pf-svc-income. All three workflows are thin
 callers into the **reusable workflows** centralized in
 [`pf-common/.github/workflows/`](https://github.com/mrturo-pf/pf-common/tree/main/.github/workflows) —
 that's the single source of truth for job definitions. This file only documents what
@@ -13,7 +13,7 @@ gets triggered from this repo and how to configure it.
 **Trigger:** push to `main` after a pull request merge, and pull requests targeting
 `main`. Direct pushes to the protected `main` branch are blocked.
 
-**Calls:** `pf-common/.github/workflows/deploy-reusable.yml` with `repo_name: pf-payroll`.
+**Calls:** `pf-common/.github/workflows/deploy-reusable.yml` with `repo_name: pf-svc-income`.
 
 A 6-job pipeline (jobs 3-6 only run on push to `main`, not on pull requests):
 
@@ -36,7 +36,7 @@ Cloud Run Job before this service receives traffic.
 **Calls:** `pf-common/.github/workflows/gcp-setup-reusable.yml`.
 
 Creates the Artifact Registry repository and placeholder Secret Manager secrets
-(`PF_DATABASE_URL`, `PF_PAYROLL_API_KEY`). Run this once before the very first deploy;
+(`PF_DATABASE_URL`, `PF_INCOME_API_KEY`). Run this once before the very first deploy;
 see the full manual setup checklist in the header comment of `deploy.yml`.
 
 ### `debug.yml` — Debug CI (manual)
@@ -64,8 +64,8 @@ full one-time `gcloud` setup script.
 | `MAIL_SERVER`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM`, `MAIL_TO` | SMTP config for the Notify jobs |
 
 Secret Manager secrets are injected automatically by the reusable deploy workflow —
-they are not GitHub secrets. Besides `PF_DATABASE_URL` and `PF_PAYROLL_API_KEY`,
-pf-payroll's deploy step also injects `PF_RATES_API_KEY`, since this service calls
+they are not GitHub secrets. Besides `PF_DATABASE_URL` and `PF_INCOME_API_KEY`,
+pf-svc-income's deploy step also injects `PF_RATES_API_KEY`, since this service calls
 pf-rates over HTTP for financial reference data.
 
 ## Deployment approval
@@ -83,7 +83,7 @@ after the merge; no separate production reviewer or approval workflow is configu
 - **`make check`-equivalent steps failing:** reproduce locally first with
   `make lint && make dead-code && make typecheck && make duplicate-code && make test-cov`.
 - **Deploy job blocked on "Artifact Registry scanning is enabled":** run
-  `gcloud artifacts repositories update pf-payroll --location=us-central1 --disable-vulnerability-scanning`
+  `gcloud artifacts repositories update pf-svc-income --location=us-central1 --disable-vulnerability-scanning`
   (kept disabled deliberately to avoid ~$5/month in scan fees; Trivy already covers this).
 
 ## See Also

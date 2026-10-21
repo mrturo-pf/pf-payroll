@@ -50,7 +50,7 @@ This creates `.env` from `.env.example`. **Important:** Edit `.env` and set a se
 
 ```bash
 # Edit .env
-PF_PAYROLL_API_KEY=your-secure-api-key-here
+PF_INCOME_API_KEY=your-secure-api-key-here
 ```
 
 `.env` also ships with generic (non-functional) placeholder values for
@@ -80,7 +80,7 @@ http://localhost:8000/docs
 ```
 
 1. Click **Authorize** button (top right)
-2. Enter your `PF_PAYROLL_API_KEY` from `.env`
+2. Enter your `PF_INCOME_API_KEY` from `.env`
 3. Click **Authorize** then **Close**
 4. Try the `GET /health` endpoint (no auth required)
 5. Try the `POST /payroll/import/spreadsheet` endpoint (requires auth)
@@ -177,7 +177,7 @@ uvicorn payroll.interfaces.api.main:app --port 8002 --reload
 **Error:** `403 Forbidden` when calling endpoints
 
 **Solution:**
-1. Check `.env` file contains `PF_PAYROLL_API_KEY=...`
+1. Check `.env` file contains `PF_INCOME_API_KEY=...`
 2. Restart the service after editing `.env`
 3. In Swagger UI, use the **Authorize** button (not query param)
 4. In curl, use header: `-H "X-API-Key: your-key"`

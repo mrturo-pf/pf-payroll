@@ -9,7 +9,7 @@ from payroll.interfaces.api import security
 from payroll.interfaces.api.security import verify_api_key
 
 _TEST_KEY = "test-key"
-_FAKE_SETTINGS = SimpleNamespace(pf_payroll_api_key=_TEST_KEY)
+_FAKE_SETTINGS = SimpleNamespace(pf_income_api_key=_TEST_KEY)
 
 
 @pytest.fixture(autouse=True)

@@ -1,6 +1,6 @@
 # API Reference
 
-Complete reference for all HTTP interfaces exposed by pf-payroll.
+Complete reference for all HTTP interfaces exposed by pf-svc-income.
 
 ## Error classification baseline
 
@@ -21,7 +21,7 @@ This section is the **complete inventory of HTTP endpoints** currently exposed b
 
 ### Market data
 
-pf-payroll does **not** expose its own market-data endpoints. Exchange rates, economic
+pf-svc-income does **not** expose its own market-data endpoints. Exchange rates, economic
 indices, and income tax brackets are fetched read-only from **pf-rates** over HTTP
 through `MarketDataRepository` (configured via `PF_RATES_URL` / `PF_RATES_API_KEY`,
 see [Getting Started](getting-started.md)). pf-rates itself owns the default-provider
@@ -140,11 +140,11 @@ non-overlap is enforced by the coordinated `pf-db` schema constraint.
 | `GET` | `/reference-data/contribution-caps` | Lists seeded contribution caps. |
 | `GET` | `/reference-data/payroll-concepts` | Lists seeded payroll concepts. |
 
-Currencies and income tax brackets are **not** served by pf-payroll; fetch them from
+Currencies and income tax brackets are **not** served by pf-svc-income; fetch them from
 pf-rates' `GET /monetary-units` and `GET /income-tax-brackets` (see
 [pf-rates' API Reference](https://github.com/mrturo-pf/pf-rates/blob/main/docs/api.md)).
 
-All supported `pf-payroll` interfaces are HTTP endpoints documented above. Payroll import, PDF preview, payroll queries, and reference-data queries are available through the HTTP API; no CLI is provided.
+All supported `pf-svc-income` interfaces are HTTP endpoints documented above. Payroll import, PDF preview, payroll queries, and reference-data queries are available through the HTTP API; no CLI is provided.
 
 ## Error responses
 

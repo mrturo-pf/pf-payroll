@@ -145,3 +145,41 @@ pf-rates' `GET /monetary-units` and `GET /income-tax-brackets` (see
 [pf-rates' API Reference](https://github.com/mrturo-pf/pf-rates/blob/main/docs/api.md)).
 
 All supported `pf-payroll` interfaces are HTTP endpoints documented above. Payroll import, PDF preview, payroll queries, and reference-data queries are available through the HTTP API; no CLI is provided.
+
+## Error responses
+
+Error handling is applied centrally to every endpoint (except that
+authentication failures continue to use their dedicated `403` response).
+
+### 422 Request validation
+
+Malformed JSON and invalid request parameters return actionable validation
+information:
+
+```json
+{
+  "detail": "Request validation failed.",
+  "errors": [
+    {
+      "loc": ["body"],
+      "msg": "JSON decode error",
+      "type": "json_invalid"
+    }
+  ]
+}
+```
+
+### 500 Unexpected server error
+
+Unhandled application or infrastructure failures are logged with their full
+traceback and return the exception type, message, and request path:
+
+```json
+{
+  "detail": "Unexpected server error. RuntimeError: database connection failed",
+  "path": "/payroll"
+}
+```
+
+Do not share the response without redacting credentials or other sensitive data
+if an underlying exception includes them.

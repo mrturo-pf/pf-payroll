@@ -1,6 +1,6 @@
 # Development Guide
 
-Local development workflow, testing conventions, and contribution guidelines for pf-payroll.
+Local development workflow, testing conventions, and contribution guidelines for pf-svc-income.
 
 ## Prerequisites
 
@@ -45,7 +45,7 @@ PATH=.venv/bin:$PATH make <target>
 
 ### Database setup
 
-pf-payroll **does not manage its own database**. Start the shared PostgreSQL instance from the [pf-db](https://github.com/mrturo-pf/pf-db) repository:
+pf-svc-income **does not manage its own database**. Start the shared PostgreSQL instance from the [pf-db](https://github.com/mrturo-pf/pf-db) repository:
 
 ```bash
 cd ../pf-db
@@ -54,10 +54,10 @@ make local-up        # start postgres + apply schema + load base seed
 make local-up-test   # same + test fixtures
 ```
 
-Then start pf-payroll:
+Then start pf-svc-income:
 
 ```bash
-cd ../pf-payroll
+cd ../pf-svc-income
 make local-up        # verifies pf-db is running, writes .env, runs API
 ```
 

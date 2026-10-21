@@ -24,6 +24,6 @@ async def health() -> HealthRead:
     """Return service health status, including process uptime."""
     return HealthRead(
         status="ok",
-        service="pf-payroll",
+        service="pf-svc-income",
         uptime_seconds=round(time.monotonic() - _START_TIME, 3),
     )

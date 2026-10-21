@@ -1,11 +1,11 @@
-# AGENTS.md — pf-payroll
+# AGENTS.md — pf-svc-income
 
 Chilean payroll simulation and tax calculation suite. Microservice with Hexagonal (Ports & Adapters) architecture and strict financial precision requirements.
 
 ## Scope
 
 This file governs implementation, testing, documentation, and operations inside
-`pf-payroll`. Ecosystem ownership boundaries and cross-repository coordination are defined
+`pf-svc-income`. Ecosystem ownership boundaries and cross-repository coordination are defined
 in the root [`AGENTS.md`](../../AGENTS.md). This file owns the service-specific details.
 
 ## Architecture
@@ -75,7 +75,7 @@ Keep unit tests isolated with typed hand-written stubs and use integration tests
 ## Documentation and Postman collection must track reality
 
 - [`docs/api.md`](docs/api.md) must describe every HTTP endpoint this service actually
-  exposes. This file documents only the FastAPI surface owned by `pf-payroll`.
+  exposes. This file documents only the FastAPI surface owned by `pf-svc-income`.
   Adding, removing, or changing an endpoint (path, request/response shape, auth, error
   codes) requires updating `docs/api.md` in the **same change**, not "later" — letting
   it drift is an incomplete change. This isn't hypothetical: a 2026-09-25 documentation
@@ -88,7 +88,7 @@ Keep unit tests isolated with typed hand-written stubs and use integration tests
 
 - This service's endpoints are also mirrored in the shared Postman collection at the
   ecosystem root: `pf-base/postman/pf-ecosystem.postman_collection.json`, plus the
-  `pf-payroll-url`/`pf-payroll-api-key` variables in
+  `pf-svc-income-url`/`pf-svc-income-api-key` variables in
   `pf-base/postman/pf-ecosystem.postman_environment.{local,gcp}.json`. Update those too
   in the same change when practical — see `pf-base/postman/README.md` for the sync
   mechanics and `pf-base/AGENTS.md` for the ecosystem-wide version of this rule.
@@ -111,7 +111,7 @@ make check                 # lint → dead-code → typecheck → dup-check → 
 
 ## CLI policy
 
-Do not implement, add, restore, or expand any product-facing CLI command in `pf-payroll`. Existing development, deployment, and automation commands such as `make` and repository scripts may still be used unless explicitly prohibited. Use the supported HTTP API and existing automation instead. Any exception requires explicit user approval first.
+Do not implement, add, restore, or expand any product-facing CLI command in `pf-svc-income`. Existing development, deployment, and automation commands such as `make` and repository scripts may still be used unless explicitly prohibited. Use the supported HTTP API and existing automation instead. Any exception requires explicit user approval first.
 
 
 Before any interaction with GitHub using `gh`, including read-only commands, execute
@@ -152,7 +152,7 @@ Quick reference:
 
 ## Database runtime identity
 
-`pf-payroll` must connect to shared PostgreSQL with a service-dedicated runtime
+`pf-svc-income` must connect to shared PostgreSQL with a service-dedicated runtime
 user/role provisioned by `pf-db`. Its grants must be least-privilege and limited
 to the approved payroll-domain objects and required sequences; it must not use a
 shared service user, database-owner credential, migration role, backup role, or
@@ -176,7 +176,7 @@ release.
 See [`docs/database.md`](docs/database.md) for the complete database guide:
 - Connection configuration (`PF_DATABASE_URL`)
 - Local database setup (pf-db workflow)
-- Table ownership (which tables pf-payroll writes to)
+- Table ownership (which tables pf-svc-income writes to)
 - ORM models and repositories
 - Schema changes (coordination with pf-db)
 - Database inspection tools (psql, Adminer)

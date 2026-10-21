@@ -1,13 +1,13 @@
 # Database Guide
 
-Database connection, schema ownership, and local development workflow for pf-payroll.
+Database connection, schema ownership, and local development workflow for pf-svc-income.
 
 ## Overview
 
-pf-payroll **does not manage its own database**. Schema and migrations are owned by **[pf-db](https://github.com/mrturo-pf/pf-db)** — a separate repository that serves as the single source of truth for all PostgreSQL objects shared across the PF ecosystem.
+pf-svc-income **does not manage its own database**. Schema and migrations are owned by **[pf-db](https://github.com/mrturo-pf/pf-db)** — a separate repository that serves as the single source of truth for all PostgreSQL objects shared across the PF ecosystem.
 
 **Key facts:**
-- pf-payroll only holds **SQLAlchemy ORM models** and **repositories**
+- pf-svc-income only holds **SQLAlchemy ORM models** and **repositories**
 - Schema changes require a migration in **pf-db** (coordinate with pf-db maintainers)
 - Local development uses a shared PostgreSQL instance managed by pf-db
 - Production uses the same shared database (Neon, Supabase, or Cloud SQL)
@@ -58,12 +58,12 @@ This starts a PostgreSQL 16 container on `localhost:5432` with:
 - Base seed data loaded (RAT_CURRENCY, institutions, caps, brackets, concepts)
 - Test fixtures loaded (if using `make local-up-test`)
 
-### Step 2: Start pf-payroll
+### Step 2: Start pf-svc-income
 
-Navigate back to pf-payroll and start the service:
+Navigate back to pf-svc-income and start the service:
 
 ```bash
-cd ../pf-payroll
+cd ../pf-svc-income
 make local-up        # verifies pf-db is running, writes .env, runs API
 ```
 
@@ -75,7 +75,7 @@ The `make local-up` target:
 
 ## Table ownership
 
-pf-payroll **owns** the following tables (writes allowed):
+pf-svc-income **owns** the following tables (writes allowed):
 
 ### Core payroll tables
 
@@ -108,7 +108,7 @@ pf-payroll **owns** the following tables (writes allowed):
 
 ## Tables accessed (read-only)
 
-pf-payroll **reads** these tables owned by [pf-rates](https://github.com/mrturo-pf/pf-rates):
+pf-svc-income **reads** these tables owned by [pf-rates](https://github.com/mrturo-pf/pf-rates):
 
 | Table | Owner | Access method |
 |---|---|---|
@@ -117,7 +117,7 @@ pf-payroll **reads** these tables owned by [pf-rates](https://github.com/mrturo-
 | `RAT_ECON_INDEX` | pf-rates | **HTTP API only** |
 | `RAT_TAX_BRCKT` | pf-rates | **HTTP API only** |
 
-**Important:** pf-payroll accesses financial rates via the **pf-rates HTTP API** — it never queries these tables directly via SQL.
+**Important:** pf-svc-income accesses financial rates via the **pf-rates HTTP API** — it never queries these tables directly via SQL.
 
 ## ORM models
 
@@ -197,14 +197,14 @@ To add a new column or table:
    cd ../pf-db
    make migrate
    ```
-4. **Update ORM model** in pf-payroll:
+4. **Update ORM model** in pf-svc-income:
    ```python
    class Employer(Base):
        # ...
        industry: Mapped[str | None] = mapped_column(String(100), nullable=True)
    ```
 5. **Run tests** — ensure integration tests pass
-6. **Commit both repos** — pf-db migration first, then pf-payroll model change
+6. **Commit both repos** — pf-db migration first, then pf-svc-income model change
 
 ## Inspection
 
@@ -293,7 +293,7 @@ make migrate  # applies all pending migrations
 
 ## Production database
 
-In production, pf-payroll connects to the same shared database instance as pf-rates.
+In production, pf-svc-income connects to the same shared database instance as pf-rates.
 
 **Database options:**
 - **External** (Neon, Supabase): Set `PF_DATABASE_URL` secret in Secret Manager

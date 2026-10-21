@@ -1,10 +1,10 @@
-# pf-payroll
+# pf-svc-income
 
 Personal financial suite for Chilean payroll simulation, tax calculation, and historical analytics with focus on architectural integrity and precision.
 
 ## Overview
 
-This repository implements a microservice for Chilean payroll operations with:
+This repository implements the `pf-svc-income` microservice. Payroll remains the public domain and route vocabulary while the service identity expands to shared income capabilities.
 
 - payroll import from CSV/XLSX
 - support for taxable imported income items such as legal gratuity, vacation

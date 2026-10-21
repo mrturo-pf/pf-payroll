@@ -1,6 +1,6 @@
 # Deployment Guide
 
-CI/CD pipeline, Google Cloud Run deployment, and production configuration for pf-payroll.
+CI/CD pipeline, Google Cloud Run deployment, and production configuration for pf-svc-income.
 
 ## Overview
 
@@ -23,7 +23,7 @@ jobs:
   deploy:
     uses: mrturo-pf/pf-common/.github/workflows/deploy-reusable.yml@main
     with:
-      repo_name: pf-payroll
+      repo_name: pf-svc-income
     secrets: inherit
 ```
 
@@ -65,7 +65,7 @@ Push to main after merge
    external DB over Cloud SQL when viable, on-demand over always-on). Every rule below
    this one is, in practice, a concrete instance of this principle.
 
-2. **Migrations before traffic** — the `pf-db` Cloud Run Job must apply all pending migrations before either service receives traffic. pf-payroll ships no migration tooling.
+2. **Migrations before traffic** — the `pf-db` Cloud Run Job must apply all pending migrations before either service receives traffic. pf-svc-income ships no migration tooling.
 
 3. **DB URL via `--set-secrets` only** — never `--set-env-vars`
    ```bash
@@ -89,11 +89,11 @@ Push to main after merge
 6. **Image tagged with both `github.sha` and `latest`** — deploy references SHA, not `latest`
    ```bash
    # Both tags are pushed
-   us-central1-docker.pkg.dev/PROJECT/pf-payroll/app:abc123def
-   us-central1-docker.pkg.dev/PROJECT/pf-payroll/app:latest
+   us-central1-docker.pkg.dev/PROJECT/pf-svc-income/app:abc123def
+   us-central1-docker.pkg.dev/PROJECT/pf-svc-income/app:latest
    
    # Deploy uses SHA for immutability
-   --image=us-central1-docker.pkg.dev/PROJECT/pf-payroll/app:abc123def
+   --image=us-central1-docker.pkg.dev/PROJECT/pf-svc-income/app:abc123def
    ```
 
 7. **Non-root container** — Dockerfile switches to `appuser` in final stage
@@ -126,7 +126,7 @@ Configure the following secrets in the repository (Settings → Secrets and vari
 | `MAIL_PORT` |  | SMTP port (e.g., `587` for STARTTLS) |
 | `MAIL_USERNAME` |  | SMTP username / sender address |
 | `MAIL_PASSWORD` |  | SMTP password or app-specific password |
-| `MAIL_FROM` |  | Sender display address (e.g., `pf-payroll CI <you@gmail.com>`) |
+| `MAIL_FROM` |  | Sender display address (e.g., `pf-svc-income CI <you@gmail.com>`) |
 | `MAIL_TO` |  | Recipient address(es), comma-separated |
 
 > **pf-rates connectivity is automatic.** `PF_RATES_URL` is not a secret you
@@ -160,7 +160,7 @@ The pipeline supports two database configurations:
 | **Memory** | `512 MiB` | Sufficient for payroll workloads |
 | **CPU** | `1` | Single vCPU |
 | **Port** | `8000` | FastAPI default (Cloud Run injects `PORT` env var) |
-| **Service account** | `pf-payroll@<PROJECT>.iam.gserviceaccount.com` | Needs `roles/secretmanager.secretAccessor` |
+| **Service account** | `pf-svc-income@<PROJECT>.iam.gserviceaccount.com` | Needs `roles/secretmanager.secretAccessor` |
 | **Secrets** | `PF_DATABASE_URL` from Secret Manager | Never use `--set-env-vars` |
 
 The application database engine uses the approved `pf-db` connection contract:
@@ -174,7 +174,7 @@ The Cloud Run service account needs:
 ```bash
 # Allow reading secrets at runtime
 gcloud projects add-iam-policy-binding PROJECT_ID \
-  --member="serviceAccount:pf-payroll@PROJECT_ID.iam.gserviceaccount.com" \
+  --member="serviceAccount:pf-svc-income@PROJECT_ID.iam.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
 ```
 
@@ -183,7 +183,7 @@ gcloud projects add-iam-policy-binding PROJECT_ID \
 See the comment block at the top of `.github/workflows/deploy.yml` for the full bootstrap sequence:
 
 1. Enable APIs (`run.googleapis.com`, `artifactregistry.googleapis.com`, `secretmanager.googleapis.com`)
-2. Create Artifact Registry repository (`us-central1`, format `docker`, name `pf-payroll`)
+2. Create Artifact Registry repository (`us-central1`, format `docker`, name `pf-svc-income`)
 3. Create Secret Manager secret (`pf-db-url`) with connection string
 4. Create service account for Cloud Run with `roles/secretmanager.secretAccessor`
 5. Grant GitHub Actions service account necessary roles
@@ -199,12 +199,12 @@ gcloud auth login
 gcloud config set project PROJECT_ID
 
 # 2. Build and push
-docker build -t us-central1-docker.pkg.dev/PROJECT_ID/pf-payroll/app:manual .
-docker push us-central1-docker.pkg.dev/PROJECT_ID/pf-payroll/app:manual
+docker build -t us-central1-docker.pkg.dev/PROJECT_ID/pf-svc-income/app:manual .
+docker push us-central1-docker.pkg.dev/PROJECT_ID/pf-svc-income/app:manual
 
 # 3. Deploy
-gcloud run deploy pf-payroll \
-  --image=us-central1-docker.pkg.dev/PROJECT_ID/pf-payroll/app:manual \
+gcloud run deploy pf-svc-income \
+  --image=us-central1-docker.pkg.dev/PROJECT_ID/pf-svc-income/app:manual \
   --region=us-central1 \
   --platform=managed \
   --set-secrets=PF_DATABASE_URL=pf-db-url:latest \
@@ -213,7 +213,7 @@ gcloud run deploy pf-payroll \
   --memory=512Mi \
   --cpu=1 \
   --port=8000 \
-  --service-account=pf-payroll@PROJECT_ID.iam.gserviceaccount.com \
+  --service-account=pf-svc-income@PROJECT_ID.iam.gserviceaccount.com \
   --allow-unauthenticated
 ```
 
@@ -223,12 +223,12 @@ Cloud Run keeps previous revisions. To rollback:
 
 ```bash
 # List revisions
-gcloud run revisions list --service=pf-payroll --region=us-central1
+gcloud run revisions list --service=pf-svc-income --region=us-central1
 
 # Rollback to a specific revision
-gcloud run services update-traffic pf-payroll \
+gcloud run services update-traffic pf-svc-income \
   --region=us-central1 \
-  --to-revisions=pf-payroll-00042-abc=100
+  --to-revisions=pf-svc-income-00042-abc=100
 ```
 
 ## Monitoring
@@ -237,10 +237,10 @@ gcloud run services update-traffic pf-payroll \
 
 ```bash
 # Stream logs
-gcloud run services logs tail pf-payroll --region=us-central1
+gcloud run services logs tail pf-svc-income --region=us-central1
 
 # View in Cloud Console
-# https://console.cloud.google.com/run/detail/us-central1/pf-payroll/logs
+# https://console.cloud.google.com/run/detail/us-central1/pf-svc-income/logs
 ```
 
 ### Metrics
@@ -266,7 +266,7 @@ Configure alerts in Cloud Monitoring for:
 **Solution:**
 ```bash
 # Verify image exists
-gcloud artifacts docker images list us-central1-docker.pkg.dev/PROJECT_ID/pf-payroll
+gcloud artifacts docker images list us-central1-docker.pkg.dev/PROJECT_ID/pf-svc-income
 ```
 
 ### Deployment fails: "Service account does not have permission"
@@ -276,7 +276,7 @@ gcloud artifacts docker images list us-central1-docker.pkg.dev/PROJECT_ID/pf-pay
 **Solution:**
 ```bash
 gcloud projects add-iam-policy-binding PROJECT_ID \
-  --member="serviceAccount:pf-payroll@PROJECT_ID.iam.gserviceaccount.com" \
+  --member="serviceAccount:pf-svc-income@PROJECT_ID.iam.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
 ```
 
